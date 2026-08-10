@@ -10,6 +10,8 @@ services:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
       VITE_API_BASE_URL: http://backend:8000
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     depends_on:
       - backend
     networks:
@@ -28,6 +30,10 @@ services:
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       OLLAMA_BASE_URL: http://ollama:11434
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      SUPABASE_USERS_TABLE: ${SUPABASE_USERS_TABLE:-users}
     depends_on:
       - db
       - ollama

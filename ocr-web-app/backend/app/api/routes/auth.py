@@ -34,6 +34,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",
         )
 
+    supabase_service.upsert_user(
+        email=user.email,
+        provider=user.provider,
+        provider_id=user.provider_id,
+    )
+
     token = create_access_token(subject=user.email)
     return LoginResponse(
         access_token=token,
@@ -106,6 +112,12 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             db.add(user)
             db.commit()
             db.refresh(user)
+
+        supabase_service.upsert_user(
+            email=user.email,
+            provider=supabase_user.get("provider") or "supabase",
+            provider_id=supabase_user.get("id"),
+        )
 
         token = create_access_token(subject=user.email)
         return LoginResponse(

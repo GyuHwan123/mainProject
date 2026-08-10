@@ -75,11 +75,17 @@ class SupabaseService:
             "apikey": self.anon_key,
         }
 
-        response = httpx.get(
-            f"{self.url}/auth/v1/user",
-            headers=headers,
-            timeout=15,
-        )
+        try:
+            response = httpx.get(
+                f"{self.url}/auth/v1/user",
+                headers=headers,
+                timeout=15,
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Supabase 인증 서버에 연결할 수 없습니다.",
+            ) from exc
 
         if response.status_code != 200:
             raise HTTPException(

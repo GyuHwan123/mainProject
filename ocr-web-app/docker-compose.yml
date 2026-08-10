@@ -9,7 +9,9 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
     environment:
-      VITE_API_BASE_URL: http://backend:8000
+      # This URL is used by the browser, so Docker's internal `backend` hostname
+      # is not reachable here. Override it with the public API URL in production.
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api/v1}
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     depends_on:

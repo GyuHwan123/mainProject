@@ -1,117 +1,51 @@
-# Google OAuth용 redirect URL 문서화
+# Google 소셜 로그인 설정
 
-Google OAuth 설정 시 가장 중요한 부분은 Redirect URL입니다. Supabase에서 OAuth provider를 활성화할 때, 정확히 같은 URL을 등록해야 로그인 후 정상 복귀가 가능합니다.
+이 프로젝트는 Google OAuth를 Supabase Auth를 통해 처리한 뒤, 백엔드의 앱 JWT로 교환합니다.
 
-## 1. 기본 원칙
+## 1. Google Cloud Console
 
-Supabase의 OAuth는 보통 다음 흐름으로 동작합니다.
-
-1. 사용자가 프론트엔드 버튼 클릭
-2. Supabase OAuth 페이지로 이동
-3. Google 로그인 완료
-4. Redirect URL로 다시 돌아옴
-5. 프론트엔드가 세션을 읽고 백엔드에 토큰 전달
-
-## 2. 로컬 개발용 Redirect URL
-
-로컬 개발 환경에서 가장 일반적인 값은 아래와 같습니다.
+Google OAuth 2.0 웹 클라이언트의 `승인된 리디렉션 URI`에는 Supabase 콜백 URL을 등록합니다.
 
 ```text
-http://localhost:3000/dashboard
+https://<project-ref>.supabase.co/auth/v1/callback
 ```
 
-또는 로그인 페이지로 돌려보내는 구조를 쓸 경우:
+앱의 `/auth/callback` 주소가 아니라 Supabase 콜백 주소여야 합니다.
+
+## 2. Supabase Dashboard
+
+1. `Authentication > Providers > Google`에서 Google provider를 활성화합니다.
+2. Google Client ID와 Client Secret을 입력합니다.
+3. `Authentication > URL Configuration`의 Redirect URLs에 아래 주소를 추가합니다.
 
 ```text
-http://localhost:3000/
+http://localhost:3000/auth/callback
+https://<production-domain>/auth/callback
 ```
 
-현재 프로젝트는 로그인 성공 후 `/dashboard` 이동을 기본으로 하고 있으므로, 로컬 개발 시 권장값은 아래입니다.
+Site URL에는 기본 앱 주소를 설정합니다(로컬: `http://localhost:3000`).
 
-```text
-http://localhost:3000/dashboard
+## 3. 환경변수
+
+루트의 `.env.example`을 참고해 `.env`를 만들고 실제 값을 입력합니다. 로컬에서 Vite를 직접 실행한다면 `VITE_` 변수는 `frontend/.env`에도 설정합니다.
+
+```env
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon-key>
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+SECRET_KEY=<long-random-secret>
 ```
 
-## 3. Supabase 설정에서 등록하는 방식
+`SUPABASE_SERVICE_ROLE_KEY`와 `SECRET_KEY`는 프론트엔드에 노출하면 안 됩니다.
 
-### 방법
-1. Supabase 대시보드로 이동
-2. `Authentication` > `Providers` > `Google` 선택
-3. `Enable Sign in with Google` 활성화
-4. 아래 값 등록
-   - Authorized redirect URLs
+## 4. 동작 흐름
 
-예시:
-```text
-http://localhost:3000/dashboard
-https://your-domain.com/dashboard
-```
-
-## 4. 현재 프로젝트에 맞는 설정 예시
-
-### 로컬 개발
-```text
-http://localhost:3000/dashboard
-```
-
-### 배포 개발
-```text
-https://your-app-domain.com/dashboard
-```
-
-### 예외: 로그인 페이지로 리디렉션을 원할 경우
-```text
-http://localhost:3000/
-https://your-app-domain.com/
-```
-
-## 5. 프론트엔드 코드에서의 redirectTo 설정
-
-현재 프로젝트의 로그인 버튼은 아래와 같은 구조를 사용하고 있습니다.
-
-```js
-redirectTo: `${window.location.origin}/dashboard`
-```
-
-즉, 로컬에서는:
-
-```text
-http://localhost:3000/dashboard
-```
-
-배포 환경에서는:
-
-```text
-https://your-app-domain.com/dashboard
-```
-
-로 변환됩니다.
-
-## 6. 자주 발생하는 문제
-
-### 문제 1: Redirect URL이 정확히 일치하지 않음
-- `http://localhost:3000/dashboard` 와 `http://localhost:3000/dashboard/` 는 다르게 인식될 수 있음
-- 끝 슬래시 유무를 맞춰야 합니다.
-
-### 문제 2: Google OAuth Client 설정과 Supabase 설정 불일치
-- Supabase에서 등록한 URL과 Google Cloud Console에서 허용한 URL이 다르면 실패
-
-### 문제 3: 프론트엔드 경로가 잘못됨
-- 로그인 성공 후 `/dashboard`가 아닌 `/login`으로 다시 되돌아가는 구조면 사용자 경험이 깨집니다.
-
-## 7. 체크리스트
-
-- [ ] 로컬 Redirect URL 등록
-- [ ] 배포 Redirect URL 등록
-- [ ] `window.location.origin` 기준 경로와 일치
-- [ ] `/dashboard` 경로가 실제 존재하는 페이지인지 확인
-- [ ] Supabase Auth Provider에서 Google 활성화
-
-## 8. 권장 값 요약
-
-```text
-http://localhost:3000/dashboard
-https://your-domain.com/dashboard
-```
-
-이 값만 맞으면 로컬 개발과 실제 배포 환경 모두 안정적으로 구동됩니다.
+1. 로그인 화면에서 Google 버튼 클릭
+2. Google 인증 후 `/auth/callback`으로 복귀
+3. Supabase access token을 `/api/v1/auth/social-login`으로 전달
+4. 백엔드가 Supabase 사용자 정보를 검증하고 로컬 사용자를 생성 또는 연결
+5. 앱 JWT 저장 후 `/dashboard`로 이동

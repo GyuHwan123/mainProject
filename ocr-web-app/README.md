@@ -205,7 +205,6 @@ POST /api/v1/auth/social-login
 - password_hash
 - provider
 - provider_id
-- firebase_uid
 - is_active
 - created_at
 - updated_at

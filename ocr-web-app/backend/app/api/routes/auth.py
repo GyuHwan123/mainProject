@@ -105,13 +105,17 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             user = User(
                 name=supabase_user.get("name") or "Supabase User",
                 email=email,
-                provider="supabase",
+                provider=supabase_user.get("provider") or "supabase",
                 provider_id=supabase_user.get("id"),
                 password_hash=None,
             )
             db.add(user)
             db.commit()
             db.refresh(user)
+        elif user.provider != "local":
+            user.provider = supabase_user.get("provider") or "supabase"
+            user.provider_id = supabase_user.get("id")
+            db.commit()
 
         supabase_service.upsert_user(
             email=user.email,

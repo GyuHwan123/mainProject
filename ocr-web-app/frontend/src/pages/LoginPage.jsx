@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
+import { saveAppSession } from '../features/appSession';
 import { supabase } from '../lib/supabase';
 
 export default function LoginPage() {
@@ -12,11 +13,6 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('password123');
   const [loading, setLoading] = useState(false);
 
-  const persistAppSession = (accessToken, userEmail) => {
-    localStorage.setItem('pic_to_text_token', accessToken);
-    localStorage.setItem('pic_to_text_email', userEmail);
-  };
-
   const handleSupabaseSocialLogin = async (provider) => {
     if (!supabase) {
       alert('Supabase 설정이 아직 준비되지 않았습니다. 환경 변수를 확인해주세요.');
@@ -26,7 +22,10 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        redirectTo: `${window.location.origin}/dashboard`,
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: provider === 'google'
+          ? { prompt: 'select_account' }
+          : undefined,
       },
     });
 
@@ -64,8 +63,7 @@ export default function LoginPage() {
       const response = await apiClient.post(endpoint, payload);
 
       if (mode === 'login') {
-        const token = response.data.access_token;
-        persistAppSession(token, response.data.user_email);
+        saveAppSession(response.data);
         navigate('/dashboard');
         return;
       }

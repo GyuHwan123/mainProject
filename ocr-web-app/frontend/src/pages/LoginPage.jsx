@@ -169,6 +169,14 @@ export default function LoginPage() {
             Apple 계정 계속하기
           </button>
 
+          <button
+            className="social-button kakao"
+            type="button"
+            onClick={() => handleSupabaseSocialLogin("kakao")}
+           >
+            Kakao 계정 계속하기
+           </button>
+
           <div className="legal-block">
             <p>기타 방법으로 계실 수 있습니다.</p>
             <p>계속을 클릭함으로써, 귀하는 우리의 라이선스 계약 및 개인정보 처리방침에 동의하게 됩니다.</p>

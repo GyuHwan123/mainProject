@@ -102,7 +102,9 @@ def build_ocr_page(
     items = []
 
     for line in lines:
+
         for item in line:
+
             items.append(
                 OCRItem(
                     text=item["text"],
@@ -123,14 +125,19 @@ def build_ocr_page(
     page_lines = []
 
     for line in lines:
+
         line_text = " ".join(
             item["text"]
             for item in line
         )
 
-        page_lines.append(line_text)
+        page_lines.append(
+            line_text
+        )
 
-    page_text = "\n".join(page_lines)
+    page_text = "\n".join(
+        page_lines
+    )
 
     # confidence 0.5 이하만 출력
     low_confidence_items = [
@@ -141,12 +148,14 @@ def build_ocr_page(
     ]
 
     if low_confidence_items:
+
         print(
             f"\n[페이지 {page_number}] "
             "confidence 0.5 이하"
         )
 
         for item in low_confidence_items:
+
             print(
                 f"텍스트: {item['text']!r}, "
                 f"confidence: "

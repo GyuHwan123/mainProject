@@ -10,8 +10,8 @@ from app.services.file_classifier import (
     FileContentType,
     classify_file,
 )
-from app.services.pdf_service import extract_pdf_text
-from app.services.docx_service import extract_docx_text
+from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_images
+from app.services.docx_service import extract_docx_text, extract_docx_text_and_images
 from app.services.ocr.ocr_parser import build_ocr_page
 
 
@@ -89,6 +89,53 @@ def build_text_page(
         page=page_number,
         text=text.strip(),
         items=[],
+    )
+
+def print_final_result(
+    pages: list[OCRPage],
+) -> None:
+    """
+    OCR/텍스트 추출이 완료된 최종 결과를
+    페이지별로 출력한다.
+
+    파일 형식이나 추출 방식과 관계없이
+    OCRPage.text만 출력한다.
+    """
+
+    print(
+        "\n"
+        + "=" * 70
+    )
+
+    print(
+        "최종 문서 추출 결과"
+    )
+
+    print(
+        "=" * 70
+    )
+
+    for page in pages:
+
+        print(
+            f"\n[페이지 {page.page}]"
+        )
+
+        print(
+            "-" * 70
+        )
+
+        print(
+            page.text
+        )
+
+        print(
+            "-" * 70
+        )
+
+    print(
+        "\n"
+        + "=" * 70
     )
 
 
@@ -273,28 +320,25 @@ async def process_ocr(
             if file_extension == ".pdf":
 
                 print(
-                    "→ PDF 텍스트 + 이미지 처리를 준비합니다."
+                    "→ PDF 텍스트 + 이미지 OCR을 실행합니다."
                 )
 
                 # 현재 단계에서는 기존 OCR 사용
-                pages = run_paddle_ocr(
-                    temp_path
+                pages = extract_pdf_text_and_images(
+                    temp_path,
+                    run_paddle_ocr,
                 )
 
             elif file_extension == ".docx":
 
                 print(
-                    "→ DOCX 텍스트 + 이미지 처리를 준비합니다."
+                    "→ DOCX 텍스트 + 이미지 OCR을 실행합니다."
                 )
 
-                # 현재 단계에서는 DOCX 전체 텍스트를 우선 추출
-                text = extract_docx_text(
-                    temp_path
+                pages = extract_docx_text_and_images(
+                    temp_path,
+                    run_paddle_ocr,
                 )
-
-                pages = [
-                    build_text_page(text)
-                ]
 
                 # TODO:
                 # DOCX 내부 이미지 추출 후
@@ -316,6 +360,13 @@ async def process_ocr(
 
             pages = []
 
+        # ---------------------------------
+        # 최종 결과 출력
+        # ---------------------------------
+
+        print_final_result(
+            pages
+        )
         # ---------------------------------
         # 응답
         # ---------------------------------

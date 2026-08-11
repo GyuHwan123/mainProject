@@ -1,6 +1,11 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from docx import Document
+from docx2pdf import convert
+
+from app.schemas.ocr import OCRPage
+from app.services.pdf_service import extract_pdf_text_and_images
 
 
 def extract_docx_text(
@@ -55,3 +60,41 @@ def extract_docx_text(
                 )
 
     return "\n".join(texts)
+
+def extract_docx_text_and_images(
+    file_path: Path,
+    ocr_runner,
+) -> list[OCRPage]:
+    """
+    DOCX의 텍스트와 이미지를 함께 처리한다.
+
+    Microsoft Word를 이용해 DOCX를 PDF로 변환한 뒤,
+    기존 PDF mixed-content 처리 로직을 재사용한다.
+    """
+
+    with TemporaryDirectory() as temp_dir:
+
+        temp_path = Path(temp_dir)
+
+        pdf_path = (
+            temp_path
+            / f"{file_path.stem}.pdf"
+        )
+
+        # ---------------------------------
+        # DOCX → PDF
+        # ---------------------------------
+
+        convert(
+            str(file_path),
+            str(pdf_path),
+        )
+
+        # ---------------------------------
+        # PDF mixed 처리
+        # ---------------------------------
+
+        return extract_pdf_text_and_images(
+            pdf_path,
+            ocr_runner,
+        )

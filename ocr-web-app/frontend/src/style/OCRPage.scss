@@ -1,0 +1,813 @@
+@use "./variables" as *;
+@use "sass:color";
+
+%flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+%grid-center {
+  display: grid;
+  place-items: center;
+}
+
+%text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@mixin icon-button($size: 32px) {
+  width: $size;
+  height: $size;
+  @extend %grid-center;
+  border: 1px solid rgba($line, 0.55);
+  border-radius: 7px;
+  color: $main-color;
+  background: $all;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: rgba($sub-color, 0.12);
+  }
+  &:disabled {
+    opacity: 0.35;
+    cursor: default;
+  }
+}
+
+.ocr-app-shell {
+  width: 100%;
+  min-width: 0;
+  height: 100vh;
+  display: flex;
+  overflow: hidden;
+  color: $bgd;
+  background: $bg-app;
+  font-family: Inter, Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  &, * {
+    box-sizing: border-box;
+  }
+  button, input {
+    font: inherit;
+  }
+
+  .sidebar-panel {
+    width: 250px;
+    flex: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    background: $all;
+    border-right: 1px solid rgba($line, 0.55);
+    border-radius: 0;
+
+    .sidebar-brand {
+      height: 72px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid rgba($line, 0.32);
+
+      img {
+        width: 90%;
+        object-fit: contain;
+      }
+    }
+
+    .new-project-button {
+      height: 38px;
+      margin: 16px 16px 10px;
+      color: $all;
+      background: $main-color;
+      border: 0;
+      border-radius: 6px;
+      box-shadow: 0 5px 12px rgba($main-color, 0.18);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+
+      &:hover {
+        background: $midel-color;
+      }
+    }
+
+    .sidebar-search {
+      position: relative;
+      margin: 0 16px 18px;
+
+      > span {
+        position: absolute;
+        left: 11px;
+        top: 50%;
+        color: $midel-color;
+        transform: translateY(-54%);
+      }
+
+      input {
+        width: 100%;
+        height: 34px;
+        padding: 0 10px 0 31px;
+        color: $bgd;
+        background: $bg-app;
+        border: 1px solid rgba($line, 0.5);
+        border-radius: 6px;
+        outline: 0;
+        font-size: 12px;
+        font-weight: 500;
+
+        &:focus {
+          border-color: $sub-color;
+          box-shadow: 0 0 0 3px rgba($sub-color, 0.12);
+        }
+        &::placeholder {
+          color: rgba($bgd, 0.45);
+        }
+      }
+    }
+
+    .sidebar-history {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      border-top: 1px solid rgba($line, 0.32);
+
+      h2 {
+        margin: 18px 18px 8px;
+        color: $bgd;
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .history-item {
+        width: calc(100% - 20px);
+        margin: 0 10px;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 10px;
+        color: $bgd;
+        background: transparent;
+        border: 0;
+        border-radius: 7px;
+        text-align: left;
+        cursor: pointer;
+
+        &:hover, &.active {
+          color: $main-color;
+          background: rgba($sub-color, 0.12);
+        }
+
+        .doc-icon { font-size: 25px; }
+        .doc-info {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+
+        strong {
+          @extend %text-ellipsis;
+          font-size: 13px;
+        }
+
+        small {
+          color: rgba($bgd, 0.6);
+          font-size: 10px;
+          font-weight: 500;
+        }
+      }
+    }
+
+    .sidebar-user {
+      min-height: 100px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      border-top: 1px solid rgba($line, 0.42);
+
+      .user-avatar {
+        width: 32px;
+        height: 32px;
+        @extend %grid-center;
+        flex: none;
+        color: $all;
+        background: $midel-color;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 800;
+        object-fit: cover;
+      }
+
+      .user-details {
+        min-width: 0;
+        display: grid;
+        gap: 2px;
+      }
+
+      strong { font-size: 16px; }
+      small { color: rgba($bgd, 0.5); font-size: 12px; }
+
+      button {
+        margin-left: auto;
+        color: $midel-color;
+        background: none;
+        border: 0;
+        font-size: 25px;
+        cursor: pointer;
+      }
+    }
+  }
+  .ocr-workspace {
+    flex: 1;
+    width: 0;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+
+    .ocr-header {
+      min-height: 72px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      background: $all;
+      border-bottom: 1px solid rgba($line, 0.45);
+
+      .header-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        > div {
+          display: grid;
+          gap: 2px;
+        }
+        h1 {
+          margin: 0;
+          color: $main-color;
+          font-size: 24px;
+          letter-spacing: -0.02em;
+        }
+      }
+
+      .back-button {
+        @include icon-button(30px);
+        font-size: 30px;
+        line-height: 0;
+        padding-bottom: 5px;
+      }
+
+      .ocr-header-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+
+        .extract-method {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          color: $midel-color;
+          font-size: 14px;
+          font-weight: 500;
+
+          i {
+            width: 10px;
+            height: 10px;
+            background: $point-color;
+            border: 1px solid color.adjust($point-color, $lightness: -12%);
+            border-radius: 50%;
+          }
+        }
+
+        .ocr-primary {
+          padding: 9px 15px;
+          color: $all;
+          background: $main-color;
+          border: 0;
+          border-radius: 6px;
+          font-size: 14px;
+          font-weight: 600;
+          cursor: pointer;
+
+          &:hover {
+            background: $midel-color;
+          }
+        }
+      }
+    }
+
+    .ocr-filebar {
+      min-height: 67px;
+      padding: 9px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: $all;
+      border-bottom: 1px solid rgba($line, 0.4);
+
+      .file-identity {
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+
+        > span:last-child {
+          min-width: 0;
+          display: grid;
+          gap: 3px;
+        }
+        strong {
+          @extend %text-ellipsis;
+          color: $bgd;
+          font-size: 14px;
+        }
+        small {
+          color: rgba($bgd, 0.5);
+          font-size: 10px;
+          font-weight: 500;
+        }
+      }
+      .pdf-badge {
+        width: 40px;
+        height: 38px;
+        @extend %grid-center;
+        flex: none;
+        color: $point-color;
+        background: $main-color;
+        border-radius: 5px;
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .ghost-button {
+        padding: 7px 11px;
+        color: $main-color;
+        background: $all;
+        border: 1px solid rgba($line, 0.55);
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+      }
+    }
+
+    .ocr-editor {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 150px minmax(360px, 1fr) minmax(300px, 36%);
+      overflow: hidden;
+      background: $all;
+
+      // Common Panel Heading
+      .panel-heading {
+        min-height: 50px;
+        padding: 0 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: $main-color;
+        border-bottom: 1px solid rgba($line, 0.35);
+        font-size: 14px;
+        font-weight: 750;
+
+        b {
+          min-width: 22px;
+          padding: 3px 6px;
+          text-align: center;
+          color: $midel-color;
+          background: rgba($sub-color, 0.13);
+          border-radius: 5px;
+          font-size: 12px;
+        }
+      }
+
+      // Column 1: Page Thumbnails Panel
+      .pages-panel {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: $all;
+        border-right: 1px solid rgba($line, 0.48);
+
+        .thumb-list {
+          flex: 1;
+          overflow-y: auto;
+          padding: 11px;
+        }
+
+        .page-thumb {
+          width: 100%;
+          margin-bottom: 10px;
+          padding: 6px;
+          display: grid;
+          gap: 6px;
+          color: $midel-color;
+          background: transparent;
+          border: 1px solid transparent;
+          border-radius: 7px;
+          font-size: 9px;
+          cursor: pointer;
+
+          &:hover, &.active {
+            color: $main-color;
+            background: rgba($sub-color, 0.12);
+            border-color: rgba($sub-color, 0.65);
+            font-weight: 750;
+          }
+
+          .thumb-paper {
+            height: 100px;
+            @extend %grid-center;
+            overflow: hidden;
+            background: $bg-app;
+            border-radius: 4px;
+
+            .pdf-thumb-canvas {
+              max-width: 100%;
+              max-height: 100%;
+              box-shadow: 0 2px 7px rgba($bgd, 0.12);
+            }
+          }
+        }
+
+        .empty-pages {
+          padding: 34px 2px;
+          color: rgba($bgd, 0.4);
+          font-size: 12px;
+          font-weight: 500;
+          line-height: 1.65;
+          text-align: center;
+        }
+      }
+
+      // Column 2: PDF Preview Panel
+      .preview-panel {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: color.adjust($bg-app, $lightness: -2%);
+
+        .preview-toolbar {
+          min-height: 50px;
+          padding: 0 13px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          color: $midel-color;
+          background: $all;
+          border-bottom: 1px solid rgba($line, 0.4);
+          font-size: 12px;
+
+          > div {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+          }
+          strong {
+            color: $main-color;
+            font-size: 14px;
+          }
+          button {
+            @include icon-button(25px);
+          }
+        }
+
+        .preview-stage {
+          position: relative;
+          flex: 1;
+          min-height: 0;
+          padding: 24px;
+          display: flex;
+          align-items: flex-start;
+          justify-content: center;
+          overflow: auto;
+
+          .pdf-main-canvas {
+            max-width: none;
+            background: $all;
+            box-shadow: 0 6px 22px rgba($bgd, 0.17);
+          }
+
+          .dropzone {
+            width: min(360px, 86%);
+            min-height: 220px;
+            margin: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            color: $midel-color;
+            background: rgba($all, 0.76);
+            border: 1.5px dashed rgba($midel-color, 0.55);
+            border-radius: 12px;
+            cursor: pointer;
+
+            strong { color: $main-color; font-size: 20px; }
+            small { font-size: 14px; }
+
+            .drop-icon {
+              width: 46px;
+              height: 46px;
+              margin-bottom: 5px;
+              @extend %grid-center;
+              color: $main-color;
+              background: rgba($sub-color, 0.18);
+              border-radius: 50%;
+              font-size: 21px;
+            }
+          }
+
+          .loader {
+            margin: auto;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            color: $midel-color;
+            font-size: 14px;
+
+            span {
+              width: 17px;
+              height: 17px;
+              border: 2px solid rgba($sub-color, 0.3);
+              border-top-color: $main-color;
+              border-radius: 50%;
+              animation: ocr-spin 0.7s linear infinite;
+            }
+          }
+
+          .ocr-error {
+            position: absolute;
+            bottom: 16px;
+            padding: 9px 12px;
+            color: #a52b37;
+            background: #fff1f2;
+            border: 1px solid #f0bdc2;
+            border-radius: 7px;
+            font-size: 14px;
+          }
+        }
+      }
+
+      // Column 3: Extracted Text Panel
+      .text-panel {
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        background: $all;
+        border-left: 1px solid rgba($line, 0.45);
+
+        .text-tabs {
+          min-height: 50px;
+          padding: 0 12px;
+          display: flex;
+          gap: 16px;
+          border-bottom: 1px solid rgba($line, 0.35);
+
+          button {
+            position: relative;
+            padding: 0;
+            color: rgba($bgd, 0.5);
+            background: transparent;
+            border: 0;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+
+            &.active {
+              color: $main-color;
+              font-weight: 800;
+
+              &::after {
+                position: absolute;
+                right: 0;
+                bottom: 0;
+                left: 0;
+                height: 2px;
+                content: "";
+                background: $main-color;
+              }
+            }
+          }
+        }
+
+        .text-header {
+          min-height: 54px;
+          padding: 0 15px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          border-bottom: 1px solid rgba($line, 0.3);
+
+          > div { display: grid; gap: 2px; }
+          span { color: $main-color; font-size: 14px; font-weight: 800; }
+          small { color: rgba($bgd, 0.45); font-size: 12px; font-weight: 500}
+          button { @include icon-button(28px); }
+        }
+
+        .text-meta {
+          padding: 9px 15px;
+          display: flex;
+          gap: 6px;
+          border-bottom: 1px solid rgba($line, 0.25);
+
+          span {
+            padding: 4px 7px;
+            color: $midel-color;
+            background: rgba($sub-color, 0.12);
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 700;
+
+            &:last-child {
+              color: $main-color;
+              background: rgba($point-color, 0.35);
+            }
+          }
+        }
+
+        .extracted-copy {
+          flex: 1;
+          min-height: 0;
+          padding: 18px;
+          overflow-y: auto;
+          color: $bgd;
+          font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+          font-size: 14px;
+          line-height: 1.8;
+          white-space: pre-wrap;
+          word-break: break-word;
+
+          &.placeholder {
+            @extend %grid-center;
+            padding: 35px;
+            color: rgba($bgd, 0.4);
+            text-align: center;
+            font-family: inherit;
+          }
+        }
+
+        .text-note {
+          margin: 0 14px 14px;
+          padding: 10px;
+          display: flex;
+          align-items: flex-start;
+          gap: 8px;
+          color: $midel-color;
+          background: $bg-app;
+          border-radius: 7px;
+          font-size: 12px;
+          line-height: 1.5;
+
+          b {
+            width: 15px;
+            height: 15px;
+            @extend %grid-center;
+            flex: none;
+            color: $main-color;
+            background: $point-color;
+            border-radius: 50%;
+            font-size: 12px;
+            font-weight: 700;
+            line-height: 1;
+          }
+          p { margin: 0; }
+        }
+      }
+    }
+  }
+
+  @media (max-width: 1050px) {
+    .sidebar-panel { width: 190px; }
+    .ocr-workspace .ocr-editor {
+      grid-template-columns: 112px minmax(340px, 1fr) 290px;
+    }
+  }
+
+  @media (max-width: 800px) {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+
+    .sidebar-panel {
+      width: 68px;
+      min-height: 100vh;
+      position: sticky;
+      top: 0;
+      align-self: flex-start;
+
+      .sidebar-brand {
+        padding-inline: 10px;
+        img { width: 46px; }
+      }
+
+      .new-project-button {
+        margin-inline: 8px;
+        font-size: 0;
+        &::after {
+          content: "+";
+          font-size: 20px;
+        }
+      }
+
+      .sidebar-search,
+      .sidebar-history h2,
+      .history-item .doc-info,
+      .sidebar-user .user-details,
+      .sidebar-user button {
+        display: none;
+      }
+
+      .sidebar-history .history-item {
+        width: 48px;
+        margin: 10px;
+        justify-content: center;
+      }
+
+      .sidebar-user {
+        justify-content: center;
+        padding-inline: 0;
+      }
+    }
+
+    .ocr-workspace {
+      width: auto;
+      min-height: 100vh;
+
+      .ocr-header {
+        padding: 12px;
+        align-items: flex-start;
+
+        .extract-method {
+          display: none;
+        }
+      }
+
+      .ocr-editor {
+        min-height: 920px;
+        grid-template-columns: 96px minmax(300px, 1fr);
+        grid-template-rows: 560px 360px;
+
+        .text-panel {
+          grid-column: 1 / -1;
+          border-top: 1px solid rgba($line, 0.45);
+          border-left: 0;
+        }
+      }
+    }
+  }
+
+  @media (max-width: 560px) {
+    .ocr-workspace {
+      .ocr-header {
+        h1 { font-size: 15px; }
+        .ocr-header-actions .ocr-primary { padding-inline: 10px; }
+      }
+
+      .ocr-filebar { padding-inline: 12px; }
+
+      .ocr-editor {
+        min-height: 1080px;
+        grid-template-columns: 1fr;
+        grid-template-rows: 110px 580px 390px;
+
+        .pages-panel {
+          border-right: 0;
+          border-bottom: 1px solid rgba($line, 0.45);
+
+          .panel-heading { display: none; }
+          .thumb-list {
+            display: flex;
+            gap: 8px;
+            overflow-x: auto;
+            overflow-y: hidden;
+          }
+          .page-thumb {
+            width: 72px;
+            flex: none;
+            .thumb-paper { height: 62px; }
+          }
+        }
+
+        .preview-panel .preview-toolbar > strong {
+          display: none;
+        }
+      }
+    }
+  }
+}
+
+@keyframes ocr-spin {
+  to { transform: rotate(360deg); }
+}

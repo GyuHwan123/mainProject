@@ -1,0 +1,255 @@
+@use './variables' as *;
+
+%flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+%form-control-base {
+  width: 100%;
+  min-height: 58px;
+  border-radius: 14px;
+  font: inherit;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.login-shell {
+  min-height: 100vh;
+  padding: 100px;
+  @extend %flex-center;
+  color: $bgd;
+  background: $bg-app;
+
+  @media (max-width: 600px) {
+    padding: 40px;
+  }
+
+  &, *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  button, input {
+    font: inherit;
+  }
+
+  .login-window {
+    width: min(1200px, 92vw);
+    min-height: 760px;
+    display: grid;
+    grid-template-columns: 1.08fr 0.92fr;
+    overflow: hidden;
+    background: $all;
+    border: 1px solid rgba($line, 0.45);
+    border-radius: 24px;
+    box-shadow: 0 18px 40px rgba($bgd, 0.15);
+
+    @media (max-width: 1120px) {
+      grid-template-columns: 1fr;
+    }
+
+    @media (max-width: 600px) {
+      width: 100%;
+      min-height: calc(100vh - 120px);
+      border-radius: 18px;
+    }
+  }
+
+  .login-visual {
+    min-height: 100%;
+    padding: 30px;
+    @extend %flex-center;
+    background: linear-gradient(180deg, rgba($sub-color, 0.45), rgba($midel-color, 0.3));
+
+    @media (max-width: 1120px) {
+      display: none; 
+    }
+
+    .login-illustration {
+      position: relative;
+      width: 100%;
+      height: 660px;
+      overflow: hidden;
+      background: linear-gradient(180deg, rgba($all, 0.35), rgba($all, 0));
+      border-radius: 18px;
+
+      .cloud {
+        position: absolute;
+        top: 40px;
+        left: 120px;
+        width: 220px;
+        height: 90px;
+        background: rgba($all, 0.55);
+        border-radius: 80px;
+        box-shadow: 
+          30px 20px 0 rgba($all, 0.5), 
+          130px 15px 0 rgba($all, 0.4);
+      }
+
+      .desktop-card {
+        position: absolute;
+        bottom: 95px;
+        left: 110px;
+        width: 430px;
+        height: 400px;
+        background: rgba($all, 0.8);
+        border: 6px solid rgba($main-color, 0.75);
+        border-radius: 22px 22px 18px 18px;
+        box-shadow: inset 0 0 0 8px rgba($sub-color, 0.18);
+      }
+
+      .person {
+        position: absolute;
+        right: 140px;
+        bottom: 70px;
+        width: 180px;
+        height: 170px;
+        background: linear-gradient(180deg, $point-color, rgba($point-color, 0.65));
+        border-radius: 50% 50% 40% 40%;
+        box-shadow: inset 0 0 0 8px rgba($all, 0.75);
+      }
+
+      .plant {
+        position: absolute;
+        bottom: 60px;
+        left: 90px;
+        width: 180px;
+        height: 120px;
+        background: linear-gradient(180deg, $sub-color, $midel-color);
+        border-radius: 80px 80px 0 0;
+      }
+    }
+  }
+
+  .login-panel {
+    padding: 42px 54px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    background: $all;
+
+    @media (max-width: 600px) {
+      padding: 32px 24px;
+    }
+
+    h1 {
+      margin: 0 0 36px;
+      color: $main-color;
+      font-size: 2.15rem;
+      font-weight: 700;
+      letter-spacing: -0.04em;
+      display: flex;
+      img{width: 200px; margin-right: 20px;}
+
+      @media (max-width: 600px) {
+        margin-bottom: 28px;
+        font-size: 1.75rem;
+      }
+    }
+
+    .auth-toggle {
+      margin-bottom: 18px;
+      display: flex;
+      gap: 10px;
+
+      button {
+        min-height: 42px;
+        flex: 1;
+        color: $midel-color;
+        background: $bg-app;
+        border: 1px solid rgba($line, 0.45);
+        border-radius: 10px;
+        cursor: pointer;
+
+        &.active {
+          color: $all;
+          background: $main-color;
+          border-color: $main-color;
+        }
+      }
+    }
+
+    .login-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+
+      input {
+        @extend %form-control-base;
+        padding: 0 18px;
+        color: $bgd;
+        background: $bg-app;
+        border: 1px solid rgba($line, 0.55);
+        outline: none;
+
+        &::placeholder {
+          color: rgba($bgd, 0.45);
+        }
+
+        &:focus {
+          border-color: $sub-color;
+          box-shadow: 0 0 0 3px rgba($sub-color, 0.16);
+        }
+      }
+    }
+    .primary-button,
+    .social-button {
+      @extend %form-control-base;
+      border: 0;
+      cursor: pointer;
+      gap: 5px;
+      .googleIcon{font-size: 20px;}
+      .kakaoIcon{font-size: 20px; }
+
+      &:hover:not(:disabled) {
+        transform: translateY(-1px);
+      }
+
+      &:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+    }
+
+    .primary-button {
+      color: $all;
+      background: $main-color;
+      font-weight: 700;
+
+      &:hover:not(:disabled) {
+        background: $midel-color;
+      }
+    }
+
+    .social-button {
+      margin-top: 12px;
+      color: $main-color;
+      background: $all;
+      border: 1px solid rgba($line, 0.6);
+      @extend %flex-center;
+
+      &:hover:not(:disabled) {
+        background: rgba($sub-color, 0.1);
+      }
+    }
+
+    .hint-text {
+      margin: 18px 0 28px;
+      color: $midel-color;
+      font-size: 0.94rem;
+      line-height: 1.5;
+    }
+
+    .legal-block {
+      margin-top: 28px;
+      color: rgba($bgd, 0.55);
+      font-size: 0.85rem;
+      line-height: 1.6;
+    }
+
+    /* .hidden-link {
+      position: absolute;
+      left: -9999px;
+    } */
+  }
+}

@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import { saveAppSession } from '../features/appSession';
 import { supabase } from '../lib/supabase';
+import '../style/LoginPage.scss';
+import { RiGoogleFill } from "react-icons/ri";
+import { RiKakaoTalkFill } from "react-icons/ri";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -94,7 +97,10 @@ export default function LoginPage() {
         </div>
 
         <div className="login-panel">
-          <h1>환영합니다. PicToText</h1>
+            <h1>
+                <img src="/DocAI.png" alt="DOCUNEX AI" />
+                환영합니다.
+            </h1>
 
           <div className="auth-toggle">
             <button
@@ -159,7 +165,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleSupabaseSocialLogin('google')}
           >
-            Google 계정 계속하기
+            <RiGoogleFill className='googleIcon'/>Google 계정 계속하기
           </button>
           <button
             className="social-button apple"
@@ -168,23 +174,20 @@ export default function LoginPage() {
           >
             Apple 계정 계속하기
           </button>
-
           <button
             className="social-button kakao"
             type="button"
             onClick={() => handleSupabaseSocialLogin("kakao")}
            >
-            Kakao 계정 계속하기
+            <RiKakaoTalkFill className='kakaoIcon'/> Kakao 계정 계속하기
            </button>
-
           <div className="legal-block">
             <p>기타 방법으로 계실 수 있습니다.</p>
             <p>계속을 클릭함으로써, 귀하는 우리의 라이선스 계약 및 개인정보 처리방침에 동의하게 됩니다.</p>
           </div>
         </div>
       </div>
-
-      <Link to="/dashboard" className="hidden-link">대시보드로 이동</Link>
+      {/* <Link to="/dashboard" className="hidden-link">대시보드로 이동</Link> */}
     </div>
   );
 }

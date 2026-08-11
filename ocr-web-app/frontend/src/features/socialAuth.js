@@ -11,6 +11,12 @@ export const socialProviders = [
     enabled: true,
     status: 'Supabase OAuth 준비 완료',
   },
+  {
+    id: 'kakao',
+    label: 'Kakao',
+    enabled: true,
+    status: 'Kakao OAuth 준비 완료',
+  },
 ];
 
 export function getSocialLoginConfig() {

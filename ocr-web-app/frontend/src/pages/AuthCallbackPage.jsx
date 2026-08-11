@@ -10,24 +10,50 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     let active = true;
 
-    async function completeLogin() {
-      try {
-        if (!supabase) throw new Error('Supabase 환경변수가 설정되지 않았습니다.');
 
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
+     async function completeLogin() {
+        try {
+          if (!supabase) {
+            throw new Error('Supabase 환경변수가 설정되지 않았습니다.');
+          }
 
-        await exchangeSupabaseSession(data.session);
-        if (active) navigate('/dashboard', { replace: true });
-      } catch (error) {
-        if (!active) return;
-        setErrorMessage(
-          error?.response?.data?.detail ||
+          const params = new URLSearchParams(window.location.search);
+          const oauthError =
+            params.get('error_description') ||
+            params.get('error');
+
+          if (oauthError) {
+            throw new Error(oauthError);
+          }
+
+          const {
+            data: sessionData,
+            error: sessionError,
+          } = await supabase.auth.getSession();
+
+          if (sessionError) {
+            throw sessionError;
+          }
+
+          if (!sessionData.session) {
+            throw new Error('Supabase 로그인 세션이 생성되지 않았습니다.');
+          }
+
+          await exchangeSupabaseSession(sessionData.session);
+
+          if (active) {
+            navigate('/dashboard', { replace: true });
+          }
+        } catch (error) {
+          if (!active) return;
+
+          setErrorMessage(
+            error?.response?.data?.detail ||
             error?.message ||
-            'Google 로그인 처리 중 오류가 발생했습니다.',
-        );
+            '소셜 로그인 처리 중 오류가 발생했습니다.'
+          );
+        }
       }
-    }
 
     completeLogin();
     return () => {

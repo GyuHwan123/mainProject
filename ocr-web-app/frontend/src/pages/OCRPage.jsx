@@ -16,7 +16,6 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false }) {
     if (!pdf) return undefined;
     let cancelled = false;
     let renderTask;
-
     pdf.getPage(pageNumber).then((page) => {
       if (cancelled || !canvasRef.current) return;
       const viewport = page.getViewport({ scale });
@@ -25,7 +24,6 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false }) {
       canvas.height = viewport.height;
       renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport });
     });
-
     return () => {
       cancelled = true;
       renderTask?.cancel();
@@ -34,6 +32,7 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false }) {
 
   return <canvas ref={canvasRef} className={thumbnail ? 'pdf-thumb-canvas' : 'pdf-main-canvas'} />;
 }
+
 
 export default function OCRPage({ user }) {
   const [pdf, setPdf] = useState(null);
@@ -50,7 +49,6 @@ export default function OCRPage({ user }) {
       setError('PDF 파일만 업로드할 수 있습니다.');
       return;
     }
-
     setLoading(true);
     setError('');
     try {
@@ -83,10 +81,8 @@ export default function OCRPage({ user }) {
     anchor.click();
     URL.revokeObjectURL(url);
   };
-
   const currentText = pageTexts[pageNumber - 1] || '';
   
-
   return (
     <div className="ocr-app-shell">
       <aside className="sidebar-panel">
@@ -163,6 +159,7 @@ export default function OCRPage({ user }) {
                   <span>{index + 1} 페이지</span>
                 </button>
               )) : <div className="empty-pages">PDF를 업로드하면<br />페이지별로 표시됩니다.</div>}
+
             </div>
           </aside>
 

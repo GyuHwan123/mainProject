@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     SUPABASE_USERS_TABLE: str = "users"
     GOOGLE_CLIENT_ID: str = ""
     APPLE_CLIENT_ID: str = ""
+    KAKAO_CLIENT_ID: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),

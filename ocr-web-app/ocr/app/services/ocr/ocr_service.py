@@ -1,4 +1,5 @@
 import json
+import numpy as np
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -13,6 +14,7 @@ from app.services.file_classifier import (
 from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_images
 from app.services.docx_service import extract_docx_text, extract_docx_text_and_images
 from app.services.ocr.ocr_parser import build_ocr_page
+from app.services.preprocess_service import preprocess_image
 
 
 ocr = PaddleOCR(
@@ -27,17 +29,22 @@ ocr = PaddleOCR(
 
 
 def run_paddle_ocr(
-    file_path: Path,
+    source: Path | np.ndarray,
 ) -> list[OCRPage]:
     """
     PaddleOCR을 실행하고
     OCRPage 목록을 반환한다.
     """
-
+    
     pages = []
 
+    if isinstance(source, Path):
+        ocr_input = str(source)
+    else:
+        ocr_input = source
+
     results = ocr.predict(
-        str(file_path)
+        ocr_input
     )
 
     for result in results:
@@ -279,11 +286,15 @@ async def process_ocr(
         elif content_type == FileContentType.IMAGE_ONLY:
 
             print(
-                "→ PaddleOCR을 실행합니다."
+                "→ 이미지 전처리 후 PaddleOCR을 실행합니다."
+            )
+
+            processed_image = preprocess_image(
+                temp_path
             )
 
             pages = run_paddle_ocr(
-                temp_path
+                processed_image
             )
 
         # =================================

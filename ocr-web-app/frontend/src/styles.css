@@ -2,7 +2,7 @@
 *{margin: 0; padding: 0; box-sizing: border-box;}
 a{text-decoration: none;}
 
-/* :root {
+:root {
   --bg: #1d1f2a;
   --panel: #2a2c36;
   --panel-2: #3a3d49;
@@ -428,11 +428,7 @@ button, input, select {
 }
 
 @media (max-width: 1120px) {
-<<<<<<< HEAD
   .dashboard-grid, .report-layout, .mypage-grid, .ocr-layout {
-=======
-  .login-window, .dashboard-grid, .report-layout, .mypage-grid, .ocr-layout {
->>>>>>> 01ff4bb7f4ecd0fa8310b2d305cdc252ddb9d054
     grid-template-columns: 1fr;
   }
 
@@ -451,7 +447,7 @@ button, input, select {
     flex-direction: row;
     margin: 0;
   }
-} */
+}
 /* .auth-callback {
   min-height: 100vh;
   display: grid;
@@ -573,7 +569,7 @@ button, input, select {
 
  */
 /* Main dashboard */
-/* .dashboard-shell { min-height: 100vh; color: #172033; background: #f4f6fa; }
+.dashboard-shell { min-height: 100vh; color: #172033; background: #f4f6fa; }
 .home-dashboard { position: relative; flex: 1; min-width: 0; padding: 0 34px 34px; overflow: hidden; }
 .home-header { min-height: 144px; display: flex; align-items: center; justify-content: space-between; }
 .home-header h1 { margin: 5px 0 8px; font-size: clamp(24px, 2.4vw, 34px); letter-spacing: -.055em; }.home-header > div > p:last-child { margin: 0; color: #7b8598; font-size: 12px; }
@@ -603,4 +599,4 @@ button, input, select {
   place-items: center;
   font-size: 11px;
 
-} */
+}

@@ -179,7 +179,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleSupabaseSocialLogin("kakao")}
            >
-            Kakao 계정 계속하기
+            <RiKakaoTalkFill className='kakaoIcon'/> Kakao 계정 계속하기
            </button>
           <div className="legal-block">
             <p>기타 방법으로 계실 수 있습니다.</p>

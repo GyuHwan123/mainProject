@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import { IoMdSettings } from 'react-icons/io';
+import { IoDocumentTextOutline } from 'react-icons/io5';
+import apiClient from '../api/client';
+import { getAppUser, saveAppUser } from '../features/appSession';
 import '../style/OCRPage.scss';
-import { IoMdSettings } from "react-icons/io";
-import { IoDocumentTextOutline } from "react-icons/io5";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -34,7 +36,8 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false }) {
 }
 
 
-export default function OCRPage({ user }) {
+export default function OCRPage() {
+  const [user, setUser] = useState(getAppUser);
   const [pdf, setPdf] = useState(null);
   const [fileName, setFileName] = useState(EMPTY_FILE_NAME);
   const [pageNumber, setPageNumber] = useState(1);
@@ -42,7 +45,26 @@ export default function OCRPage({ user }) {
   const [zoom, setZoom] = useState(1.05);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [profileImageFailed, setProfileImageFailed] = useState(false);
   const inputRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+
+    apiClient.get('/auth/me')
+      .then(({ data }) => {
+        if (!active) return;
+        setUser(data);
+        saveAppUser(data);
+      })
+      .catch(() => {
+        // 저장된 세션 정보로 사용자 영역을 유지합니다.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadPdf = async (file) => {
     if (!file || file.type !== 'application/pdf') {
@@ -105,11 +127,12 @@ export default function OCRPage({ user }) {
           </button>
         </div>
         <div className="sidebar-user">
-            {user?.profileImg ? (
+            {user?.profileImg && !profileImageFailed ? (
                 <img 
                 src={user.profileImg} 
                 alt={`${user.name}의 프로필`} 
-                className="user-avatar" 
+                className="user-avatar"
+                onError={() => setProfileImageFailed(true)}
                 />
             ) : (
                 /* DB에 이미지가 없거나 null일 경우 이름의 첫 글자 표시 */

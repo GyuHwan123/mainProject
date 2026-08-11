@@ -3,6 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import { saveAppSession } from '../features/appSession';
 import { supabase } from '../lib/supabase';
+import '../style/LoginPage.scss';
+import { RiGoogleFill } from "react-icons/ri";
+import { RiKakaoTalkFill } from "react-icons/ri";
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -94,7 +97,10 @@ export default function LoginPage() {
         </div>
 
         <div className="login-panel">
-          <h1>환영합니다. PicToText</h1>
+            <h1>
+                <img src="/DocAI.png" alt="DOCUNEX AI" />
+                환영합니다.
+            </h1>
 
           <div className="auth-toggle">
             <button
@@ -159,7 +165,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => handleSupabaseSocialLogin('google')}
           >
-            Google 계정 계속하기
+            <RiGoogleFill className='googleIcon'/>Google 계정 계속하기
           </button>
           <button
             className="social-button apple"
@@ -176,7 +182,7 @@ export default function LoginPage() {
         </div>
       </div>
 
-      <Link to="/dashboard" className="hidden-link">대시보드로 이동</Link>
+      {/* <Link to="/dashboard" className="hidden-link">대시보드로 이동</Link> */}
     </div>
   );
 }

@@ -1,35 +1,108 @@
-from fastapi import APIRouter
-from pydantic import BaseModel
+import re
+from collections import Counter
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
+
+from app.api.routes.auth import require_current_user
+from app.core.database import get_db
+from app.models.ocr_evaluation import OCREvaluation
+from app.models.user import User
+from app.services.supabase_service import supabase_service
 
 router = APIRouter()
 
 
-class ReportSummary(BaseModel):
+class EvaluationCreate(BaseModel):
+    document_id: str
     document_name: str
-    accuracy: float
+    extracted_text: str = Field(min_length=1)
+    ground_truth: str = Field(min_length=1)
+    processing_time_ms: float | None = Field(default=None, ge=0)
+
+
+class EvaluationResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    document_id: str
+    document_name: str
+    processing_time_ms: float | None
+    precision: float
     recall: float
-    embedding_similarity: float
-    status: str = "completed"
+    f1_score: float
+    true_positive: int
+    false_positive: int
+    false_negative: int
+    created_at: datetime
 
 
-@router.get("", response_model=list[ReportSummary])
-def list_reports() -> list[ReportSummary]:
-    return [
-        ReportSummary(
-            document_name="프로젝트 발표자료.pdf",
-            accuracy=0.964,
-            recall=0.932,
-            embedding_similarity=0.91,
-        ),
-        ReportSummary(
-            document_name="영수증_0527.pdf",
-            accuracy=0.941,
-            recall=0.918,
-            embedding_similarity=0.87,
-        ),
-    ]
+def require_developer(user: User = Depends(require_current_user)) -> User:
+    if user.role not in {"DEVELOPER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="개발자 권한이 필요합니다.")
+    return user
 
 
-@router.get("/similar")
-def similar_reports() -> list[str]:
-    return ["프로젝트_4인_발표.pdf", "기획안_요약본.pdf", "회의록_2026.pdf"]
+def score(prediction: str, truth: str) -> tuple[int, int, int, float, float, float]:
+    tokens = lambda value: re.findall(r"[가-힣a-z0-9]+", value.lower())
+    predicted, expected = Counter(tokens(prediction)), Counter(tokens(truth))
+    tp = sum((predicted & expected).values())
+    fp, fn = sum(predicted.values()) - tp, sum(expected.values()) - tp
+    precision = tp / (tp + fp) if tp + fp else 0
+    recall = tp / (tp + fn) if tp + fn else 0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0
+    return tp, fp, fn, precision, recall, f1
+
+
+def character_error_rate(prediction: str, truth: str) -> float:
+    predicted, expected = prediction.lower().strip(), truth.lower().strip()
+    if not expected:
+        return 0.0 if not predicted else 1.0
+    previous = list(range(len(predicted) + 1))
+    for row, expected_char in enumerate(expected, 1):
+        current = [row]
+        for column, predicted_char in enumerate(predicted, 1):
+            current.append(min(current[-1] + 1, previous[column] + 1, previous[column - 1] + (expected_char != predicted_char)))
+        previous = current
+    return previous[-1] / len(expected)
+
+
+@router.post("/evaluations", response_model=EvaluationResult)
+def create_evaluation(payload: EvaluationCreate, user: User = Depends(require_developer), db: Session = Depends(get_db)) -> OCREvaluation:
+    tp, fp, fn, precision, recall, f1 = score(payload.extracted_text, payload.ground_truth)
+    remote = supabase_service.save_ocr_evaluation(
+        user_email=user.email,
+        document_id=payload.document_id,
+        confidence_score=precision,
+        processing_time_ms=round(payload.processing_time_ms or 0),
+        cer_score=character_error_rate(payload.extracted_text, payload.ground_truth),
+        precision_score=precision,
+        recall_score=recall,
+    )
+    evaluation = OCREvaluation(user_email=user.email, **payload.model_dump(), precision=precision, recall=recall, f1_score=f1, true_positive=tp, false_positive=fp, false_negative=fn)
+    db.add(evaluation); db.commit(); db.refresh(evaluation)
+    return EvaluationResult(
+        id=remote["id"], document_id=payload.document_id, document_name=payload.document_name,
+        processing_time_ms=remote.get("processing_time_ms"), precision=precision, recall=recall,
+        f1_score=f1, true_positive=tp, false_positive=fp, false_negative=fn,
+        created_at=remote.get("evaluated_at"),
+    )
+
+
+@router.get("/evaluations", response_model=list[EvaluationResult])
+def list_evaluations(user: User = Depends(require_developer), db: Session = Depends(get_db)) -> list[EvaluationResult]:
+    local_by_document = {row.document_id: row for row in db.query(OCREvaluation).filter(OCREvaluation.user_email == user.email).all()}
+    results = []
+    for row in supabase_service.list_ocr_evaluations(user.email):
+        precision, recall = row.get("precision_score") or 0, row.get("recall_score") or 0
+        local = local_by_document.get(str(row["document_id"]))
+        results.append(EvaluationResult(
+            id=row["id"], document_id=row["document_id"], document_name=row["document_name"],
+            processing_time_ms=row.get("processing_time_ms"), precision=precision, recall=recall,
+            f1_score=(2 * precision * recall / (precision + recall)) if precision + recall else 0,
+            true_positive=local.true_positive if local else 0, false_positive=local.false_positive if local else 0,
+            false_negative=local.false_negative if local else 0, created_at=row["evaluated_at"],
+        ))
+    return results

@@ -2,6 +2,12 @@
 
 PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI + SQLAlchemy 구조로 구성되어 있으며, 로컬 개발 환경에서는 SQLite 기반 검증을 우선 사용하고, 이후 Supabase/PostgreSQL 또는 Docker 환경으로 확장할 수 있도록 설계되어 있습니다.
 
+## 처음 공부하는 분을 위한 문서
+
+- [비전공자를 위한 프로젝트·코드 상세 해설](docs/beginner-project-guide.md)
+- [발표 및 복습용 설명 스크립트](docs/beginner-presentation-script.md)
+- [개발자 가이드](developer-guide.md)
+
 ## 1. 프로젝트 구성
 
 ```text

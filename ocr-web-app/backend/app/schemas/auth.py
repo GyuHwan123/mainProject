@@ -17,6 +17,7 @@ class LoginResponse(BaseModel):
     token_type: str = "bearer"
     user_email: EmailStr
     user_name: str
+    user_role: str = "USER"
 
 
 class SocialLoginRequest(BaseModel):

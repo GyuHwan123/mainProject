@@ -289,13 +289,16 @@ async def process_ocr(
                 "→ 이미지 전처리 후 PaddleOCR을 실행합니다."
             )
 
-            processed_image = preprocess_image(
-                temp_path
-            )
-
-            pages = run_paddle_ocr(
-                processed_image
-            )
+            if file_extension == ".pdf":
+                pages = run_paddle_ocr(temp_path)
+            elif file_extension == ".docx":
+                pages = extract_docx_text_and_images(
+                    temp_path,
+                    run_paddle_ocr,
+                )
+            else:
+                processed_image = preprocess_image(temp_path)
+                pages = run_paddle_ocr(processed_image)
 
         # =================================
         # TEXT_AND_IMAGE
@@ -375,9 +378,8 @@ async def process_ocr(
         # 최종 결과 출력
         # ---------------------------------
 
-        print_final_result(
-            pages
-        )
+        # Do not print extracted document contents. Besides leaking user data,
+        # Windows CP949 consoles can fail on OCR output containing Unicode.
         # ---------------------------------
         # 응답
         # ---------------------------------

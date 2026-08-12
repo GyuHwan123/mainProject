@@ -3,6 +3,42 @@ import { useNavigate } from 'react-router-dom';
 import { exchangeSupabaseSession } from '../features/appSession';
 import { supabase } from '../lib/supabase';
 
+let pendingOAuthCallback = null;
+
+async function exchangeOAuthCallback() {
+  const params = new URLSearchParams(window.location.search);
+  const oauthError = params.get('error_description') || params.get('error');
+
+  if (oauthError) {
+    throw new Error(oauthError);
+  }
+
+  const code = params.get('code');
+  const authResult = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.getSession();
+
+  if (authResult.error) {
+    throw authResult.error;
+  }
+
+  if (!authResult.data?.session) {
+    throw new Error('Supabase 로그인 세션이 생성되지 않았습니다.');
+  }
+
+  await exchangeSupabaseSession(authResult.data.session);
+}
+
+function completeOAuthCallbackOnce() {
+  if (!pendingOAuthCallback) {
+    pendingOAuthCallback = exchangeOAuthCallback().finally(() => {
+      pendingOAuthCallback = null;
+    });
+  }
+
+  return pendingOAuthCallback;
+}
+
 export default function AuthCallbackPage() {
   const navigate = useNavigate();
   const [errorMessage, setErrorMessage] = useState('');
@@ -17,29 +53,7 @@ export default function AuthCallbackPage() {
             throw new Error('Supabase 환경변수가 설정되지 않았습니다.');
           }
 
-          const params = new URLSearchParams(window.location.search);
-          const oauthError =
-            params.get('error_description') ||
-            params.get('error');
-
-          if (oauthError) {
-            throw new Error(oauthError);
-          }
-
-          const {
-            data: sessionData,
-            error: sessionError,
-          } = await supabase.auth.getSession();
-
-          if (sessionError) {
-            throw sessionError;
-          }
-
-          if (!sessionData.session) {
-            throw new Error('Supabase 로그인 세션이 생성되지 않았습니다.');
-          }
-
-          await exchangeSupabaseSession(sessionData.session);
+          await completeOAuthCallbackOnce();
 
           if (active) {
             navigate('/dashboard', { replace: true });

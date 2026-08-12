@@ -140,13 +140,6 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             user.provider_id = supabase_user.get("id")
             db.commit()
 
-        supabase_service.upsert_user(
-            email=user.email,
-            provider=supabase_user.get("provider") or "supabase",
-            provider_id=supabase_user.get("id"),
-            role=user.role,
-        )
-
         token = create_access_token(subject=user.email)
         return LoginResponse(
             access_token=token,

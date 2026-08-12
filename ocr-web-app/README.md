@@ -1,6 +1,6 @@
 # PicToText
 
-PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI + SQLAlchemy 구조로 구성되어 있으며, 로컬 개발 환경에서는 SQLite 기반 검증을 우선 사용하고, 이후 Supabase/PostgreSQL 또는 Docker 환경으로 확장할 수 있도록 설계되어 있습니다.
+PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI + SQLAlchemy 구조로 구성되어 있으며, 모든 개발 환경에서 PostgreSQL을 사용합니다. `DATABASE_URL`에는 PostgreSQL 연결 주소가 반드시 필요합니다.
 
 ## 처음 공부하는 분을 위한 문서
 
@@ -97,8 +97,7 @@ ocr-web-app/
 - HTTPX
 
 ### Database
-- 로컬 개발: SQLite
-- 추후 확장: PostgreSQL + Supabase
+- 모든 환경: PostgreSQL + Supabase
 
 ### OCR
 - 사용 예정: PaddleOCR
@@ -155,7 +154,7 @@ ocr-web-app/
 ### 핵심 값
 
 ```env
-DATABASE_URL=sqlite:///./pic_to_text_dev.db
+DATABASE_URL=postgresql+psycopg2://postgres.PROJECT_REF:DB_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require
 SECRET_KEY=change-this-secret-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
@@ -169,7 +168,7 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ### Backend
 ```powershell
 cd "c:\Users\2Class_13\Desktop\main-ocr-project\ocr-web-app\backend"
-$env:DATABASE_URL='sqlite:///./pic_to_text_dev.db'
+$env:DATABASE_URL='postgresql+psycopg2://postgres.PROJECT_REF:DB_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require'
 python -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 
@@ -249,7 +248,7 @@ POST /api/v1/auth/social-login
 
 ## 12. 팀 협업 팁
 
-- 로컬 개발은 SQLite로 빠르게 검증
+- 모든 개발 컴퓨터는 동일한 PostgreSQL 연결 설정 사용
 - 실제 운영 환경은 Supabase/PostgreSQL로 전환
 - 인증과 OCR 로직은 서버 쪽에서 일원화
 - 프론트는 토큰과 UI 상태만 관리

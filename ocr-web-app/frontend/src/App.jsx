@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { hasAppSession } from './features/appSession';
+import { getAppUser, hasAppSession } from './features/appSession';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
@@ -16,6 +16,13 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+function DeveloperRoute({ children }) {
+  if (!hasAppSession()) return <Navigate to="/login" replace />;
+  const user = getAppUser();
+  if (!['DEVELOPER', 'ADMIN'].includes(user.role) && user.email !== 'developer@docunex.com') return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -25,7 +32,7 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/ocr" element={<ProtectedRoute><OCRPage /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-      <Route path="/reports" element={<ProtectedRoute><ReportPage /></ProtectedRoute>} />
+      <Route path="/reports" element={<DeveloperRoute><ReportPage /></DeveloperRoute>} />
       <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
     </Routes>
   );

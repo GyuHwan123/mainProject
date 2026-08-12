@@ -1,17 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
-import { supabase } from '../lib/supabase';
 import apiClient from '../api/client';
 import { getAppUser, saveAppUser } from '../features/appSession';
 
-const readHistory = () => {
-  try { return JSON.parse(localStorage.getItem('pic_to_text_history')) || []; }
-  catch { return []; }
-};
-
 export default function DashboardPage() {
-  const [history, setHistory] = useState(readHistory);
+  const [history, setHistory] = useState([]);
   const [filter, setFilter] = useState('전체');
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState('');
@@ -21,6 +15,18 @@ export default function DashboardPage() {
   const visibleHistory = useMemo(() => filter === '전체' ? history : history.filter((item) => item.type.includes(filter)), [filter, history]);
   const initials = (user.name || user.email || 'U').trim().slice(0, 2).toUpperCase();
 
+  const loadHistory = () => apiClient.get('/ocr/history').then(({ data }) => {
+    setHistory(data.map((document) => ({
+      id: document.id,
+      name: document.file_name,
+      type: 'OCR 문서',
+      icon: '▤',
+      date: new Date(document.created_at).toLocaleString('ko-KR'),
+      status: document.status === 'completed' ? '완료' : document.status,
+      route: '/ocr',
+    })));
+  });
+
   useEffect(() => {
     let active = true;
     apiClient.get('/auth/me').then(({ data }) => {
@@ -28,25 +34,19 @@ export default function DashboardPage() {
       setUser(data);
       saveAppUser(data);
     }).catch(() => {});
+    loadHistory().catch(() => {});
     return () => { active = false; };
   }, []);
 
   const cloudUpload = async (file) => {
     if (!file) return;
-    if (!supabase) {
-      setNotice('Supabase 환경 변수를 설정하면 클라우드 저장을 사용할 수 있습니다.');
-      return;
-    }
     setUploading(true); setNotice('');
     try {
-      const { data: auth } = await supabase.auth.getUser();
-      const owner = auth.user?.id || 'anonymous';
-      const safeName = file.name.replace(/[^a-zA-Z0-9가-힣._-]/g, '_');
-      const path = `${owner}/${Date.now()}-${safeName}`;
-      const { error } = await supabase.storage.from('documents').upload(path, file);
-      if (error) throw error;
-      const next = [{ id: path, name: file.name, type: '클라우드 저장', icon: '☁', date: '방금 전', status: '저장됨', route: '#' }, ...history];
-      setHistory(next); localStorage.setItem('pic_to_text_history', JSON.stringify(next));
+      const archiveData = new FormData();
+      archiveData.append('file', file);
+      archiveData.append('result_json', JSON.stringify({ filename: file.name, content_type: 'cloud_storage', pages: [] }));
+      await apiClient.post('/ocr/archive', archiveData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
+      await loadHistory();
       setNotice('클라우드에 안전하게 저장했습니다.');
     } catch (error) { setNotice(error.message || '클라우드 저장에 실패했습니다.'); }
     finally { setUploading(false); }

@@ -32,13 +32,27 @@ services:
       ALGORITHM: ${ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
       OLLAMA_BASE_URL: http://ollama:11434
+      OCR_BASE_URL: http://ocr:8001
       SUPABASE_URL: ${SUPABASE_URL:-}
       SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       SUPABASE_USERS_TABLE: ${SUPABASE_USERS_TABLE:-users}
+      SUPABASE_OCR_DOCUMENTS_TABLE: ${SUPABASE_OCR_DOCUMENTS_TABLE:-ocr_documents}
+      SUPABASE_DOCUMENTS_BUCKET: ${SUPABASE_DOCUMENTS_BUCKET:-documents}
     depends_on:
       - db
       - ollama
+      - ocr
+    networks:
+      - ocr-network
+
+  ocr:
+    build:
+      context: ./ocr
+      dockerfile: Dockerfile
+    container_name: ocr-engine
+    ports:
+      - "${OCR_PORT:-8001}:8001"
     networks:
       - ocr-network
 

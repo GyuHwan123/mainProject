@@ -12,6 +12,21 @@ router = APIRouter()
 security = HTTPBearer()
 
 
+def require_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db),
+) -> User:
+    try:
+        payload = decode_access_token(credentials.credentials)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="유효하지 않은 토큰입니다.") from exc
+
+    user = db.query(User).filter(User.email == payload.get("sub")).first()
+    if not user or not user.is_active:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="사용자를 찾을 수 없습니다.")
+    return user
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
     if not payload.email or not payload.password:
@@ -34,17 +49,24 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
             detail="이메일 또는 비밀번호가 올바르지 않습니다.",
         )
 
-    supabase_service.upsert_user(
-        email=user.email,
-        provider=user.provider,
-        provider_id=user.provider_id,
-    )
+    try:
+        supabase_service.upsert_user(
+            email=user.email,
+            provider=user.provider,
+            provider_id=user.provider_id,
+            role=user.role,
+        )
+    except HTTPException:
+        # Local authentication remains available during a temporary Supabase
+        # schema or network problem. Document upload will still report it.
+        pass
 
     token = create_access_token(subject=user.email)
     return LoginResponse(
         access_token=token,
         user_email=user.email,
         user_name=user.name,
+        user_role=user.role,
     )
 
 
@@ -121,6 +143,7 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             email=user.email,
             provider=supabase_user.get("provider") or "supabase",
             provider_id=supabase_user.get("id"),
+            role=user.role,
         )
 
         token = create_access_token(subject=user.email)
@@ -128,6 +151,7 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             access_token=token,
             user_email=user.email,
             user_name=user.name,
+            user_role=user.role,
         )
 
     raise HTTPException(
@@ -158,4 +182,4 @@ def get_me(
             detail="사용자를 찾을 수 없습니다.",
         )
 
-    return {"email": user.email, "name": user.name}
+    return {"email": user.email, "name": user.name, "role": user.role}

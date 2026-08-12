@@ -5,181 +5,101 @@ import numpy as np
 def preprocess_image(
     file_path,
     deskew: bool = True,
-    upscale: bool = False,
+    upscale: bool = True,
     grayscale: bool = False,
 ) -> np.ndarray:
-    """
-    OCR 전 이미지 전처리.
-
-    현재 적용 가능한 전처리:
-    - deskew: 이미지 기울기 보정
-    - upscale: 이미지 2배 확대
-    - grayscale: 흑백 변환
-
-    기본값:
-    - deskew=True
-    - upscale=True
-    - grayscale=False
-
-    반환값:
-        전처리된 이미지 (numpy.ndarray)
-    """
-
-    # ---------------------------------
-    # 1. 이미지 읽기
-    # ---------------------------------
-
-    img = cv2.imread(str(file_path))
-
-    if img is None:
-        raise ValueError(
-            f"이미지를 읽을 수 없습니다: {file_path}"
-        )
-
-    # ---------------------------------
-    # 2. 기울기 보정
-    # ---------------------------------
+    """Prepare a document image for OCR without destroying color information."""
+    image = cv2.imread(str(file_path), cv2.IMREAD_COLOR)
+    if image is None:
+        raise ValueError(f"Unable to read image: {file_path}")
 
     if deskew:
-        img = _deskew(img)
-
-    # ---------------------------------
-    # 3. 이미지 확대
-    # ---------------------------------
+        image = _deskew(image)
 
     if upscale:
-        img = cv2.resize(
-            img,
-            None,
-            fx=2,
-            fy=2,
-            interpolation=cv2.INTER_CUBIC,
-        )
+        image = _upscale_small_document(image)
 
-    # ---------------------------------
-    # 4. Grayscale
-    # ---------------------------------
+    image = _reduce_noise(image)
+    image = _enhance_local_contrast(image)
+    image = _sharpen_text_edges(image)
 
     if grayscale:
-        img = cv2.cvtColor(
-            img,
-            cv2.COLOR_BGR2GRAY,
-        )
-
-    return img
+        return cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    return image
 
 
-def _deskew(img: np.ndarray) -> np.ndarray:
-    """
-    이미지의 전체적인 기울기를 추정하고 보정한다.
+def _upscale_small_document(image: np.ndarray) -> np.ndarray:
+    """Upscale only low-resolution inputs, capped to avoid excess memory use."""
+    height, width = image.shape[:2]
+    longest_side = max(height, width)
+    if longest_side >= 1800:
+        return image
 
-    현재는 기존 팀원의 deskew 로직을 기반으로 한다.
-
-    0.5도 이하:
-        거의 정상적인 이미지로 판단
-
-    0.5 ~ 15도:
-        기울어진 이미지로 판단하고 보정
-
-    15도 초과:
-        일반적인 문서 기울기로 보기 어려우므로
-        회전하지 않는다.
-    """
-
-    # ---------------------------------
-    # Grayscale
-    # ---------------------------------
-
-    gray = cv2.cvtColor(
-        img,
-        cv2.COLOR_BGR2GRAY,
+    scale = min(2.0, 1800 / max(longest_side, 1))
+    return cv2.resize(
+        image,
+        None,
+        fx=scale,
+        fy=scale,
+        interpolation=cv2.INTER_CUBIC,
     )
 
-    # ---------------------------------
-    # Blur
-    #
-    # OCR 입력용이 아니라
-    # 기울기 계산을 안정화하기 위한 용도
-    # ---------------------------------
 
-    blur = cv2.GaussianBlur(
-        gray,
-        (9, 9),
-        0,
+def _reduce_noise(image: np.ndarray) -> np.ndarray:
+    """Remove small compression noise while retaining character boundaries."""
+    return cv2.bilateralFilter(image, d=5, sigmaColor=24, sigmaSpace=24)
+
+
+def _enhance_local_contrast(image: np.ndarray) -> np.ndarray:
+    """Apply CLAHE to luminance so uneven lighting does not hide faint text."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    lightness, channel_a, channel_b = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(lightness)
+    return cv2.cvtColor(
+        cv2.merge((enhanced, channel_a, channel_b)),
+        cv2.COLOR_LAB2BGR,
     )
 
-    # ---------------------------------
-    # Otsu Threshold
-    #
-    # OCR 입력으로 사용하지 않는다.
-    # 기울기 계산용이다.
-    # ---------------------------------
 
-    _, thresh = cv2.threshold(
-        blur,
+def _sharpen_text_edges(image: np.ndarray) -> np.ndarray:
+    """Use a restrained unsharp mask to clarify strokes without heavy halos."""
+    blurred = cv2.GaussianBlur(image, (0, 0), sigmaX=1.0)
+    return cv2.addWeighted(image, 1.35, blurred, -0.35, 0)
+
+
+def _deskew(image: np.ndarray) -> np.ndarray:
+    """Correct modest document skew while ignoring implausible rotations."""
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    threshold = cv2.threshold(
+        blurred,
         0,
         255,
-        cv2.THRESH_BINARY_INV
-        + cv2.THRESH_OTSU,
-    )
+        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
+    )[1]
 
-    # ---------------------------------
-    # foreground pixel 좌표 추출
-    # ---------------------------------
-
-    coords = np.column_stack(
-        np.where(thresh > 0)
-    )
-
-    # 이미지에 유효한 foreground가 없는 경우
-    if len(coords) == 0:
-        return img
-
-    # ---------------------------------
-    # 최소 영역 사각형으로 각도 계산
-    # ---------------------------------
+    coords = np.column_stack(np.where(threshold > 0))
+    if len(coords) < 50:
+        return image
 
     angle = cv2.minAreaRect(coords)[-1]
-
-    # ---------------------------------
-    # OpenCV 각도 정규화
-    # -45 ~ 45도 범위
-    # ---------------------------------
-
     if angle > 45:
-        angle = angle - 90
-
+        angle -= 90
     elif angle < -45:
         angle = -(90 + angle)
-
     else:
         angle = -angle
 
-    # ---------------------------------
-    # 스마트 기울기 보정
-    # ---------------------------------
+    if not 0.5 < abs(angle) < 15:
+        return image
 
-    if 0.5 < abs(angle) < 15:
-
-        height, width = img.shape[:2]
-
-        center = (
-            width // 2,
-            height // 2,
-        )
-
-        matrix = cv2.getRotationMatrix2D(
-            center,
-            angle,
-            1.0,
-        )
-
-        img = cv2.warpAffine(
-            img,
-            matrix,
-            (width, height),
-            flags=cv2.INTER_CUBIC,
-            borderMode=cv2.BORDER_REPLICATE,
-        )
-
-    return img
+    height, width = image.shape[:2]
+    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1.0)
+    return cv2.warpAffine(
+        image,
+        matrix,
+        (width, height),
+        flags=cv2.INTER_CUBIC,
+        borderMode=cv2.BORDER_REPLICATE,
+    )

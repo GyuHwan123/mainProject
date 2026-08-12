@@ -1,9 +1,13 @@
-import { Link, useLocation } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
-import { IoDocumentTextOutline } from 'react-icons/io5';
+import { IoDocumentTextOutline, IoLogOutOutline, IoPersonOutline, IoSettingsOutline } from 'react-icons/io5';
 import { RiUser3Fill } from "react-icons/ri";
 import { MdHomeFilled } from "react-icons/md";
 import { GrCatalogOption } from "react-icons/gr";
+import { clearAppSession } from '../features/appSession';
+import { getAppUser } from '../features/appSession';
+import { supabase } from '../lib/supabase';
 
 
 const items = [
@@ -16,9 +20,51 @@ const items = [
 
 export default function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+  const settingsRef = useRef(null);
+  const currentUser = getAppUser();
+  const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(currentUser.role) || currentUser.email === 'developer@docunex.com';
+  const visibleItems = items.filter((item) => item.path !== '/reports' || isDeveloper);
+
+  useEffect(() => {
+    if (!settingsOpen) return undefined;
+    const closeSettings = (event) => {
+      if (event.key === 'Escape' || !settingsRef.current?.contains(event.target)) setSettingsOpen(false);
+    };
+    document.addEventListener('mousedown', closeSettings);
+    document.addEventListener('keydown', closeSettings);
+    return () => {
+      document.removeEventListener('mousedown', closeSettings);
+      document.removeEventListener('keydown', closeSettings);
+    };
+  }, [settingsOpen]);
+
+  const logout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await supabase?.auth.signOut();
+    } finally {
+      clearAppSession();
+      navigate('/login', { replace: true });
+      window.location.reload();
+    }
+  };
+
   return <aside className="sidebar">
     <div className="brand-wrap"><div className="brand-mark">P</div><div className="brand-name">PicToText</div></div>
-    <nav className="sidebar-nav">{items.map((item) => <Link key={item.path} to={item.path} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>)}</nav>
-    <div className="sidebar-footer" title="설정">⚙</div>
+    <nav className="sidebar-nav">{visibleItems.map((item) => <Link key={item.path} to={item.path} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>)}</nav>
+    <div className="sidebar-settings" ref={settingsRef}>
+      {settingsOpen && <div className="settings-menu" role="menu">
+        <Link to="/mypage" role="menuitem" onClick={() => setSettingsOpen(false)}><IoPersonOutline /><span><strong>마이페이지</strong><small>내 정보 및 계정 관리</small></span></Link>
+        <button type="button" role="menuitem" onClick={logout} disabled={loggingOut}><IoLogOutOutline /><span><strong>{loggingOut ? '로그아웃 중...' : '로그아웃'}</strong><small>현재 계정에서 나가기</small></span></button>
+      </div>}
+      <button className={`sidebar-footer ${settingsOpen ? 'active' : ''}`} type="button" aria-label="설정" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
+        <IoSettingsOutline />
+        <span className="settings-tooltip" role="tooltip">설정</span>
+      </button>
+    </div>
   </aside>;
 }

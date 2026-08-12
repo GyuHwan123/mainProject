@@ -3,6 +3,7 @@ import apiClient from '../api/client';
 const TOKEN_KEY = 'pic_to_text_token';
 const EMAIL_KEY = 'pic_to_text_email';
 const NAME_KEY = 'pic_to_text_name';
+const ROLE_KEY = 'pic_to_text_role';
 let pendingExchange = null;
 
 export function hasAppSession() {
@@ -13,24 +14,28 @@ export function saveAppSession(session) {
   localStorage.setItem(TOKEN_KEY, session.access_token);
   localStorage.setItem(EMAIL_KEY, session.user_email);
   if (session.user_name) localStorage.setItem(NAME_KEY, session.user_name);
+  localStorage.setItem(ROLE_KEY, session.user_role || 'USER');
 }
 
 export function clearAppSession() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EMAIL_KEY);
   localStorage.removeItem(NAME_KEY);
+  localStorage.removeItem(ROLE_KEY);
 }
 
 export function getAppUser() {
   return {
     name: localStorage.getItem(NAME_KEY) || '',
     email: localStorage.getItem(EMAIL_KEY) || '',
+    role: localStorage.getItem(ROLE_KEY) || 'USER',
   };
 }
 
 export function saveAppUser(user) {
   if (user?.name) localStorage.setItem(NAME_KEY, user.name);
   if (user?.email) localStorage.setItem(EMAIL_KEY, user.email);
+  if (user?.role) localStorage.setItem(ROLE_KEY, user.role);
 }
 
 export async function exchangeSupabaseSession(session) {

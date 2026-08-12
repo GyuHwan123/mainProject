@@ -28,7 +28,7 @@ SUPABASE_URL=https://<project-ref>.supabase.co
 SUPABASE_ANON_KEY=<anon-key>
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
 SECRET_KEY=change-this-secret-key
-DATABASE_URL=sqlite:///./pic_to_text_dev.db
+DATABASE_URL=postgresql+psycopg2://postgres.PROJECT_REF:DB_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require
 ```
 
 ## 3. 서버 실행
@@ -36,7 +36,7 @@ DATABASE_URL=sqlite:///./pic_to_text_dev.db
 ### 백엔드 실행
 ```powershell
 cd "c:\Users\2Class_13\Desktop\main-ocr-project\ocr-web-app\backend"
-$env:DATABASE_URL='sqlite:///./pic_to_text_dev.db'
+$env:DATABASE_URL='postgresql+psycopg2://postgres.PROJECT_REF:DB_PASSWORD@POOLER_HOST:5432/postgres?sslmode=require'
 python -m uvicorn main:app --host 127.0.0.1 --port 8001 --reload
 ```
 

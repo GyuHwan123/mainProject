@@ -10,7 +10,7 @@ BACKEND_ROOT = PROJECT_ROOT / "backend"
 
 class Settings(BaseSettings):
     APP_NAME: str = "OCR Web App"
-    DATABASE_URL: str = "sqlite:///./pic_to_text_dev.db"
+    DATABASE_URL: str
     SECRET_KEY: str = "change-me"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60

@@ -12,7 +12,7 @@ OCR 화면의 현재 동작도 정확히 구분할 필요가 있습니다. 현�
 
 AI 문서 채팅은 사용자가 올린 PDF, TXT, Markdown 문서를 브라우저에서 작은 청크로 나눕니다. 질문에 포함된 단어와 가장 많이 일치하는 청크 네 개를 찾아 FastAPI로 보내고, 백엔드는 그 근거를 Ollama의 `gemma2:2b` 모델에 전달합니다. 모델 서버가 꺼져 있으면 프론트엔드가 가장 관련도 높은 원문을 대신 보여줍니다. 현재 검색은 키워드 기반이므로, 벡터 임베딩과 벡터 데이터베이스를 사용하는 완성형 RAG는 다음 개발 단계입니다.
 
-데이터 저장 위치도 기능마다 다릅니다. 사용자 계정은 SQLite 또는 PostgreSQL에 저장됩니다. 로그인 토큰과 대시보드 최근 기록은 브라우저 localStorage에 있고, 대시보드에서 업로드한 원본 파일은 Supabase Storage의 `documents` bucket에 저장됩니다. 반면 OCR 결과와 AI 채팅 문서는 아직 React 메모리에만 있으므로 새로고침하면 사라집니다.
+데이터 저장 위치도 기능마다 다릅니다. 사용자 계정은 Supabase PostgreSQL에 저장됩니다. 로그인 토큰과 대시보드 최근 기록은 브라우저 localStorage에 있고, 대시보드에서 업로드한 원본 파일은 Supabase Storage의 `documents` bucket에 저장됩니다. 반면 OCR 결과와 AI 채팅 문서는 아직 React 메모리에만 있으므로 새로고침하면 사라집니다.
 
 백엔드는 `backend/main.py`에서 시작하며, 실제 API 목록은 `backend/app/api/router.py`에서 확인할 수 있습니다. 인증 API와 Ollama 채팅 API는 실제 로직에 연결되어 있습니다. OCR 기록, 리포트, 사용자 히스토리 API는 현재 고정된 샘플 데이터를 반환하므로 화면 시연용과 실제 저장 기능을 혼동하지 않아야 합니다.
 

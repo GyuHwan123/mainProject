@@ -4,11 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy.orm import Session
-
 from app.api.routes.auth import require_current_user
-from app.core.database import get_db
-from app.models.ocr_evaluation import OCREvaluation
 from app.models.user import User
 from app.services.supabase_service import supabase_service
 
@@ -70,7 +66,7 @@ def character_error_rate(prediction: str, truth: str) -> float:
 
 
 @router.post("/evaluations", response_model=EvaluationResult)
-def create_evaluation(payload: EvaluationCreate, user: User = Depends(require_developer), db: Session = Depends(get_db)) -> OCREvaluation:
+def create_evaluation(payload: EvaluationCreate, user: User = Depends(require_developer)) -> EvaluationResult:
     tp, fp, fn, precision, recall, f1 = score(payload.extracted_text, payload.ground_truth)
     remote = supabase_service.save_ocr_evaluation(
         user_email=user.email,
@@ -81,8 +77,6 @@ def create_evaluation(payload: EvaluationCreate, user: User = Depends(require_de
         precision_score=precision,
         recall_score=recall,
     )
-    evaluation = OCREvaluation(user_email=user.email, **payload.model_dump(), precision=precision, recall=recall, f1_score=f1, true_positive=tp, false_positive=fp, false_negative=fn)
-    db.add(evaluation); db.commit(); db.refresh(evaluation)
     return EvaluationResult(
         id=remote["id"], document_id=payload.document_id, document_name=payload.document_name,
         processing_time_ms=remote.get("processing_time_ms"), precision=precision, recall=recall,
@@ -92,17 +86,14 @@ def create_evaluation(payload: EvaluationCreate, user: User = Depends(require_de
 
 
 @router.get("/evaluations", response_model=list[EvaluationResult])
-def list_evaluations(user: User = Depends(require_developer), db: Session = Depends(get_db)) -> list[EvaluationResult]:
-    local_by_document = {row.document_id: row for row in db.query(OCREvaluation).filter(OCREvaluation.user_email == user.email).all()}
+def list_evaluations(user: User = Depends(require_developer)) -> list[EvaluationResult]:
     results = []
     for row in supabase_service.list_ocr_evaluations(user.email):
         precision, recall = row.get("precision_score") or 0, row.get("recall_score") or 0
-        local = local_by_document.get(str(row["document_id"]))
         results.append(EvaluationResult(
             id=row["id"], document_id=row["document_id"], document_name=row["document_name"],
             processing_time_ms=row.get("processing_time_ms"), precision=precision, recall=recall,
             f1_score=(2 * precision * recall / (precision + recall)) if precision + recall else 0,
-            true_positive=local.true_positive if local else 0, false_positive=local.false_positive if local else 0,
-            false_negative=local.false_negative if local else 0, created_at=row["evaluated_at"],
+            true_positive=0, false_positive=0, false_negative=0, created_at=row["evaluated_at"],
         ))
     return results

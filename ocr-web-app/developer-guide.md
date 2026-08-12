@@ -14,7 +14,7 @@ PicToText는 PDF 텍스트 추출, 문서 기반 AI 질의응답, 사용자 인�
                 │
                 ▼
 FastAPI
-  ├─ 인증/JWT ─ SQLAlchemy ─ SQLite 또는 PostgreSQL
+  ├─ 인증/JWT ─ SQLAlchemy ─ Supabase PostgreSQL
   ├─ Supabase Auth 토큰 검증 및 users 테이블 동기화
   └─ 문서 문맥 전달 ─ Ollama(gemma2:2b)
 ```
@@ -200,7 +200,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-개별 실행 시 기본 DB는 `backend` 작업 디렉터리의 SQLite 파일입니다. AI 채팅에는 별도로 실행 중인 Ollama와 `gemma2:2b` 모델이 필요하며, 개별 실행 환경에서는 `OLLAMA_BASE_URL=http://localhost:11434`로 설정해야 합니다.
+개별 실행 시에도 `DATABASE_URL`에 PostgreSQL 연결 주소가 반드시 필요합니다. 값이 없거나 PostgreSQL 주소가 아니면 백엔드는 시작되지 않습니다. AI 채팅에는 별도로 실행 중인 Ollama와 `gemma2:2b` 모델이 필요하며, 개별 실행 환경에서는 `OLLAMA_BASE_URL=http://localhost:11434`로 설정해야 합니다.
 
 ## 8. 환경 변수와 보안
 

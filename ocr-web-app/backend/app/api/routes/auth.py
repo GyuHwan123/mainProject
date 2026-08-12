@@ -97,6 +97,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
         email=email,
         password_hash=get_password_hash(payload.password),
         provider="local",
+        provider_id=email,
     )
     db.add(user)
     db.commit()

@@ -15,6 +15,7 @@ from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_imag
 from app.services.docx_service import extract_docx_text, extract_docx_text_and_images
 from app.services.ocr.ocr_parser import build_ocr_page
 from app.services.preprocess_service import preprocess_image
+from app.services.spreadsheet_service import extract_spreadsheet
 
 
 ocr = PaddleOCR(
@@ -227,7 +228,11 @@ async def process_ocr(
         # TEXT_ONLY
         # =================================
 
-        if content_type == FileContentType.TEXT_ONLY:
+        if content_type == FileContentType.SPREADSHEET:
+
+            pages = extract_spreadsheet(temp_path)
+
+        elif content_type == FileContentType.TEXT_ONLY:
 
             print(
                 "→ 텍스트를 직접 추출합니다."
@@ -248,14 +253,10 @@ async def process_ocr(
             # -----------------------------
 
             elif file_extension == ".docx":
-
-                text = extract_docx_text(
-                    temp_path
+                pages = extract_docx_text_and_images(
+                    temp_path,
+                    run_paddle_ocr,
                 )
-
-                pages = [
-                    build_text_page(text)
-                ]
 
             # -----------------------------
             # 일반 텍스트
@@ -353,10 +354,6 @@ async def process_ocr(
                     temp_path,
                     run_paddle_ocr,
                 )
-
-                # TODO:
-                # DOCX 내부 이미지 추출 후
-                # PaddleOCR 연결
 
             else:
 

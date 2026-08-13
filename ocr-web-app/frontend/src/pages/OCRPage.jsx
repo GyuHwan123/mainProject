@@ -12,6 +12,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const EMPTY_FILE_NAME = '문서를 선택해 주세요';
 const LOCAL_OLLAMA_URL = 'http://127.0.0.1:11434';
+const AI_CONTEXT_LENGTH = 6000;
 
 function buildTransformPrompt(text, mode) {
   const instruction = mode === 'structured'
@@ -23,7 +24,7 @@ function buildTransformPrompt(text, mode) {
 반드시 다음 JSON 형식만 반환하세요:
 {"title":"표 제목","columns":["열1","열2"],"rows":[["값1","값2"]],"note":"필요한 설명"}
 각 행의 값 개수는 columns 개수와 같아야 합니다. 근거가 부족하면 columns와 rows를 빈 배열로 반환하고 원문에 없는 사실은 만들지 마세요.`;
-  return `${instruction}\n\n[원문]\n${text.slice(0, 12000)}`;
+  return `${instruction}\n\n[원문]\n${text.slice(0, AI_CONTEXT_LENGTH)}`;
 }
 
 async function transformWithLocalOllama(text, mode) {
@@ -35,7 +36,11 @@ async function transformWithLocalOllama(text, mode) {
       prompt: buildTransformPrompt(text, mode),
       format: 'json',
       stream: false,
-      options: { temperature: 0.1 },
+      keep_alive: '30m',
+      options: {
+        temperature: 0.1,
+        num_predict: mode === 'structured' ? 500 : 800,
+      },
     }),
   });
   if (!response.ok) throw new Error(`Ollama 응답 오류 (${response.status})`);
@@ -168,9 +173,47 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false, items = [
     <div className="pdf-preview-wrap" style={canvasSize}>
       <canvas ref={canvasRef} className="pdf-main-canvas" />
       {items.map((item, index) => {
-        const [[x0, y0], [x1, y1]] = item.bbox;
+        const xs = item.bbox.map((point) => point[0]);
+        const ys = item.bbox.map((point) => point[1]);
+        const x0 = Math.min(...xs);
+        const y0 = Math.min(...ys);
+        const x1 = Math.max(...xs);
+        const y1 = Math.max(...ys);
         return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max((x1 - x0) * scale, 2), height: Math.max((y1 - y0) * scale, 2) }} onClick={() => onSelectItem?.(index)} aria-label={`${item.text} 위치`} />;
       })}
+    </div>
+  );
+}
+
+
+function SpreadsheetPreview({ rows, items, selectedItemIndex, onSelectItem }) {
+  const columnCount = Math.max(0, ...rows.map((row) => row.length));
+  const columnLabel = (index) => {
+    let value = index + 1;
+    let label = '';
+    while (value > 0) {
+      value -= 1;
+      label = String.fromCharCode(65 + (value % 26)) + label;
+      value = Math.floor(value / 26);
+    }
+    return label;
+  };
+  const itemIndexByCell = new Map(items.map((item, index) => [`${item.row}:${item.column}`, index]));
+
+  return (
+    <div className="spreadsheet-preview">
+      <table>
+        <thead><tr><th className="sheet-corner" />{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead>
+        <tbody>{rows.map((row, rowIndex) => (
+          <tr key={rowIndex}>
+            <th>{rowIndex + 1}</th>
+            {Array.from({ length: columnCount }, (_, columnIndex) => {
+              const itemIndex = itemIndexByCell.get(`${rowIndex + 1}:${columnIndex + 1}`);
+              return <td key={columnIndex} className={itemIndex === selectedItemIndex ? 'selected' : ''}><button type="button" onClick={() => itemIndex !== undefined && onSelectItem?.(itemIndex)} disabled={itemIndex === undefined}>{row[columnIndex] ?? ''}</button></td>;
+            })}
+          </tr>
+        ))}</tbody>
+      </table>
     </div>
   );
 }
@@ -184,6 +227,8 @@ export default function OCRPage() {
   const [pageNumber, setPageNumber] = useState(1);
   const [pageTexts, setPageTexts] = useState([]);
   const [pageItems, setPageItems] = useState([]);
+  const [pageRows, setPageRows] = useState([]);
+  const [sheetNames, setSheetNames] = useState([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState(null);
   const [documentHistory, setDocumentHistory] = useState([]);
   const [currentDocumentId, setCurrentDocumentId] = useState(null);
@@ -196,6 +241,7 @@ export default function OCRPage() {
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
   const [groundTruth, setGroundTruth] = useState('');
+  const [groundTruthFileName, setGroundTruthFileName] = useState('');
   const [processingTimeMs, setProcessingTimeMs] = useState(null);
   const [evaluationStatus, setEvaluationStatus] = useState('');
   const [error, setError] = useState('');
@@ -220,11 +266,13 @@ export default function OCRPage() {
     .then(({ data }) => setDocumentHistory(data))
     .catch(() => {});
 
-  const resetDocumentView = () => {
+  const resetDocumentView = ({ preserveGroundTruth = false } = {}) => {
     setPdf(null);
     replaceImagePreview(null);
     setPageTexts([]);
     setPageItems([]);
+    setPageRows([]);
+    setSheetNames([]);
     setPageNumber(1);
     setSelectedItemIndex(null);
     setCurrentDocumentId(null);
@@ -232,7 +280,10 @@ export default function OCRPage() {
     setAiResults({});
     setAiLoading(false);
     setAiError('');
-    setGroundTruth('');
+    if (!preserveGroundTruth) {
+      setGroundTruth('');
+      setGroundTruthFileName('');
+    }
     setProcessingTimeMs(null);
     setEvaluationStatus('');
   };
@@ -267,6 +318,8 @@ export default function OCRPage() {
 
       setPageTexts(pages.map((page) => page.text || ''));
       setPageItems(pages.map((page) => page.items || []));
+      setPageRows(pages.map((page) => page.rows ?? null));
+      setSheetNames(pages.map((page) => page.sheet_name || ''));
       setFileName(result.filename);
       setCurrentDocumentId(documentId);
 
@@ -343,11 +396,41 @@ export default function OCRPage() {
     setPdf(null);
     setPageTexts((data.pages || []).map((page) => page.text || ''));
     setPageItems((data.pages || []).map((page) => page.items || []));
+    setPageRows((data.pages || []).map((page) => page.rows ?? null));
+    setSheetNames((data.pages || []).map((page) => page.sheet_name || ''));
     setSelectedItemIndex(null);
     setPageNumber(1);
     setFileName(data.filename || file.name);
     setCurrentDocumentId(data.document_id || null);
     refreshHistory();
+    return data;
+  };
+
+  const loadDocxPreview = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiClient.post('/ocr/docx-preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'arraybuffer',
+      timeout: 120000,
+    });
+    return pdfjsLib.getDocument({ data }).promise;
+  };
+
+  const loadSpreadsheetPreview = async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const { data } = await apiClient.post('/ocr/spreadsheet-preview', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    });
+    const pages = data.pages || [];
+    setPageTexts(pages.map((page) => page.text || ''));
+    setPageItems(pages.map((page) => page.items || []));
+    setPageRows(pages.map((page) => page.rows ?? []));
+    setSheetNames(pages.map((page) => page.sheet_name || ''));
+    setPageNumber(1);
+    setSelectedItemIndex(null);
   };
 
   const loadPdf = async (file) => {
@@ -357,7 +440,7 @@ export default function OCRPage() {
     }
     setLoading(true);
     setError('');
-    resetDocumentView();
+    resetDocumentView({ preserveGroundTruth: true });
     setFileName(file.name);
     try {
       const data = await file.arrayBuffer();
@@ -371,6 +454,8 @@ export default function OCRPage() {
         }),
       );
       const texts = extractedPages.map((page) => page.text);
+      let documentId = null;
+      let resultTexts = texts;
       if (texts.some((text) => text.length > 0)) {
         const archiveData = new FormData();
         archiveData.append('file', file);
@@ -395,28 +480,32 @@ export default function OCRPage() {
         setPageNumber(1);
         setFileName(file.name);
         setCurrentDocumentId(archived.document_id || null);
+        documentId = archived.document_id || null;
       } else {
-        await loadWithOcr(file);
+        const result = await loadWithOcr(file);
+        documentId = result.document_id || null;
+        resultTexts = (result.pages || []).map((page) => page.text || '');
         setPdf(document);
       }
+      return { success: true, documentId, texts: resultTexts };
     } catch (requestError) {
       setError(requestError.response?.data?.detail || 'PDF를 읽지 못했습니다. 손상되었거나 지원하지 않는 파일일 수 있습니다.');
+      return { success: false };
     } finally {
       if (extractionStartedAtRef.current) setProcessingTimeMs(performance.now() - extractionStartedAtRef.current);
       setLoading(false);
     }
   };
 
-  const loadFile = async (file) => {
+  const loadFile = async (file, preparedPdf = null) => {
     if (!file) return;
     extractionStartedAtRef.current = performance.now();
 
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-      await loadPdf(file);
-      return;
+      return loadPdf(file);
     }
 
-    resetDocumentView();
+    resetDocumentView({ preserveGroundTruth: true });
     setFileName(file.name);
     const canPreviewImage = /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
     replaceImagePreview(canPreviewImage ? file : null);
@@ -424,9 +513,16 @@ export default function OCRPage() {
     setLoading(true);
     setError('');
     try {
-      await loadWithOcr(file);
+      const result = await loadWithOcr(file);
+      if (/\.docx$/i.test(file.name) && preparedPdf) setPdf(preparedPdf);
+      return {
+        success: true,
+        documentId: result.document_id || null,
+        texts: (result.pages || []).map((page) => page.text || ''),
+      };
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '파일에서 텍스트를 추출하지 못했습니다. OCR 서버 상태와 파일 형식을 확인해 주세요.');
+      return { success: false };
     } finally {
       setProcessingTimeMs(performance.now() - extractionStartedAtRef.current);
       setLoading(false);
@@ -443,18 +539,46 @@ export default function OCRPage() {
       if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
         const document = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
         setPdf(document);
+      } else if (/\.docx$/i.test(file.name)) {
+        setLoading(true);
+        setPdf(await loadDocxPreview(file));
+      } else if (/\.(xlsx|xlsm)$/i.test(file.name)) {
+        setLoading(true);
+        await loadSpreadsheetPreview(file);
       } else {
         replaceImagePreview(/\.(png|jpe?g|webp|bmp)$/i.test(file.name) ? file : null);
       }
     } catch (previewError) {
-      setError(previewError.message || '파일 미리보기를 준비하지 못했습니다.');
+      setError(previewError.response?.data?.detail || previewError.message || '파일 미리보기를 준비하지 못했습니다.');
+    } finally {
+      setLoading(false);
     }
   };
 
   const runExtraction = async () => {
     if (!pendingFile || loading) return;
-    await loadFile(pendingFile);
+    const truthForEvaluation = groundTruth.trim();
+    const result = await loadFile(pendingFile, pdf);
+    if (!result?.success) return;
     setPendingFile(null);
+
+    if (isDeveloper && truthForEvaluation && result.documentId) {
+      setEvaluationStatus('평가 저장 중...');
+      try {
+        await apiClient.post('/reports/evaluations', {
+          document_id: result.documentId,
+          document_name: fileName,
+          extracted_text: (result.texts || []).join('\n\n'),
+          ground_truth: truthForEvaluation,
+          processing_time_ms: extractionStartedAtRef.current ? performance.now() - extractionStartedAtRef.current : processingTimeMs,
+        });
+        setGroundTruth(truthForEvaluation);
+        setEvaluationStatus('추출과 평가가 완료되었습니다. 성능 리포트에서 확인할 수 있습니다.');
+      } catch (requestError) {
+        setGroundTruth(truthForEvaluation);
+        setEvaluationStatus(requestError.response?.data?.detail || '추출은 완료됐지만 평가를 저장하지 못했습니다. 다시 평가해 주세요.');
+      }
+    }
   };
 
   const saveDeveloperEvaluation = async () => {
@@ -489,8 +613,10 @@ export default function OCRPage() {
               ? data
               : JSON.stringify(data, null, 2);
         setGroundTruth(value);
+        setGroundTruthFileName(file.name);
       } else {
         setGroundTruth(raw);
+        setGroundTruthFileName(file.name);
       }
       setEvaluationStatus(`${file.name} 파일을 불러왔습니다.`);
     } catch (fileError) {
@@ -510,16 +636,11 @@ export default function OCRPage() {
     try {
       let result;
       try {
-        const { data: status } = await apiClient.get('/chatbot/status', { timeout: 6000 });
-        if (!status.ready) {
-          result = await transformWithLocalOllama(currentText, tab);
-        } else {
-          const { data } = await apiClient.post('/chatbot/transform', {
-            text: currentText.slice(0, 12000),
-            mode: tab,
-          }, { timeout: 130000 });
-          result = data.result;
-        }
+        const { data } = await apiClient.post('/chatbot/transform', {
+          text: currentText.slice(0, AI_CONTEXT_LENGTH),
+          mode: tab,
+        }, { timeout: 130000 });
+        result = data.result;
       } catch (backendError) {
         if (backendError.response && backendError.response.status !== 503) throw backendError;
         result = await transformWithLocalOllama(currentText, tab);
@@ -543,6 +664,7 @@ export default function OCRPage() {
   };
   const currentText = pageTexts[pageNumber - 1] || '';
   const currentItems = pageItems[pageNumber - 1] || [];
+  const currentRows = pageRows[pageNumber - 1];
   const aiResultKey = `${currentDocumentId || fileName}:${pageNumber}:${resultTab}`;
   const currentAiResult = aiResults[aiResultKey];
   const pageCount = pdf?.numPages || pageTexts.length;
@@ -619,14 +741,18 @@ export default function OCRPage() {
           </div>
         </header>
 
-        <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; prepareFile(file); }} />
+        <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
 
         <div className="ocr-filebar">
           <div className="file-identity">
             <span className="pdf-badge">{fileExtension}</span>
             <span><strong>{fileName}</strong><small>{hasResult ? `${pageCount}페이지 · 텍스트 추출 완료` : pendingFile ? '파일 준비 완료 · 추출 버튼을 눌러주세요' : 'PDF, 이미지, DOCX 및 텍스트 파일'}</small></span>
           </div>
-          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '추출 중...' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
+          {isDeveloper && pendingFile && <div className="developer-truth-upload">
+            <span>개발자 정답 파일</span>
+            {groundTruthFileName ? <><strong title={groundTruthFileName}>{groundTruthFileName}</strong><button type="button" className="remove-truth-button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>제거</button></> : <button type="button" className="truth-select-button" onClick={() => groundTruthFileRef.current?.click()}>TXT · JSON 선택</button>}
+          </div>}
+          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
         </div>
 
         <section className="ocr-editor" onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); prepareFile(e.dataTransfer.files?.[0]); }}>
@@ -636,7 +762,7 @@ export default function OCRPage() {
               {hasResult ? Array.from({ length: pageCount }, (_, index) => (
                 <button key={index} className={`page-thumb ${pageNumber === index + 1 ? 'active' : ''}`} onClick={() => { setPageNumber(index + 1); setSelectedItemIndex(null); }}>
                   <span className="thumb-paper">{pdf ? <PdfCanvas pdf={pdf} pageNumber={index + 1} scale={0.22} thumbnail /> : imagePreviewUrl ? <img className="image-thumb" src={imagePreviewUrl} alt="업로드 이미지 미리보기" /> : <IoDocumentTextOutline />}</span>
-                  <span>{index + 1} 페이지</span>
+                  <span>{sheetNames[index] || `${index + 1} 페이지`}</span>
                 </button>
               )) : <div className="empty-pages">PDF를 업로드하면<br />페이지별로 표시됩니다.</div>}
 
@@ -658,13 +784,21 @@ export default function OCRPage() {
               </div>
             </div>
             <div className="preview-stage">
-              {projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : imagePreviewUrl ? (
+              {projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : imagePreviewUrl ? (
                 <div className="image-preview-wrap" style={{ width: `${zoom * 100}%` }}>
                   <img className="image-main-preview" src={imagePreviewUrl} alt={`${fileName} 미리보기`} />
                   {loading && <div className="image-processing"><span />OCR 처리 중...</div>}
                 </div>
               ) : hasResult ? (
                 <div className="loader">OCR 텍스트 추출이 완료되었습니다.</div>
+              ) : pendingFile ? (
+                <div className="pending-document" role="status">
+                  <span className="pending-document-icon"><IoDocumentTextOutline /></span>
+                  <strong>{pendingFile.name}</strong>
+                  <small>{(pendingFile.size / 1024).toLocaleString('ko-KR', { maximumFractionDigits: 1 })} KB</small>
+                  <p>{fileExtension} 파일 준비 완료</p>
+                  <button type="button" onClick={runExtraction} disabled={loading}>OCR 텍스트 추출</button>
+                </div>
               ) : (
                 <button className="dropzone" onClick={() => inputRef.current?.click()}>
                   <span className="drop-icon">⇧</span><strong>PDF를 여기에 놓아주세요</strong><small>또는 클릭해서 파일을 선택하세요</small>

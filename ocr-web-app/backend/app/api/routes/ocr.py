@@ -3,7 +3,7 @@ from io import BytesIO
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.api.routes.auth import require_current_user
 from app.core.config import settings
@@ -69,6 +69,64 @@ async def upload_file(
 
     result = OCRResponse.model_validate(response.json())
     return save_result(user=user, file=file, content=content, result=result)
+
+
+@router.post("/docx-preview")
+async def preview_docx(
+    file: UploadFile = File(...),
+    _user: User = Depends(require_current_user),
+) -> Response:
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 업로드할 수 있습니다.")
+    if not (file.filename or "").lower().endswith(".docx"):
+        raise HTTPException(status_code=400, detail="DOCX 파일만 미리보기할 수 있습니다.")
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            preview = await client.post(
+                f"{settings.OCR_BASE_URL.rstrip('/')}/docx-preview",
+                files={
+                    "file": (
+                        file.filename or "document.docx",
+                        content,
+                        file.content_type or "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    )
+                },
+            )
+            preview.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=exc.response.text or "DOCX preview failed") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail="OCR service is unavailable") from exc
+
+    return Response(content=preview.content, media_type="application/pdf")
+
+
+@router.post("/spreadsheet-preview", response_model=OCRResponse)
+async def preview_spreadsheet(
+    file: UploadFile = File(...),
+    _user: User = Depends(require_current_user),
+) -> OCRResponse:
+    content = await file.read()
+    if len(content) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 업로드할 수 있습니다.")
+    if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
+        raise HTTPException(status_code=400, detail="XLSX 또는 XLSM 파일만 미리보기할 수 있습니다.")
+
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            preview = await client.post(
+                f"{settings.OCR_BASE_URL.rstrip('/')}/spreadsheet-preview",
+                files={"file": (file.filename or "spreadsheet.xlsx", content, file.content_type)},
+            )
+            preview.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(status_code=502, detail=exc.response.text or "Excel preview failed") from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=503, detail="OCR service is unavailable") from exc
+
+    return OCRResponse.model_validate(preview.json())
 
 
 @router.get("/history", response_model=list[DocumentHistoryItem])

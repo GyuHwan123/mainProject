@@ -16,6 +16,18 @@ const SESSION_KEYS = [
   'pic_to_text_name',
   'pic_to_text_role',
 ];
+const PUBLIC_AUTH_PATHS = [
+  '/auth/login',
+  '/auth/signup',
+  '/auth/social-login',
+];
+
+function isPublicAuthRequest(config) {
+  const requestUrl = config.url || '';
+  return PUBLIC_AUTH_PATHS.some((path) => (
+    requestUrl === path || requestUrl.startsWith(`${path}?`)
+  ));
+}
 
 function clearExpiredSession() {
   SESSION_KEYS.forEach((key) => localStorage.removeItem(key));
@@ -40,6 +52,11 @@ function redirectToLogin() {
 }
 
 apiClient.interceptors.request.use((config) => {
+  if (isPublicAuthRequest(config)) {
+    if (config.headers) delete config.headers.Authorization;
+    return config;
+  }
+
   const token = localStorage.getItem('pic_to_text_token');
 
   if (token) {
@@ -58,7 +75,7 @@ apiClient.interceptors.request.use((config) => {
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !isPublicAuthRequest(error.config || {})) {
       clearExpiredSession();
       redirectToLogin();
     }

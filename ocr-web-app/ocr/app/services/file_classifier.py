@@ -15,6 +15,8 @@ class FileContentType(str, Enum):
 
     TEXT_AND_IMAGE = "text_and_image"
 
+    SPREADSHEET = "spreadsheet"
+
     UNKNOWN = "unknown"
 
 
@@ -57,6 +59,10 @@ def classify_file(
     if suffix in TEXT_EXTENSIONS:
 
         return FileContentType.TEXT_ONLY
+
+    if suffix in {".xlsx", ".xlsm"}:
+
+        return FileContentType.SPREADSHEET
 
     # ---------------------------------
     # PDF

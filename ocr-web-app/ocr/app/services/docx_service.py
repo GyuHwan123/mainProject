@@ -1,55 +1,132 @@
+import os
+import shutil
+import subprocess
 from pathlib import Path
-from tempfile import NamedTemporaryFile
-from zipfile import ZipFile
-
-from docx import Document
+from tempfile import TemporaryDirectory
+from typing import Callable
 
 from app.schemas.ocr import OCRPage
+from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_images
 
 
-def extract_docx_text(file_path: Path) -> str:
-    """Extract native paragraph and table text from a DOCX file."""
-    document = Document(str(file_path))
-    texts: list[str] = []
-
-    for paragraph in document.paragraphs:
-        text = paragraph.text.strip()
-        if text:
-            texts.append(text)
-
-    for table in document.tables:
-        for row in table.rows:
-            row_texts = [cell.text.strip() for cell in row.cells if cell.text.strip()]
-            if row_texts:
-                texts.append(" | ".join(row_texts))
-
-    return "\n".join(texts)
+DOCX_CONVERSION_TIMEOUT_SECONDS = 120
 
 
-def extract_docx_text_and_images(file_path: Path, ocr_runner) -> list[OCRPage]:
-    """Extract native DOCX text and OCR every embedded image."""
-    texts: list[str] = []
-    native_text = extract_docx_text(file_path)
-    if native_text:
-        texts.append(native_text)
+def find_libreoffice() -> str | None:
+    """Find LibreOffice on PATH or in its standard Windows locations."""
+    configured = os.getenv("LIBREOFFICE_BIN")
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if configured_path.is_file():
+            console_path = configured_path.with_suffix(".com")
+            return str(console_path if os.name == "nt" and console_path.is_file() else configured_path)
+        executable = shutil.which(configured)
+        if executable:
+            return executable
 
-    with ZipFile(file_path, "r") as archive:
-        image_names = sorted(
-            name for name in archive.namelist()
-            if name.startswith("word/media/")
+    for command in ("libreoffice", "soffice"):
+        executable = shutil.which(command)
+        if executable:
+            return executable
+
+    if os.name == "nt":
+        windows_candidates = [
+            Path(os.environ.get("PROGRAMFILES", ""))
+            / "LibreOffice"
+            / "program"
+            / "soffice.com",
+            Path(os.environ.get("PROGRAMFILES(X86)", ""))
+            / "LibreOffice"
+            / "program"
+            / "soffice.com",
+            Path(os.environ.get("LOCALAPPDATA", ""))
+            / "Programs"
+            / "LibreOffice"
+            / "program"
+            / "soffice.com",
+        ]
+        for candidate in windows_candidates:
+            if candidate.is_file():
+                return str(candidate)
+
+    return None
+
+
+def convert_docx_to_pdf(file_path: Path, output_dir: Path) -> Path:
+    """Convert a DOCX to PDF with LibreOffice in an isolated user profile."""
+    executable = find_libreoffice()
+    if executable is None:
+        raise RuntimeError(
+            "LibreOffice를 찾을 수 없습니다. DOCX 처리를 위해 LibreOffice를 "
+            "설치하거나 LIBREOFFICE_BIN에 soffice 실행 파일 경로를 지정해 주세요."
         )
 
-        for image_name in image_names:
-            suffix = Path(image_name).suffix or ".png"
-            with NamedTemporaryFile(delete=False, suffix=suffix) as temp:
-                temp.write(archive.read(image_name))
-                image_path = Path(temp.name)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    profile_dir = output_dir / "libreoffice-profile"
 
-            try:
-                for page in ocr_runner(image_path):
-                    if page.text.strip():
-                        texts.append(page.text.strip())
-            finally:
-                image_path.unlink(missing_ok=True)
+    try:
+        completed = subprocess.run(
+            [
+                executable,
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nolockcheck",
+                "--nofirststartwizard",
+                "--norestore",
+                f"-env:UserInstallation={profile_dir.resolve().as_uri()}",
+                "--convert-to",
+                "pdf:writer_pdf_Export",
+                "--outdir",
+                str(output_dir),
+                str(file_path),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=DOCX_CONVERSION_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError("DOCX to PDF conversion timed out.") from exc
 
-    return [OCRPage(page=1, text="\n".join(texts), items=[])]
+    pdf_path = output_dir / f"{file_path.stem}.pdf"
+    if completed.returncode != 0 or not pdf_path.is_file():
+        details = (completed.stderr or completed.stdout).strip()
+        message = "LibreOffice failed to convert the DOCX file to PDF."
+        if details:
+            message = f"{message} {details}"
+        raise RuntimeError(message)
+
+    return pdf_path
+
+
+def _process_converted_docx(
+    file_path: Path,
+    pdf_processor: Callable[[Path], list[OCRPage]],
+) -> list[OCRPage]:
+    with TemporaryDirectory(prefix="docx-conversion-") as temp_dir:
+        pdf_path = convert_docx_to_pdf(file_path, Path(temp_dir))
+        return pdf_processor(pdf_path)
+
+
+def extract_docx_text(file_path: Path) -> list[OCRPage]:
+    """Extract DOCX text page by page through a PDF conversion."""
+    return _process_converted_docx(file_path, extract_pdf_text)
+
+
+def extract_docx_text_and_images(
+    file_path: Path,
+    ocr_runner: Callable[[Path], list[OCRPage]],
+) -> list[OCRPage]:
+    """Preserve DOCX page layout while extracting native text and image OCR."""
+    return _process_converted_docx(
+        file_path,
+        lambda pdf_path: extract_pdf_text_and_images(pdf_path, ocr_runner),
+    )
+
+
+def convert_docx_to_pdf_bytes(file_path: Path) -> bytes:
+    """Convert a DOCX to PDF and return the PDF for browser preview."""
+    with TemporaryDirectory(prefix="docx-preview-") as temp_dir:
+        pdf_path = convert_docx_to_pdf(file_path, Path(temp_dir))
+        return pdf_path.read_bytes()

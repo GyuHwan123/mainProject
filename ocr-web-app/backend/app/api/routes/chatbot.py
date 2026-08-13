@@ -12,7 +12,7 @@ from app.models.user import User
 
 router = APIRouter()
 MODEL_NAME = "gemma2:2b"
-MAX_CONTEXT_LENGTH = 12_000
+MAX_CONTEXT_LENGTH = 6_000
 LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 
 
@@ -37,12 +37,18 @@ class TransformReply(BaseModel):
     model: str = MODEL_NAME
 
 
-async def generate(prompt: str, *, json_format: bool = False) -> str:
+async def generate(
+    prompt: str,
+    *,
+    json_format: bool = False,
+    num_predict: int = 600,
+) -> str:
     payload: dict[str, Any] = {
         "model": MODEL_NAME,
         "prompt": prompt,
         "stream": False,
-        "options": {"temperature": 0.1},
+        "keep_alive": "30m",
+        "options": {"temperature": 0.1, "num_predict": num_predict},
     }
     if json_format:
         payload["format"] = "json"
@@ -116,7 +122,11 @@ async def transform_document(
 각 행의 값 개수는 columns 개수와 같아야 합니다. 표로 만들 근거가 부족하면 columns와 rows를 빈 배열로 반환하세요.
 원문에 없는 사실은 만들지 마세요."""
 
-    raw = await generate(f"{instruction}\n\n[원문]\n{source}", json_format=True)
+    raw = await generate(
+        f"{instruction}\n\n[원문]\n{source}",
+        json_format=True,
+        num_predict=500 if payload.mode == "structured" else 800,
+    )
     return TransformReply(mode=payload.mode, result=parse_json_response(raw))
 
 

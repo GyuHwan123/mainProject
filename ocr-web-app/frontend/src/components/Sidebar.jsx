@@ -25,8 +25,8 @@ export default function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false);
   const settingsRef = useRef(null);
   const currentUser = getAppUser();
-  const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(currentUser.role) || currentUser.email === 'developer@docunex.com';
-  const visibleItems = items.filter((item) => item.path !== '/reports' || isDeveloper);
+  const canViewReports = currentUser.subscriptionTier === 'ENTERPRISE' || ['DEVELOPER', 'ADMIN'].includes(currentUser.role);
+  const visibleItems = items.filter((item) => item.path !== '/reports' || canViewReports);
 
   useEffect(() => {
     if (!settingsOpen) return undefined;

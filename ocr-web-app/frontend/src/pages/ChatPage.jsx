@@ -1,150 +1,499 @@
-import { useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoChatbubbleEllipsesOutline, IoCloudUploadOutline, IoDocumentsOutline, IoDownloadOutline, IoSchoolOutline, IoTrashOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoCloseOutline, IoCloudUploadOutline, IoTrashOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import '../style/ChatPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
+const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
+const PRIVACY_RESPONSE = '요청하신 정보는 개인정보 보호 정책에 따라 제공할 수 없습니다. 채용 검토에 필요한 학력, 경력, 기술, 교육 및 자격 정보는 질문할 수 있습니다.';
+const SENSITIVE_QUERY_PATTERN = /(생년월일|생년|몇\s*살|나이|연령|성별|남자인지|여자인지|휴대폰|핸드폰|전화번호|연락처|이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌번호|통장번호)/i;
 
-const tokenize = (text) => [...new Set(text.toLowerCase().match(/[가-힣a-z0-9]{2,}/g) || [])];
-const makeChunks = (text, name) => {
-  const clean = text.replace(/\s+/g, ' ').trim();
-  const chunks = [];
-  for (let start = 0; start < clean.length; start += 700) {
-    const content = clean.slice(start, start + 900);
-    if (content.trim()) chunks.push({ id: `${name}-${chunks.length + 1}`, content, source: name, index: chunks.length + 1 });
+class ChatErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { failed: false, message: '' }; }
+  static getDerivedStateFromError(error) { return { failed: true, message: error?.message || '알 수 없는 렌더링 오류' }; }
+  componentDidCatch(error, info) { console.error('Chat 화면 렌더링 오류', error, info); }
+  render() {
+    if (this.state.failed) return <div className="chat-render-error"><strong>문서 화면을 불러오지 못했습니다.</strong><p>{this.state.message}</p><button onClick={() => window.location.reload()}>화면 다시 불러오기</button></div>;
+    return this.props.children;
   }
-  return chunks;
-};
-const rankChunks = (query, chunks) => {
-  const terms = tokenize(query);
-  return chunks.map((chunk) => {
-    const lower = chunk.content.toLowerCase();
-    const matches = terms.filter((term) => lower.includes(term)).length;
-    return { ...chunk, score: terms.length ? matches / terms.length : 0 };
-  }).sort((a, b) => b.score - a.score).slice(0, 4);
-};
+}
 
-export default function ChatPage() {
-  const [view, setView] = useState('chat');
+function bboxPoints(value) {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { return []; }
+  }
+  if (Array.isArray(parsed)) {
+    if (parsed.length >= 4 && parsed.slice(0, 4).every((value) => Number.isFinite(Number(value)))) {
+      return [[Number(parsed[0]), Number(parsed[1])], [Number(parsed[2]), Number(parsed[3])]];
+    }
+    return parsed.filter((point) => Array.isArray(point) && point.length >= 2);
+  }
+  if (parsed && typeof parsed === 'object') {
+    if (parsed.bbox !== undefined) return bboxPoints(parsed.bbox);
+    const left = Number(parsed.left ?? parsed.x); const top = Number(parsed.top ?? parsed.y);
+    const right = Number(parsed.right ?? (Number.isFinite(left) ? left + Number(parsed.width || 0) : NaN));
+    const bottom = Number(parsed.bottom ?? (Number.isFinite(top) ? top + Number(parsed.height || 0) : NaN));
+    if ([left, top, right, bottom].every(Number.isFinite)) return [[left, top], [right, bottom]];
+  }
+  return [];
+}
+
+function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
+  const canvasRef = useRef(null);
+  const [pageSize, setPageSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, scale: 1 });
+
+  useEffect(() => {
+    let active = true;
+    let renderTask;
+    pdf.getPage(pageNumber).then((page) => {
+      if (!active || !canvasRef.current) return;
+      const naturalViewport = page.getViewport({ scale: 1 });
+      const viewport = page.getViewport({ scale: 1.05 });
+      const canvas = canvasRef.current;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      setPageSize({ width: viewport.width, height: viewport.height, naturalWidth: naturalViewport.width, naturalHeight: naturalViewport.height, scale: 1.05 });
+      renderTask = page.render({ canvasContext: canvas.getContext('2d'), viewport });
+      return renderTask.promise;
+    }).catch(() => {});
+    return () => { active = false; try { renderTask?.cancel(); } catch { /* 이미 종료된 렌더 작업 */ } };
+  }, [pdf, pageNumber]);
+
+  const boxStyle = (() => {
+    const points = bboxPoints(bbox);
+    if (!points.length || !pageSize.width) return null;
+    const xs = points.map((point) => Number(point[0])).filter(Number.isFinite);
+    const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
+    if (!xs.length || !ys.length) return null;
+    const normalized = Math.max(...xs) <= 1.5 && Math.max(...ys) <= 1.5;
+    const scaleX = normalized ? pageSize.width : pageSize.scale;
+    const scaleY = normalized ? pageSize.height : pageSize.scale;
+    return { left: Math.min(...xs) * scaleX, top: Math.min(...ys) * scaleY, width: Math.max(3, (Math.max(...xs) - Math.min(...xs)) * scaleX), height: Math.max(3, (Math.max(...ys) - Math.min(...ys)) * scaleY) };
+  })();
+  const privacyStyles = (Array.isArray(privacyBoxes) ? privacyBoxes : []).map((box) => {
+    const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
+    return xs.length && ys.length ? { left: Math.min(...xs) * pageSize.scale, top: Math.min(...ys) * pageSize.scale, width: (Math.max(...xs) - Math.min(...xs)) * pageSize.scale, height: (Math.max(...ys) - Math.min(...ys)) * pageSize.scale } : null;
+  }).filter(Boolean);
+  return <div className="evidence-pdf-page"><canvas ref={canvasRef} />{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
+}
+
+function SpreadsheetEvidencePage({ page, bbox }) {
+  const rows = Array.isArray(page?.rows) ? page.rows : [];
+  const columnCount = Math.max(0, ...rows.map((row) => Array.isArray(row) ? row.length : 0));
+  const points = bboxPoints(bbox);
+  const xs = points.map((point) => Number(point[0])).filter(Number.isFinite);
+  const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
+  const selectedColumnStart = xs.length ? Math.floor(Math.min(...xs)) + 1 : null;
+  const selectedColumnEnd = xs.length ? Math.ceil(Math.max(...xs)) : null;
+  const selectedRowStart = ys.length ? Math.floor(Math.min(...ys)) + 1 : null;
+  const selectedRowEnd = ys.length ? Math.ceil(Math.max(...ys)) : null;
+  const columnLabel = (index) => {
+    let value = index + 1;
+    let label = '';
+    while (value > 0) {
+      value -= 1;
+      label = String.fromCharCode(65 + (value % 26)) + label;
+      value = Math.floor(value / 26);
+    }
+    return label;
+  };
+  return <div className="evidence-spreadsheet">
+    <div className="evidence-sheet-name">{page?.sheet_name || 'Sheet'}</div>
+    <table>
+      <thead><tr><th className="sheet-corner" />{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead>
+      <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>
+        <th>{rowIndex + 1}</th>
+        {Array.from({ length: columnCount }, (_, columnIndex) => {
+          const rowNumber = rowIndex + 1;
+          const columnNumber = columnIndex + 1;
+          const selected = rowNumber >= selectedRowStart && rowNumber <= selectedRowEnd && columnNumber >= selectedColumnStart && columnNumber <= selectedColumnEnd;
+          return <td key={columnIndex} className={selected ? 'selected' : ''}>{row?.[columnIndex] ?? ''}</td>;
+        })}
+      </tr>)}</tbody>
+    </table>
+  </div>;
+}
+
+function EvidencePreview({ source, onUpload, uploading }) {
+  const [preview, setPreview] = useState({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
+  const [privacyPages, setPrivacyPages] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const bbox = Number(source?.pageNumber || 1) === currentPage ? source?.bbox : null;
+
+  useEffect(() => {
+    setCurrentPage(Math.max(1, Number(source?.pageNumber) || 1));
+  }, [source?.documentId, source?.pageNumber]);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    let pdfDocument;
+    let loadingTask;
+    const load = async () => {
+      if (!source?.documentId) { setPreview({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }); return; }
+      setPreview({ type: 'loading', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
+      const [{ data: blob }, { data: privacy }] = await Promise.all([
+        apiClient.get(`/ocr/documents/${source.documentId}/file`, { responseType: 'blob', timeout: 60000 }),
+        apiClient.get(`/ocr/documents/${source.documentId}/privacy-boxes`),
+      ]);
+      if (active) setPrivacyPages(Array.isArray(privacy) ? privacy : []);
+      const name = source.source || '';
+      if (/\.(png|jpe?g|webp|bmp)$/i.test(name)) {
+        objectUrl = URL.createObjectURL(blob);
+        if (active) setPreview({ type: 'image', url: objectUrl, pdf: null, pageCount: 1, width: 0, height: 0, scale: 1 });
+        return;
+      }
+      let pdfData;
+      if (/\.docx$/i.test(name)) {
+        const formData = new FormData(); formData.append('file', blob, name);
+        const response = await apiClient.post('/ocr/docx-preview', formData, { responseType: 'arraybuffer', timeout: 120000 });
+        pdfData = response.data;
+      } else if (/\.(xlsx|xlsm)$/i.test(name)) {
+        const formData = new FormData(); formData.append('file', blob, name);
+        const response = await apiClient.post('/ocr/spreadsheet-preview', formData, { timeout: 120000 });
+        const pages = Array.isArray(response.data?.pages) ? response.data.pages : [];
+        if (active) setPreview({ type: 'spreadsheet', url: '', pdf: null, pages, pageCount: pages.length, width: 0, height: 0, scale: 1 });
+        return;
+      } else if (/\.pdf$/i.test(name)) pdfData = await blob.arrayBuffer();
+      else { if (active) setPreview({ type: 'unsupported', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }); return; }
+      loadingTask = pdfjsLib.getDocument({ data: pdfData });
+      pdfDocument = await loadingTask.promise;
+      if (active) setPreview({ type: 'pdf', url: '', pdf: pdfDocument, pageCount: pdfDocument.numPages, width: 0, height: 0, scale: 1 });
+    };
+    load().catch(() => active && setPreview({ type: 'error', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }));
+    return () => {
+      active = false;
+      if (typeof pdfDocument?.destroy === 'function') {
+        Promise.resolve(pdfDocument.destroy()).catch(() => {});
+      } else if (typeof loadingTask?.destroy === 'function') {
+        Promise.resolve(loadingTask.destroy()).catch(() => {});
+      }
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [source?.documentId, source?.source]);
+
+  const boxStyle = (() => {
+    const points = bboxPoints(bbox);
+    if (!points.length || !preview.width || !preview.height) return null;
+    const xs = points.map((point) => Number(point[0])).filter(Number.isFinite);
+    const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
+    if (!xs.length || !ys.length) return null;
+    return { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: Math.max(3, (Math.max(...xs) - Math.min(...xs)) * preview.scale), height: Math.max(3, (Math.max(...ys) - Math.min(...ys)) * preview.scale) };
+  })();
+  const safePrivacyPages = Array.isArray(privacyPages) ? privacyPages : [];
+  const imagePrivacyStyles = (safePrivacyPages.find((page) => page.page === 1)?.boxes || []).map((box) => {
+    const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
+    return xs.length && ys.length ? { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: (Math.max(...xs) - Math.min(...xs)) * preview.scale, height: (Math.max(...ys) - Math.min(...ys)) * preview.scale } : null;
+  }).filter(Boolean);
+
+  if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><IoCloudUploadOutline /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
+  const pageCount = Math.max(1, preview.pageCount || 1);
+  return <div className="evidence-preview"><div className="evidence-preview-label"><span>{source.source}</span><div className="evidence-page-controls"><button disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>‹</button><b>{currentPage} / {pageCount}</b><button disabled={currentPage >= pageCount} onClick={() => setCurrentPage((page) => page + 1)}>›</button></div></div><div className="evidence-preview-body">
+    {['pdf', 'spreadsheet'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
+    <div className="evidence-document-stage">
+    {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
+    {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
+    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} />}
+    {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
+    {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
+    {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
+    {['unsupported', 'error'].includes(preview.type) && <div className="evidence-preview-empty"><strong>미리보기를 표시할 수 없습니다</strong><button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button></div>}
+    </div>
+  </div></div>;
+}
+
+function ChatPageContent() {
   const [documents, setDocuments] = useState([]);
+  const [indexingId, setIndexingId] = useState(null);
+  const [ragError, setRagError] = useState('');
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [messages, setMessages] = useState([{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 뒤 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
   const [query, setQuery] = useState('');
   const [sources, setSources] = useState([]);
+  const [selectedSource, setSelectedSource] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [trainingRows, setTrainingRows] = useState([{ question: '', answer: '' }]);
-  const [trainingName, setTrainingName] = useState('docunex-gemma2-dataset');
+  const [uploadMode, setUploadMode] = useState(false);
+  const [scrapbookOpen, setScrapbookOpen] = useState(false);
+  const [scrapSaving, setScrapSaving] = useState(false);
+  const [scrapError, setScrapError] = useState('');
+  const [evidenceFlash, setEvidenceFlash] = useState(false);
+  const [modelConfig, setModelConfig] = useState({ model: 'Baseline LLM', embedding_model: 'Baseline Embedding', ready: false });
+  const [scrapbook, setScrapbook] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(SCRAPBOOK_KEY) || '[]'); } catch { return []; }
+  });
   const fileRef = useRef(null);
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
-  const totalChunks = useMemo(() => documents.reduce((sum, item) => sum + item.chunks.length, 0), [documents]);
-  const validTrainingRows = trainingRows.filter((row) => row.question.trim() && row.answer.trim());
+  const previewSource = selectedSource || (activeDoc ? {
+    documentId: activeDoc.documentId,
+    source: activeDoc.name,
+    pageNumber: 1,
+    bbox: null,
+    isDocumentPreview: true,
+  } : null);
+  const totalChunks = useMemo(() => documents.reduce((sum, item) => sum + (item.chunkCount || 0), 0), [documents]);
+
+  useEffect(() => {
+    localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
+  }, [scrapbook]);
+
+  useEffect(() => {
+    apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {});
+  }, []);
+
+  const refreshSessions = () => apiClient.get('/chatbot/sessions')
+    .then(({ data }) => setSessions(data || []))
+    .catch(() => {});
+
+  useEffect(() => { refreshSessions(); }, []);
+
+  const refreshRagDocuments = () => apiClient.get('/rag/documents').then(({ data }) => {
+    const mapped = (data || []).map((item) => ({
+      id: item.id,
+      documentId: item.document_id,
+      name: item.ocr_documents?.file_name || item.file_name || '문서',
+      status: item.status,
+      chunkCount: item.chunk_count || 0,
+      createdAt: new Date(item.created_at),
+    }));
+    setDocuments(mapped);
+    // Keep an explicitly selected/uploaded document, but never restore the
+    // first history item automatically when the chat page starts. A new login
+    // (and a fresh page mount) must begin with an empty RAG upload preview.
+    setActiveId((current) => mapped.some((item) => item.id === current) ? current : null);
+  }).catch(() => {});
+
+  useEffect(() => { refreshRagDocuments(); }, []);
+
+  useEffect(() => {
+    apiClient.get('/chatbot/scraps').then(({ data }) => setScrapbook((data || []).map((item) => ({
+      id: item.id,
+      title: item.question,
+      answer: item.answer,
+      sourceCount: item.source_count || 0,
+      documentName: item.document_name || '전체 RAG 문서',
+      createdAt: item.created_at,
+    })))).catch(() => {});
+  }, []);
+
+  const openSession = async (session) => {
+    const { data } = await apiClient.get(`/chatbot/sessions/${session.id}/messages`);
+    const linkedDocument = documents.find((document) => document.documentId === session.document_id);
+    if (linkedDocument) setActiveId(linkedDocument.id);
+    setUploadMode(false);
+    setActiveSessionId(session.id);
+    setMessages((Array.isArray(data) ? data : []).map((item) => {
+      const storedSources = Array.isArray(item.sources) ? item.sources : [];
+      return {
+        role: item.role,
+        text: item.content,
+        sourceCount: storedSources.length,
+        sources: storedSources,
+      };
+    }));
+    setSources([]);
+    setSelectedSource(null);
+  };
+
+  const startNewChat = () => {
+    setActiveSessionId(null);
+    setMessages([{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 후 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
+    setQuery('');
+    setSources([]);
+    setSelectedSource(null);
+  };
 
   const uploadFiles = async (files) => {
-    const loaded = [];
-    for (const file of files) {
-      let text = '';
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
-        const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, i) => {
-          const content = await (await pdf.getPage(i + 1)).getTextContent();
-          return content.items.map((item) => item.str).join(' ');
-        }));
-        text = pages.join('\n');
-      } else text = await file.text();
-      const id = `${file.name}-${Date.now()}-${loaded.length}`;
-      loaded.push({ id, name: file.name, size: file.size, chunks: makeChunks(text, file.name), createdAt: new Date() });
-    }
-    if (loaded.length) {
-      setDocuments((previous) => [...loaded, ...previous]);
-      setActiveId(loaded[0].id);
+    setRagError('');
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file);
+        setIndexingId(file.name);
+        const { data: extracted } = await apiClient.post('/ocr/upload?upload_origin=RAG', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+        });
+        const { data: indexed } = await apiClient.post(`/rag/documents/${extracted.document_id}/index`, null, { timeout: 300000 });
+        setActiveId(indexed.id);
+        setUploadMode(false);
+        setSelectedSource(null);
+      }
       setSources([]);
-    }
+      await refreshRagDocuments();
+    } catch (error) {
+      setRagError(error.response?.data?.detail || 'OCR 또는 RAG 인덱싱에 실패했습니다.');
+      throw error;
+    } finally { setIndexingId(null); }
   };
 
   const ask = async () => {
     const question = query.trim();
     if (!question || busy) return;
-    const available = activeDoc?.chunks || documents.flatMap((doc) => doc.chunks);
-    const relevant = rankChunks(question, available);
+    let relevant = [];
+    let sessionId = activeSessionId;
+    const recentHistory = messages.slice(-8).map((message) => ({
+      role: message.role,
+      content: message.text,
+    }));
+    const previousUserQuestion = [...messages].reverse().find((message) => message.role === 'user')?.text;
+    const needsPreviousContext = /^(그|그럼|그러면|이건|저건|해당|방금|앞서)|누가라고|그 사람|그것|거기/.test(question);
+    const searchQuery = previousUserQuestion && needsPreviousContext
+      ? `이전 질문: ${previousUserQuestion}\n현재 후속 질문: ${question}`
+      : question;
     setMessages((items) => [...items, { role: 'user', text: question }]);
-    setQuery(''); setSources(relevant); setBusy(true);
+    setQuery(''); setSources([]); setBusy(true);
+    if (SENSITIVE_QUERY_PATTERN.test(question)) {
+      setSelectedSource(null);
+      setMessages((items) => [...items, { role: 'assistant', text: PRIVACY_RESPONSE, sourceCount: 0, sources: [] }]);
+      try {
+        if (!sessionId && activeDoc?.documentId) {
+          const { data: session } = await apiClient.post('/chatbot/sessions', { title: question.slice(0, 120), document_id: activeDoc.documentId });
+          sessionId = session.id; setActiveSessionId(sessionId);
+        }
+        if (sessionId) {
+          await apiClient.post(`/chatbot/sessions/${sessionId}/messages`, { role: 'user', content: question, sources: [] });
+          await apiClient.post(`/chatbot/sessions/${sessionId}/messages`, { role: 'assistant', content: PRIVACY_RESPONSE, sources: [], model_name: 'privacy-policy' });
+          refreshSessions();
+        }
+      } catch { /* 보호 응답은 기록 저장 실패와 무관하게 표시 */ }
+      setBusy(false);
+      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20);
+      return;
+    }
     try {
-      const context = relevant.map((chunk) => `[${chunk.source} / Chunk ${chunk.index}] ${chunk.content}`).join('\n\n');
-      const { data } = await apiClient.post('/chatbot/ask', { message: question, context }, { timeout: 90000 });
-      setMessages((items) => [...items, { role: 'assistant', text: data.reply, sourceCount: relevant.length }]);
+      const { data: matches } = await apiClient.post('/rag/search', {
+        query: searchQuery, rag_document_id: activeId || null, limit: modelConfig.top_k || 8,
+      }, { timeout: 180000 });
+      relevant = (matches || []).map((item) => ({
+        id: item.id, content: item.content, source: item.source,
+        index: item.chunk_index + 1, score: item.similarity,
+        documentId: item.document_id, pageNumber: item.page_number, bbox: item.bbox,
+      }));
+      setSources(relevant);
+      setSelectedSource(relevant[0] || null);
+      if (!sessionId) {
+        try {
+          const { data: session } = await apiClient.post('/chatbot/sessions', {
+            title: question.slice(0, 120),
+            document_id: activeDoc?.documentId,
+          });
+          sessionId = session.id;
+          setActiveSessionId(sessionId);
+        } catch { /* 기록 저장 실패와 AI 답변 생성을 분리 */ }
+      }
+      if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
+        role: 'user', content: question, sources: [],
+      }).catch(() => {});
+      const context = relevant.map((chunk, index) => `[근거 ${index + 1} · ${chunk.source} · ${chunk.pageNumber}페이지 · Chunk ${chunk.index}] ${chunk.content}`).join('\n\n');
+      const { data } = await apiClient.post('/chatbot/ask', {
+        message: question,
+        context,
+        history: recentHistory,
+      }, { timeout: 180000 });
+      setMessages((items) => [...items, { role: 'assistant', text: data.reply, sourceCount: relevant.length, sources: relevant }]);
+      if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
+        role: 'assistant', content: data.reply, model_name: data.model,
+        sources: relevant.map(({ id, content, source, index, score, documentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, pageNumber, bbox })),
+      }).catch(() => {});
+      refreshSessions();
     } catch {
       const best = relevant.filter((item) => item.score > 0);
       const fallback = best.length
-        ? `문서에서 다음과 같은 관련 내용을 찾았습니다.\n\n${best[0].content}\n\n현재 AI 모델 서버에 연결할 수 없어 가장 관련도 높은 문서 근거를 대신 표시했습니다.`
-        : '문서에서 질문과 직접 관련된 내용을 찾지 못했습니다. 질문에 문서에 등장하는 핵심 단어를 포함해 다시 시도해 주세요.';
-      setMessages((items) => [...items, { role: 'assistant', text: fallback, sourceCount: best.length }]);
+        ? `문서에서 다음과 같은 관련 내용을 찾았습니다.\n\n${best[0].content}\n\n현재 AI 응답에 실패하여 가장 관련도 높은 문서 근거를 대신 표시했습니다.`
+        : `RAG 검색 또는 AI 응답에 실패했습니다. 문서가 RAG_READY 상태인지, Ollama에 ${modelConfig.embedding_model}와 ${modelConfig.model}이 설치되어 있는지 확인해 주세요.`;
+      setMessages((items) => [...items, { role: 'assistant', text: fallback, sourceCount: best.length, sources: best }]);
+      if (sessionId) {
+        apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
+          role: 'assistant', content: fallback, model_name: 'fallback',
+          sources: best.map(({ id, content, source, index, score, documentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, pageNumber, bbox })),
+        }).then(refreshSessions).catch(() => {});
+      }
     } finally { setBusy(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20); }
   };
 
-  const removeDocument = (id) => {
-    setDocuments((items) => items.filter((item) => item.id !== id));
-    if (activeId === id) setActiveId(null);
-    setSources([]);
+  const removeSession = async (id) => {
+    await apiClient.delete(`/chatbot/sessions/${id}`);
+    if (activeSessionId === id) startNewChat();
+    refreshSessions();
   };
 
-  const exportTrainingData = () => {
-    if (!validTrainingRows.length) return;
-    const jsonl = validTrainingRows.map((row) => JSON.stringify({
-      instruction: row.question.trim(), input: '', output: row.answer.trim(),
-    })).join('\n');
-    const url = URL.createObjectURL(new Blob([jsonl], { type: 'application/jsonl;charset=utf-8' }));
+  const saveToScrapbook = async (message, index) => {
+    if (message.role !== 'assistant' || !message.text?.trim()) return;
+    setScrapSaving(true); setScrapError('');
+    const previousQuestion = [...messages.slice(0, index)].reverse().find((item) => item.role === 'user');
+    const payload = {
+      question: previousQuestion?.text || 'AI 답변', answer: message.text,
+      document_name: activeDoc?.name || '전체 RAG 문서', source_count: message.sourceCount || 0,
+      sources: message.sources || sources, model_name: modelConfig.model,
+    };
+    try {
+      const { data } = await apiClient.post('/chatbot/scraps', payload);
+      setScrapbook((items) => [{ id: data.id, title: data.question, answer: data.answer, sourceCount: data.source_count, documentName: data.document_name, createdAt: data.created_at }, ...items]);
+      setScrapbookOpen(true);
+    } catch (error) {
+      setScrapError(error.response?.data?.detail || '지식 바구니 저장에 실패했습니다.');
+    } finally { setScrapSaving(false); }
+  };
+
+  const removeScrap = async (id) => {
+    await apiClient.delete(`/chatbot/scraps/${id}`);
+    setScrapbook((items) => items.filter((saved) => saved.id !== id));
+  };
+
+  const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+  const scrapbookHtml = () => `<html><head><meta charset="utf-8"><title>내 지식 바구니</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#172033}h1{color:#173f8f}.card{margin:18px 0;padding:18px;border:1px solid #dce3ee;border-radius:10px}.meta{color:#718096;font-size:12px}.answer{white-space:pre-wrap;line-height:1.7}</style></head><body><h1>내 지식 바구니</h1>${scrapbook.map((item) => `<section class="card"><h2>${escapeHtml(item.title)}</h2><p class="meta">${escapeHtml(item.documentName)} · ${new Date(item.createdAt).toLocaleString('ko-KR')}</p><div class="answer">${escapeHtml(item.answer)}</div></section>`).join('')}</body></html>`;
+  const exportWord = () => {
+    const url = URL.createObjectURL(new Blob(['\ufeff', scrapbookHtml()], { type: 'application/msword;charset=utf-8' }));
     const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = `${trainingName.trim() || 'fine-tuning-dataset'}.jsonl`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.href = url; anchor.download = '지식-바구니.doc'; anchor.click(); URL.revokeObjectURL(url);
+  };
+  const exportPdf = () => {
+    const popup = window.open('', '_blank');
+    if (!popup) return;
+    popup.opener = null;
+    popup.document.write(scrapbookHtml()); popup.document.close(); popup.focus(); popup.print();
   };
 
   return <div className="app-shell chat-app-shell"><Sidebar />
     <main className="chat-workspace">
-      <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>Gemma2:2b 모델과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i /> gemma2:2b</div></header>
-      <nav className="chat-view-tabs">
-        <button className={view === 'chat' ? 'active' : ''} onClick={() => setView('chat')}><IoChatbubbleEllipsesOutline /> AI 채팅</button>
-        <button className={view === 'rag' ? 'active' : ''} onClick={() => setView('rag')}><IoDocumentsOutline /> RAG 문서</button>
-        <button className={view === 'training' ? 'active' : ''} onClick={() => setView('training')}><IoSchoolOutline /> Fine-tuning</button>
-      </nav>
-      <input ref={fileRef} hidden multiple type="file" accept=".pdf,.txt,.md" onChange={(e) => { uploadFiles([...e.target.files]); e.target.value = ''; }} />
+      <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
+      <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
 
-      {view === 'chat' && <section className="rag-grid">
+      <section className="rag-grid">
         <aside className="history-panel">
-          <div className="rag-panel-title"><div><strong>검색 히스토리</strong><small>{documents.length}개의 문서</small></div><button onClick={() => fileRef.current?.click()}>＋</button></div>
-          <div className="history-list-rag">{documents.map((doc) => <button key={doc.id} className={`history-doc ${activeId === doc.id ? 'active' : ''}`} onClick={() => { setActiveId(doc.id); setSources([]); }}><span className="history-file-icon">▤</span><div><strong>{doc.name}</strong><small>{doc.chunks.length} chunks · {doc.createdAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</small></div></button>)}
-          {!documents.length && <div className="history-empty">업로드한 문서와<br />검색 기록이 여기에 남습니다.</div>}</div>
+          <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><span>{documents.length}</span></header><div>{documents.map((document) => <button key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div></button>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div></section>
+          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><span>{sessions.length}</span></header><div className="history-list-rag">{sessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button className="delete-session" onClick={() => removeSession(session.id)} title="대화 삭제"><IoTrashOutline /></button></div>)}
+          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
         </aside>
 
-        <section className="context-panel">
-          <div className="rag-panel-title"><div><strong>검색된 문서 근거</strong><small>{activeDoc?.name || '전체 문서'}</small></div><span className="source-count">{sources.length} SOURCES</span></div>
-          <div className="source-list">{sources.length ? sources.map((source) => <article className="source-card" key={source.id}><div className="source-card-top"><span>CHUNK {source.index}</span><b>{Math.round(source.score * 100)}% 일치</b></div><p>{source.content}</p><footer><span>▤ {source.source}</span><button onClick={() => navigator.clipboard?.writeText(source.content)}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>아직 검색된 근거가 없습니다</strong><p>문서를 업로드하고 질문하면<br />관련 청크가 여기에 표시됩니다.</p></div>}</div>
+        <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
+          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span><button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><IoCloudUploadOutline /> 문서 추가</button></div></div>
+          {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
+          <div className="evidence-workspace"><div className="preview-slot"><EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />{uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><IoCloudUploadOutline /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}</div><div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div></div>
         </section>
 
         <section className="conversation-panel">
-          <div className="rag-panel-title"><div><strong>AI RAG Chat</strong><small>{activeDoc ? activeDoc.name : '새 대화'}</small></div><button className="more-button">•••</button></div>
-          <div className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p>{message.sourceCount > 0 && <button className="cited" onClick={() => document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth' })}>⌕ 근거 {message.sourceCount}개 확인</button>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}<div ref={endRef} /></div>
+          <div className="rag-panel-title"><div><strong>AI RAG Chat</strong><small>{activeDoc ? activeDoc.name : '새 대화'}</small></div><button type="button" className="new-chat-button" disabled={busy} onClick={startNewChat}>＋ 새 채팅</button></div>
+          <div className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); setSelectedSource(messageSources[0] || null); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}<div ref={endRef} /></div>
           <div className="chat-composer"><button className="attach-button" onClick={() => fileRef.current?.click()} title="문서 첨부">＋</button><textarea value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }} placeholder={documents.length ? '문서에 대해 질문해 보세요...' : '먼저 왼쪽 + 버튼 또는 이곳의 + 버튼으로 문서를 추가하세요'} /><button className="send-button" disabled={!query.trim() || busy} onClick={ask}>↑</button></div>
           <p className="composer-note">AI 답변은 부정확할 수 있습니다. 중요한 정보는 표시된 문서 근거에서 확인하세요.</p>
         </section>
-      </section>}
+      </section>
 
-      {view === 'rag' && <section className="rag-library">
-        <div className="rag-library-head"><div><h2>RAG 지식 문서</h2><p>문서를 업로드하면 텍스트를 청크로 나누어 질문 검색에 사용합니다.</p></div><button onClick={() => fileRef.current?.click()}><IoCloudUploadOutline /> 문서 업로드</button></div>
-        <div className="rag-summary"><div><span>등록 문서</span><strong>{documents.length}</strong></div><div><span>검색 청크</span><strong>{totalChunks}</strong></div><div><span>지원 형식</span><strong>PDF · TXT · MD</strong></div></div>
-        <div className="rag-document-table"><header><span>문서명</span><span>파일 크기</span><span>청크</span><span>관리</span></header>{documents.map((doc) => <div key={doc.id}><strong>{doc.name}</strong><span>{(doc.size / 1024).toFixed(1)} KB</span><span>{doc.chunks.length}</span><button onClick={() => removeDocument(doc.id)} title="삭제"><IoTrashOutline /></button></div>)}{!documents.length && <button className="rag-upload-empty" onClick={() => fileRef.current?.click()}><IoCloudUploadOutline /><strong>RAG 문서를 추가해 주세요</strong><span>PDF, TXT, MD 파일을 사용할 수 있습니다.</span></button>}</div>
-      </section>}
-
-      {view === 'training' && <section className="fine-tuning-view">
-        <aside className="training-settings"><h2>Fine-tuning 설정</h2><p>Gemma2 학습에 사용할 데이터셋을 준비합니다.</p><label>데이터셋 이름<input value={trainingName} onChange={(e) => setTrainingName(e.target.value)} /></label><label>Base model<input value="gemma2:2b" disabled /></label><div className="training-info"><strong>학습 데이터 준비</strong><p>이 화면에서는 Q&A 데이터 검증과 JSONL 내보내기를 지원합니다. 실제 LoRA 학습 실행에는 별도의 GPU 학습 서버가 필요합니다.</p></div></aside>
-        <section className="training-dataset"><header><div><h2>Q&A 학습 데이터</h2><p>질문과 모델이 생성해야 할 이상적인 답변을 입력하세요.</p></div><button onClick={() => setTrainingRows((rows) => [...rows, { question: '', answer: '' }])}>＋ 샘플 추가</button></header><div className="training-list">{trainingRows.map((row, index) => <article key={index}><div><strong>샘플 {index + 1}</strong><button disabled={trainingRows.length === 1} onClick={() => setTrainingRows((rows) => rows.filter((_, rowIndex) => rowIndex !== index))}><IoTrashOutline /></button></div><label>질문 / 지시<textarea value={row.question} onChange={(e) => setTrainingRows((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, question: e.target.value } : item))} placeholder="예: 이 문서의 핵심 내용을 요약해 주세요." /></label><label>이상적인 답변<textarea value={row.answer} onChange={(e) => setTrainingRows((rows) => rows.map((item, rowIndex) => rowIndex === index ? { ...item, answer: e.target.value } : item))} placeholder="모델이 학습할 답변을 입력하세요." /></label></article>)}</div><footer><span><b>{validTrainingRows.length}</b> / {trainingRows.length}개 유효 샘플</span><button disabled={!validTrainingRows.length} onClick={exportTrainingData}><IoDownloadOutline /> JSONL 내보내기</button></footer></section>
-      </section>}
+      <button className="knowledge-pocket" type="button" onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><span><small>[ POCKET ]</small> 지식 바구니</span><b>{scrapbook.length}개</b></button>
+      {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}
     </main>
   </div>;
+}
+
+export default function ChatPage() {
+  return <ChatErrorBoundary><ChatPageContent /></ChatErrorBoundary>;
 }

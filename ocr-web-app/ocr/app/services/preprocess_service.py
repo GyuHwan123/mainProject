@@ -2,6 +2,28 @@ import cv2
 import numpy as np
 
 
+def scale_bbox_to_image(
+    bbox: list[list[int]],
+    source_shape: tuple[int, ...],
+    target_shape: tuple[int, ...],
+) -> list[list[int]]:
+    """Map OCR coordinates from a processed image back to the source image."""
+    source_height, source_width = source_shape[:2]
+    target_height, target_width = target_shape[:2]
+    if source_width <= 0 or source_height <= 0:
+        return bbox
+
+    scale_x = target_width / source_width
+    scale_y = target_height / source_height
+    return [
+        [
+            max(0, min(round(point[0] * scale_x), target_width)),
+            max(0, min(round(point[1] * scale_y), target_height)),
+        ]
+        for point in bbox
+    ]
+
+
 def preprocess_image(
     file_path,
     deskew: bool = True,

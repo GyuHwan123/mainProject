@@ -15,6 +15,7 @@ const SESSION_KEYS = [
   'pic_to_text_email',
   'pic_to_text_name',
   'pic_to_text_role',
+  'pic_to_text_subscription_tier',
 ];
 const PUBLIC_AUTH_PATHS = [
   '/auth/login',

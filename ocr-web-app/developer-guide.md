@@ -19,7 +19,7 @@ FastAPI
   └─ 문서 문맥 전달 ─ Ollama(gemma2:2b)
 ```
 
-주요 기술은 React, Vite, React Router, Axios, Zustand, PDF.js, FastAPI, SQLAlchemy, JWT, Supabase, PostgreSQL, Ollama입니다.
+주요 기술은 React, Vite, React Router, Axios, PDF.js, FastAPI, SQLAlchemy, JWT, Supabase, PostgreSQL, Ollama입니다.
 
 ## 2. 저장소 구조
 
@@ -29,8 +29,7 @@ ocr-web-app/
 ├─ docker-compose.yml           frontend/backend/db/ollama 통합 실행
 ├─ docker-compose.override.yml  개발용 소스 마운트와 hot reload
 ├─ developer-guide.md           구조 및 코드 분석(현재 문서)
-├─ team-intro-script.md         팀 공유·발표용 설명문
-├─ docs/                        Supabase/OAuth 설정 및 테스트 문서
+├─ docs/                        최신 Supabase 스키마 및 점검 SQL
 ├─ frontend/
 │  ├─ src/App.jsx               실제 라우트와 보호 라우트
 │  ├─ src/api/client.js         Axios 기본 URL 및 JWT interceptor
@@ -50,7 +49,7 @@ ocr-web-app/
 └─ ollama/Dockerfile            gemma2:2b 모델 실행 이미지
 ```
 
-주의: `frontend/src/routes/AppRoutes.jsx`와 `Dashboard.jsx`, `OCR.jsx`, `Report.jsx`는 초기 골격 파일입니다. 현재 앱은 `src/App.jsx`와 이름이 `Page`로 끝나는 페이지 컴포넌트를 사용합니다.
+현재 앱의 라우트는 `frontend/src/App.jsx`에서 관리하며, 화면은 이름이 `Page`로 끝나는 컴포넌트로 구성됩니다.
 
 ## 3. 애플리케이션 시작점과 라우팅
 
@@ -116,7 +115,7 @@ LoginPage → Supabase OAuth(Google/Apple)
 
 - 이미지로 스캔된 PDF에는 문자 레이어가 없으므로 텍스트를 추출하지 못합니다.
 - `POST /api/v1/ocr/upload`는 업로드 파일을 실제 분석하지 않고 고정 샘플을 반환합니다.
-- `ocr_service.py`는 OCR 엔진 연결 지점만 있으며 실제 엔진은 구현되지 않았습니다.
+- OCR 엔진은 `ocr/app/services/ocr/ocr_service.py`에서 PaddleOCR 기반으로 구현되어 있습니다.
 
 따라서 현재 기능을 “PDF 문자 레이어 추출”이라고 표현하는 것이 정확하며 PaddleOCR 같은 이미지 OCR은 후속 작업입니다.
 
@@ -162,7 +161,7 @@ LoginPage → Supabase OAuth(Google/Apple)
 | OCR 페이지 텍스트 | React state | 새로고침 시 소멸 |
 | 채팅 문서·청크·대화 | React state | 새로고침 시 소멸 |
 
-`frontend/src/stores/useAuthStore.js`에는 Zustand 인증 store가 있지만 현재 주요 인증 흐름은 `appSession.js`와 localStorage를 직접 사용합니다.
+프론트엔드 인증 상태는 `appSession.js`와 localStorage에서 관리합니다.
 
 ## 7. 로컬 실행
 
@@ -224,7 +223,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 
 ## 10. 다음 개발 우선순위
 
-1. OCR 엔진을 `ocr_service.py`에 연결하고 업로드 API의 샘플 응답 제거
+1. PaddleOCR 모델과 문서 유형별 전처리 성능 검증
 2. 문서·OCR 결과·처리 상태용 DB 모델과 마이그레이션 추가
 3. 키워드 검색을 embedding/vector DB 기반 검색으로 교체
 4. 리포트와 마이페이지의 정적 데이터를 실제 API에 연결

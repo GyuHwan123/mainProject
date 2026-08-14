@@ -16,10 +16,11 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
-function DeveloperRoute({ children }) {
+function EnterpriseRoute({ children }) {
   if (!hasAppSession()) return <Navigate to="/login" replace />;
   const user = getAppUser();
-  if (!['DEVELOPER', 'ADMIN'].includes(user.role) && user.email !== 'developer@docunex.com') return <Navigate to="/dashboard" replace />;
+  const canViewReports = user.subscriptionTier === 'ENTERPRISE' || ['DEVELOPER', 'ADMIN'].includes(user.role);
+  if (!canViewReports) return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -32,7 +33,7 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
       <Route path="/ocr" element={<ProtectedRoute><OCRPage /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-      <Route path="/reports" element={<DeveloperRoute><ReportPage /></DeveloperRoute>} />
+      <Route path="/reports" element={<EnterpriseRoute><ReportPage /></EnterpriseRoute>} />
       <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
     </Routes>
   );

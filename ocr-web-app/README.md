@@ -2,11 +2,12 @@
 
 PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI + SQLAlchemy 구조로 구성되어 있으며, 모든 개발 환경에서 PostgreSQL을 사용합니다. `DATABASE_URL`에는 PostgreSQL 연결 주소가 반드시 필요합니다.
 
-## 처음 공부하는 분을 위한 문서
+## 문서
 
-- [비전공자를 위한 프로젝트·코드 상세 해설](docs/beginner-project-guide.md)
-- [발표 및 복습용 설명 스크립트](docs/beginner-presentation-script.md)
 - [개발자 가이드](developer-guide.md)
+- [Supabase enum 준비](docs/01-supabase-enums.sql)
+- [Supabase 최신 통합 스키마](docs/02-supabase-schema.sql)
+- [Supabase 적용 결과 점검](docs/03-supabase-inspection.sql)
 
 ## 1. 프로젝트 구성
 
@@ -23,7 +24,6 @@ ocr-web-app/
 │   └── app/
 │       ├── api/
 │       │   ├── router.py
-│       │   └── routes/
 │       │       ├── auth.py
 │       │       ├── ocr.py
 │       │       ├── chatbot.py
@@ -51,10 +51,7 @@ ocr-web-app/
 │       │   └── client.js
 │       ├── components/
 │       │   ├── Sidebar.jsx
-│       │   ├── TopBar.jsx
-│       │   └── PageTitle.jsx
 │       ├── features/
-│       │   └── socialAuth.js
 │       ├── lib/
 │       │   └── supabase.js
 │       ├── pages/
@@ -63,19 +60,14 @@ ocr-web-app/
 │       │   ├── OCRPage.jsx
 │       │   ├── ReportPage.jsx
 │       │   └── MyPage.jsx
-│       ├── stores/
-│       │   └── useAuthStore.js
 │       ├── styles.css
-│       └── routes/
-│           └── AppRoutes.jsx
 ├── ollama/
 │   ├── Dockerfile
 │   └── ...
 ├── docs/
-│   ├── supabase-oauth-settings.md
-│   ├── google-oauth-redirect-url.md
-│   ├── apple-oauth-setup.md
-│   └── social-login-test-guide.md
+│   ├── 01-supabase-enums.sql
+│   ├── 02-supabase-schema.sql
+│   └── 03-supabase-inspection.sql
 └── README.md
 ```
 
@@ -161,7 +153,18 @@ SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
+RAG_EMBEDDING_MODEL=embeddinggemma
+RAG_EMBEDDING_DIMENSIONS=768
+RAG_LLM_MODEL=gemma2:2b
+RAG_RERANK_MODEL=
+RAG_PROMPT_VERSION=baseline-v1
+RAG_TOP_K=8
+RAG_CHUNK_TARGET_CHARS=380
 ```
+
+RAG 모델은 위 환경변수로 교체합니다. 임베딩 모델의 출력 차원이 바뀌면
+`RAG_EMBEDDING_DIMENSIONS`와 Supabase `rag_chunks.embedding`의 `vector(N)`
+차원을 함께 변경하고 기존 문서를 다시 인덱싱해야 합니다.
 
 ## 6. 로컬 실행 방법
 

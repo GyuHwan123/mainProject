@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     # Local development uses the native Ollama service. Docker Compose overrides
     # this with http://ollama:11434 for container-to-container communication.
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    RAG_EMBEDDING_MODEL: str = "embeddinggemma"
+    RAG_EMBEDDING_DIMENSIONS: int = 768
+    RAG_LLM_MODEL: str = "gemma2:2b"
+    RAG_RERANK_MODEL: str = ""
+    RAG_PROMPT_VERSION: str = "baseline-v1"
+    RAG_TOP_K: int = 8
+    RAG_CHUNK_TARGET_CHARS: int = 380
     # Docker Compose overrides this with the internal `ocr` service address.
     OCR_BASE_URL: str = "http://127.0.0.1:8001"
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]

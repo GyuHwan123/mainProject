@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Callable
@@ -5,6 +6,26 @@ from typing import Callable
 import fitz
 
 from app.schemas.ocr import OCRItem, OCRPage
+
+
+def _rect_bbox(
+    rect: tuple[float, float, float, float],
+    page_width: float,
+    page_height: float,
+) -> list[list[int]] | None:
+    """Return a non-empty, page-clipped bbox without cutting glyph edges."""
+    x0, y0, x1, y1 = rect
+    if not all(math.isfinite(value) for value in rect):
+        return None
+
+    left = max(0, min(math.floor(x0), math.ceil(page_width)))
+    top = max(0, min(math.floor(y0), math.ceil(page_height)))
+    right = max(0, min(math.ceil(x1), math.ceil(page_width)))
+    bottom = max(0, min(math.ceil(y1), math.ceil(page_height)))
+    if right <= left or bottom <= top:
+        return None
+
+    return [[left, top], [right, top], [right, bottom], [left, bottom]]
 
 
 def extract_pdf_text(
@@ -61,6 +82,23 @@ def extract_pdf_text_and_images(
 
             page_items: list[OCRItem] = []
 
+            # Word boxes are materially tighter than line boxes for converted
+            # DOCX files, especially for tables, tab stops and mixed fonts.
+            # The trailing tuple fields are block, line and word indices.
+            for word in page.get_text("words"):
+                if len(word) < 5:
+                    continue
+                text = str(word[4]).strip()
+                bbox = _rect_bbox(
+                    tuple(word[:4]),
+                    page.rect.width,
+                    page.rect.height,
+                )
+                if text and bbox:
+                    page_items.append(
+                        OCRItem(text=text, confidence=1.0, bbox=bbox)
+                    )
+
             blocks = page.get_text(
                 "dict"
             ).get(
@@ -77,55 +115,8 @@ def extract_pdf_text_and_images(
                 # =================================
 
                 if block_type == 0:
-
-                    for line in block.get(
-                        "lines",
-                        [],
-                    ):
-
-                        line_text_parts = []
-
-                        for span in line.get(
-                            "spans",
-                            [],
-                        ):
-
-                            text = span.get(
-                                "text",
-                                "",
-                            ).strip()
-
-                            if text:
-                                line_text_parts.append(
-                                    text
-                                )
-
-                        text = "".join(
-                            line_text_parts
-                        ).strip()
-
-                        if not text:
-                            continue
-
-                        bbox = line.get(
-                            "bbox",
-                            (0, 0, 0, 0),
-                        )
-
-                        x0, y0, x1, y1 = bbox
-
-                        page_items.append(
-                            OCRItem(
-                                text=text,
-                                confidence=1.0,
-                                bbox=[
-                                    [int(x0), int(y0)],
-                                    [int(x1), int(y0)],
-                                    [int(x1), int(y1)],
-                                    [int(x0), int(y1)],
-                                ],
-                            )
-                        )
+                    # Native text was extracted above with precise word boxes.
+                    continue
 
                 # =================================
                 # IMAGE
@@ -264,28 +255,19 @@ def extract_pdf_text_and_images(
                                     + local_y1 * scale_y
                                 )
 
+                                mapped_bbox = _rect_bbox(
+                                    (pdf_x0, pdf_y0, pdf_x1, pdf_y1),
+                                    page.rect.width,
+                                    page.rect.height,
+                                )
+                                if not mapped_bbox:
+                                    continue
+
                                 page_items.append(
                                     OCRItem(
                                         text=ocr_item.text,
                                         confidence=ocr_item.confidence,
-                                        bbox=[
-                                            [
-                                                int(pdf_x0),
-                                                int(pdf_y0),
-                                            ],
-                                            [
-                                                int(pdf_x1),
-                                                int(pdf_y0),
-                                            ],
-                                            [
-                                                int(pdf_x1),
-                                                int(pdf_y1),
-                                            ],
-                                            [
-                                                int(pdf_x0),
-                                                int(pdf_y1),
-                                            ],
-                                        ],
+                                        bbox=mapped_bbox,
                                     )
                                 )
 

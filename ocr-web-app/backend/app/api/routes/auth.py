@@ -67,6 +67,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
         user_email=user.email,
         user_name=user.name,
         user_role=user.role,
+        user_subscription_tier=user.subscription_tier,
     )
 
 
@@ -140,12 +141,27 @@ def social_login(payload: SocialLoginRequest, db: Session = Depends(get_db)) -> 
             user.provider_id = supabase_user.get("id")
             db.commit()
 
+        # OCR, RAG, chat history and scrapbook tables reference public.users.
+        # Keep the cloud user row in sync after a verified social login.
+        try:
+            supabase_service.upsert_user(
+                email=user.email,
+                provider=user.provider,
+                provider_id=user.provider_id,
+                role=user.role,
+            )
+        except HTTPException:
+            # Authentication remains available during a temporary REST outage.
+            # Data features will surface their own Supabase connectivity error.
+            pass
+
         token = create_access_token(subject=user.email)
         return LoginResponse(
             access_token=token,
             user_email=user.email,
             user_name=user.name,
             user_role=user.role,
+            user_subscription_tier=user.subscription_tier,
         )
 
     raise HTTPException(
@@ -176,4 +192,4 @@ def get_me(
             detail="사용자를 찾을 수 없습니다.",
         )
 
-    return {"email": user.email, "name": user.name, "role": user.role}
+    return {"email": user.email, "name": user.name, "role": user.role, "subscription_tier": user.subscription_tier}

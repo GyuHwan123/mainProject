@@ -8,9 +8,14 @@ until ollama list >/dev/null 2>&1; do
   sleep 1
 done
 
-if ! ollama list | grep -q '^gemma2:2b'; then
-  echo "Preparing gemma2:2b model..."
-  ollama pull gemma2:2b
-fi
+llm_model="${OLLAMA_LLM_MODEL:-gemma2:2b}"
+embedding_model="${OLLAMA_EMBEDDING_MODEL:-embeddinggemma}"
+
+for model in "$llm_model" "$embedding_model"; do
+  if ! ollama list | grep -Fq "$model"; then
+    echo "Preparing $model model..."
+    ollama pull "$model"
+  fi
+done
 
 wait "$server_pid"

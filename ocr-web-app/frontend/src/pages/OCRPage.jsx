@@ -1,53 +1,29 @@
 import { useEffect, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoMdSettings } from 'react-icons/io';
-import { IoDocumentTextOutline, IoLogOutOutline } from 'react-icons/io5';
+import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline } from 'react-icons/io5';
 import apiClient from '../api/client';
-import { clearAppSession, getAppUser, saveAppUser } from '../features/appSession';
-import { supabase } from '../lib/supabase';
+import Sidebar from '../components/Sidebar';
+import { getAppUser, saveAppUser } from '../features/appSession';
 import '../style/OCRPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const EMPTY_FILE_NAME = '문서를 선택해 주세요';
-const LOCAL_OLLAMA_URL = 'http://127.0.0.1:11434';
-const AI_CONTEXT_LENGTH = 6000;
+const EMPTY_ITEMS = [];
+const RECEIPT_NAME_PATTERN = /(영수증|거래.?증빙|카드.?전표|receipt|invoice)/i;
 
-function buildTransformPrompt(text, mode) {
-  const instruction = mode === 'structured'
-    ? `문서의 원래 언어를 유지하며 내용을 구조화하세요.
-반드시 다음 JSON 형식만 반환하세요:
-{"title":"문서 제목","summary":"핵심 요약","sections":[{"heading":"항목 제목","content":"항목 내용"}]}
-원문에 없는 사실은 만들지 말고 sections는 중요한 순서대로 구성하세요.`
-    : `문서에서 표로 표현할 수 있는 사실과 관계를 찾아 표로 정리하세요.
-반드시 다음 JSON 형식만 반환하세요:
-{"title":"표 제목","columns":["열1","열2"],"rows":[["값1","값2"]],"note":"필요한 설명"}
-각 행의 값 개수는 columns 개수와 같아야 합니다. 근거가 부족하면 columns와 rows를 빈 배열로 반환하고 원문에 없는 사실은 만들지 마세요.`;
-  return `${instruction}\n\n[원문]\n${text.slice(0, AI_CONTEXT_LENGTH)}`;
-}
-
-async function transformWithLocalOllama(text, mode) {
-  const response = await fetch(`${LOCAL_OLLAMA_URL}/api/generate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'gemma2:2b',
-      prompt: buildTransformPrompt(text, mode),
-      format: 'json',
-      stream: false,
-      keep_alive: '30m',
-      options: {
-        temperature: 0.1,
-        num_predict: mode === 'structured' ? 500 : 800,
-      },
-    }),
-  });
-  if (!response.ok) throw new Error(`Ollama 응답 오류 (${response.status})`);
-  const payload = await response.json();
-  const result = JSON.parse(payload.response || '{}');
-  if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Ollama 응답 형식이 올바르지 않습니다.');
-  return result;
+async function inferProcessingMode(file) {
+  if (RECEIPT_NAME_PATTERN.test(file?.name || '')) return 'receipt';
+  if (!file || !/\.(png|jpe?g|webp|bmp)$/i.test(file.name)) return 'document';
+  try {
+    const bitmap = await createImageBitmap(file);
+    const isReceiptShape = bitmap.height / Math.max(bitmap.width, 1) >= 1.45;
+    bitmap.close();
+    return isReceiptShape ? 'receipt' : 'document';
+  } catch {
+    return 'document';
+  }
 }
 
 function buildReadingOrder(content, viewport) {
@@ -186,6 +162,45 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false, items = [
 }
 
 
+function ImagePreview({ src, fileName, scale, items = [], selectedItemIndex, onSelectItem, loading }) {
+  const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
+  const selectedOverlayRef = useRef(null);
+
+  useEffect(() => {
+    selectedOverlayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  }, [selectedItemIndex]);
+
+  const width = naturalSize.width * scale;
+  const height = naturalSize.height * scale;
+  return (
+    <div className="image-preview-wrap" style={naturalSize.width ? { width, height } : undefined}>
+      <img
+        className="image-main-preview"
+        src={src}
+        alt={`${fileName} 미리보기`}
+        onLoad={(event) => setNaturalSize({
+          width: event.currentTarget.naturalWidth,
+          height: event.currentTarget.naturalHeight,
+        })}
+      />
+      {naturalSize.width > 0 && items.map((item, index) => {
+        const points = Array.isArray(item.bbox) ? item.bbox : [];
+        const xs = points.map((point) => Number(point?.[0])).filter(Number.isFinite);
+        const ys = points.map((point) => Number(point?.[1])).filter(Number.isFinite);
+        if (!xs.length || !ys.length) return null;
+        const x0 = Math.max(0, Math.min(...xs));
+        const y0 = Math.max(0, Math.min(...ys));
+        const x1 = Math.min(naturalSize.width, Math.max(...xs));
+        const y1 = Math.min(naturalSize.height, Math.max(...ys));
+        if (x1 <= x0 || y1 <= y0) return null;
+        return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max((x1 - x0) * scale, 2), height: Math.max((y1 - y0) * scale, 2) }} onClick={() => onSelectItem?.(index)} aria-label={`${item.text} 위치`} />;
+      })}
+      {loading && <div className="image-processing"><span />OCR 처리 중...</div>}
+    </div>
+  );
+}
+
+
 function SpreadsheetPreview({ rows, items, selectedItemIndex, onSelectItem }) {
   const columnCount = Math.max(0, ...rows.map((row) => row.length));
   const columnLabel = (index) => {
@@ -218,11 +233,156 @@ function SpreadsheetPreview({ rows, items, selectedItemIndex, onSelectItem }) {
   );
 }
 
+function GeneratedWorkbookPreview({ title, rows, onBack, onDownload }) {
+  const columnCount = Math.max(1, ...rows.map((row) => row.length));
+  return <div className="generated-workbook-preview">
+    <header><span className="xlsx-mark">X</span><div><strong>{title}</strong><small>선택한 행으로 만든 새 Excel 문서</small></div><nav><button type="button" onClick={onBack}>원본 보기</button><button type="button" className="download" onClick={onDownload}>Excel 다운로드</button></nav></header>
+    <div className="workbook-sheet"><table>
+      <thead><tr><th className="sheet-corner" />{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead>
+      <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody>
+    </table></div>
+  </div>;
+}
 
+function amountFromCell(value) {
+  const normalized = String(value ?? '').replace(/[^0-9.+-]/g, '');
+  if (!normalized || !/[0-9]/.test(normalized)) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function buildExtractionRows(rows, items) {
+  if (Array.isArray(rows) && rows.length) {
+    return rows.slice(0, 500).map((row, index) => ({
+      id: `sheet-${index}`,
+      cells: (row || []).map((cell) => String(cell ?? '')),
+      evidenceIndex: items.findIndex((item) => item.row === index + 1),
+    }));
+  }
+  const positioned = items.map((item, index) => {
+    const points = Array.isArray(item.bbox) ? item.bbox : [];
+    const xs = points.map((point) => Number(point?.[0])).filter(Number.isFinite);
+    const ys = points.map((point) => Number(point?.[1])).filter(Number.isFinite);
+    if (!(item.text || '').trim() || !xs.length || !ys.length) return null;
+    const x0 = Math.min(...xs); const x1 = Math.max(...xs);
+    const y0 = Math.min(...ys); const y1 = Math.max(...ys);
+    return { text: String(item.text).trim(), index, x0, x1, y0, y1, cy: (y0 + y1) / 2, height: Math.max(y1 - y0, 1) };
+  }).filter(Boolean).sort((a, b) => a.cy - b.cy || a.x0 - b.x0);
+  if (!positioned.length) return [];
+
+  // OCR 단어 상자의 세로 겹침을 이용해 실제 문서의 한 행으로 묶는다.
+  const visualLines = [];
+  positioned.forEach((item) => {
+    let line = visualLines.find((candidate) => {
+      const overlap = Math.min(candidate.y1, item.y1) - Math.max(candidate.y0, item.y0);
+      return overlap >= Math.min(candidate.height, item.height) * 0.35
+        || Math.abs(candidate.cy - item.cy) <= Math.max(candidate.height, item.height) * 0.58;
+    });
+    if (!line) {
+      line = { items: [], y0: item.y0, y1: item.y1, cy: item.cy, height: item.height };
+      visualLines.push(line);
+    }
+    line.items.push(item);
+    line.y0 = Math.min(line.y0, item.y0); line.y1 = Math.max(line.y1, item.y1);
+    line.cy = line.items.reduce((sum, value) => sum + value.cy, 0) / line.items.length;
+    line.height = Math.max(line.y1 - line.y0, 1);
+  });
+  visualLines.forEach((line) => line.items.sort((a, b) => a.x0 - b.x0));
+  visualLines.sort((a, b) => a.cy - b.cy);
+
+  // 여러 행에서 반복되는 X 시작점을 열 경계로 인식한다. 제목처럼 한 칸인 행은 A열에 둔다.
+  const minX = Math.min(...positioned.map((item) => item.x0));
+  const maxX = Math.max(...positioned.map((item) => item.x1));
+  const tolerance = Math.max((maxX - minX) * 0.025, 12);
+  const clusters = [];
+  visualLines.filter((line) => line.items.length >= 2).flatMap((line) => line.items).forEach((item) => {
+    let cluster = clusters.find((value) => Math.abs(value.x - item.x0) <= tolerance);
+    if (!cluster) { cluster = { x: item.x0, count: 0 }; clusters.push(cluster); }
+    cluster.x = (cluster.x * cluster.count + item.x0) / (cluster.count + 1);
+    cluster.count += 1;
+  });
+  let anchors = clusters.filter((cluster) => cluster.count >= 2).sort((a, b) => a.x - b.x).map((cluster) => cluster.x);
+  if (anchors.length < 2) anchors = [minX];
+  if (anchors.length > 12) anchors = anchors.slice(0, 12);
+
+  return visualLines.slice(0, 500).map((line, rowIndex) => {
+    const cells = Array.from({ length: line.items.length >= 2 ? anchors.length : 1 }, () => '');
+    line.items.forEach((item) => {
+      const column = line.items.length < 2 ? 0 : anchors.reduce((best, anchor, index) => (
+        Math.abs(anchor - item.x0) < Math.abs(anchors[best] - item.x0) ? index : best
+      ), 0);
+      cells[column] = cells[column] ? `${cells[column]} ${item.text}` : item.text;
+    });
+    return {
+      id: `ocr-line-${rowIndex}`,
+      cells,
+      evidenceIndex: line.items[0].index,
+      evidenceIndices: line.items.map((item) => item.index),
+      isTableRow: line.items.length >= 2,
+    };
+  });
+}
+
+function columnLabel(index) {
+  let value = index + 1;
+  let label = '';
+  while (value > 0) {
+    value -= 1;
+    label = String.fromCharCode(65 + (value % 26)) + label;
+    value = Math.floor(value / 26);
+  }
+  return label;
+}
+
+function ExtractionWorksheet({ rows, onChange, onEvidence, selectedIds, onSelectRange }) {
+  const dragStartRef = useRef(null);
+  const columnCount = Math.max(1, ...rows.map((row) => row.cells.length));
+  const gridStyle = { gridTemplateColumns: `42px repeat(${columnCount}, minmax(140px, 1fr)) 76px` };
+  const updateCell = (id, cellIndex, value) => onChange((current) => current.map((row) => row.id === id
+    ? { ...row, cells: Array.from({ length: Math.max(row.cells.length, cellIndex + 1) }, (_, index) => index === cellIndex ? value : row.cells[index] || '') }
+    : row));
+  const selectThrough = (index) => {
+    if (dragStartRef.current === null) return;
+    const from = Math.min(dragStartRef.current, index);
+    const to = Math.max(dragStartRef.current, index);
+    onSelectRange(rows.slice(from, to + 1).map((row) => row.id));
+  };
+  const startSelecting = (rowIndex, rowId, event) => {
+    if (event.button !== 0 || event.target.closest('.evidence-button')) return;
+    dragStartRef.current = rowIndex;
+    onSelectRange([rowId]);
+  };
+  useEffect(() => {
+    const stopDragging = () => { dragStartRef.current = null; };
+    window.addEventListener('pointerup', stopDragging);
+    window.addEventListener('pointercancel', stopDragging);
+    return () => {
+      window.removeEventListener('pointerup', stopDragging);
+      window.removeEventListener('pointercancel', stopDragging);
+    };
+  }, []);
+  return <div className="financial-sheet extraction-sheet">
+    <div className="sheet-column-head" style={gridStyle}><b>#</b>{Array.from({ length: columnCount }, (_, index) => <b key={index}>{columnLabel(index)}</b>)}<b>근거</b></div>
+    <div className="sheet-rows">{rows.map((row, rowIndex) => (
+      <div className={`sheet-row ${row.isTableRow ? 'table-row' : 'text-row'} ${selectedIds.includes(row.id) ? 'selected' : ''}`} style={gridStyle} key={row.id} onPointerDown={(event) => startSelecting(rowIndex, row.id, event)} onPointerEnter={() => selectThrough(rowIndex)}>
+        <button className="row-selector" type="button" onPointerDown={(event) => event.preventDefault()}>{rowIndex + 1}</button>
+        {Array.from({ length: columnCount }, (_, cellIndex) => <input key={cellIndex} value={row.cells[cellIndex] || ''} onChange={(event) => updateCell(row.id, cellIndex, event.target.value)} aria-label={`${rowIndex + 1}행 ${columnLabel(cellIndex)}열`} />)}
+        <button className="evidence-button" type="button" disabled={row.evidenceIndex < 0} onClick={() => onEvidence(row.evidenceIndex)}>근거 보기</button>
+      </div>
+    ))}{!rows.length && <div className="sheet-empty"><strong>추출된 데이터가 없습니다.</strong><p>오른쪽에 문서를 업로드하면 OCR 결과가 행으로 구성됩니다.</p></div>}</div>
+  </div>;
+}
 export default function OCRPage() {
   const [user, setUser] = useState(getAppUser);
   const [pdf, setPdf] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
+  const [preprocessedImageUrl, setPreprocessedImageUrl] = useState('');
+  const [previewVariant, setPreviewVariant] = useState('original');
+  const [preprocessingInfo, setPreprocessingInfo] = useState(null);
+  const [validationRows, setValidationRows] = useState([]);
+  const [selectedRowIds, setSelectedRowIds] = useState([]);
+  const [exportingRows, setExportingRows] = useState(false);
+  const [generatedWorkbook, setGeneratedWorkbook] = useState(null);
   const [fileName, setFileName] = useState(EMPTY_FILE_NAME);
   const [pageNumber, setPageNumber] = useState(1);
   const [pageTexts, setPageTexts] = useState([]);
@@ -230,30 +390,30 @@ export default function OCRPage() {
   const [pageRows, setPageRows] = useState([]);
   const [sheetNames, setSheetNames] = useState([]);
   const [selectedItemIndex, setSelectedItemIndex] = useState(null);
-  const [documentHistory, setDocumentHistory] = useState([]);
   const [currentDocumentId, setCurrentDocumentId] = useState(null);
   const [pendingFile, setPendingFile] = useState(null);
+  const [processingMode, setProcessingMode] = useState('document');
   const [zoom, setZoom] = useState(1.05);
   const [loading, setLoading] = useState(false);
   const [projectTransition, setProjectTransition] = useState(false);
   const [resultTab, setResultTab] = useState('text');
-  const [aiResults, setAiResults] = useState({});
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState('');
   const [groundTruth, setGroundTruth] = useState('');
   const [groundTruthFileName, setGroundTruthFileName] = useState('');
   const [processingTimeMs, setProcessingTimeMs] = useState(null);
   const [evaluationStatus, setEvaluationStatus] = useState('');
   const [error, setError] = useState('');
-  const [profileImageFailed, setProfileImageFailed] = useState(false);
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyItems, setHistoryItems] = useState([]);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
   const inputRef = useRef(null);
   const imagePreviewRef = useRef('');
-  const userMenuRef = useRef(null);
   const projectTransitionTimerRef = useRef(null);
   const extractionStartedAtRef = useRef(null);
   const evaluationPanelRef = useRef(null);
   const groundTruthFileRef = useRef(null);
+  const generatedWorkbookUrlRef = useRef('');
 
   const replaceImagePreview = (file) => {
     if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current);
@@ -262,13 +422,17 @@ export default function OCRPage() {
     setImagePreviewUrl(nextUrl);
   };
 
-  const refreshHistory = () => apiClient.get('/ocr/history')
-    .then(({ data }) => setDocumentHistory(data))
-    .catch(() => {});
-
   const resetDocumentView = ({ preserveGroundTruth = false } = {}) => {
+    if (generatedWorkbookUrlRef.current) URL.revokeObjectURL(generatedWorkbookUrlRef.current);
+    generatedWorkbookUrlRef.current = '';
+    setGeneratedWorkbook(null);
     setPdf(null);
     replaceImagePreview(null);
+    setPreprocessedImageUrl('');
+    setPreviewVariant('original');
+    setPreprocessingInfo(null);
+    setValidationRows([]);
+    setSelectedRowIds([]);
     setPageTexts([]);
     setPageItems([]);
     setPageRows([]);
@@ -277,9 +441,6 @@ export default function OCRPage() {
     setSelectedItemIndex(null);
     setCurrentDocumentId(null);
     setResultTab('text');
-    setAiResults({});
-    setAiLoading(false);
-    setAiError('');
     if (!preserveGroundTruth) {
       setGroundTruth('');
       setGroundTruthFileName('');
@@ -303,7 +464,25 @@ export default function OCRPage() {
     }, 420);
   };
 
-  const loadHistoryDocument = async (documentId) => {
+  const loadOcrHistory = async () => {
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      const { data } = await apiClient.get('/ocr/history', { params: { upload_origin: 'OCR' } });
+      setHistoryItems(Array.isArray(data) ? data : []);
+    } catch (requestError) {
+      setHistoryError(requestError.response?.data?.detail || 'OCR 처리 기록을 불러오지 못했습니다.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const openHistory = () => {
+    setHistoryOpen(true);
+    loadOcrHistory();
+  };
+
+  const loadHistoryDocument = async (documentId, targetPage = 1, targetBbox = null) => {
     setPendingFile(null);
     setLoading(true);
     setError('');
@@ -322,6 +501,21 @@ export default function OCRPage() {
       setSheetNames(pages.map((page) => page.sheet_name || ''));
       setFileName(result.filename);
       setCurrentDocumentId(documentId);
+      const safePage = Math.min(Math.max(Number(targetPage) || 1, 1), Math.max(pages.length, 1));
+      setPageNumber(safePage);
+      if (targetBbox && pages[safePage - 1]?.items?.length) {
+        const [targetStart, targetEnd] = targetBbox;
+        const targetX = (Number(targetStart?.[0]) + Number(targetEnd?.[0])) / 2;
+        const targetY = (Number(targetStart?.[1]) + Number(targetEnd?.[1])) / 2;
+        const closest = pages[safePage - 1].items.reduce((best, item, index) => {
+          const xs = (item.bbox || []).map((point) => Number(point[0])).filter(Number.isFinite);
+          const ys = (item.bbox || []).map((point) => Number(point[1])).filter(Number.isFinite);
+          if (!xs.length || !ys.length) return best;
+          const distance = Math.hypot((Math.min(...xs) + Math.max(...xs)) / 2 - targetX, (Math.min(...ys) + Math.max(...ys)) / 2 - targetY);
+          return distance < best.distance ? { index, distance } : best;
+        }, { index: null, distance: Infinity });
+        setSelectedItemIndex(closest.index);
+      }
 
       if (/\.pdf$/i.test(result.filename)) {
         const pdfData = await blob.arrayBuffer();
@@ -348,7 +542,12 @@ export default function OCRPage() {
       .catch(() => {
         // 저장된 세션 정보로 사용자 영역을 유지합니다.
       });
-    refreshHistory();
+    const queryParams = new URLSearchParams(window.location.search);
+    const linkedDocument = queryParams.get('document');
+    const linkedPage = queryParams.get('page');
+    let linkedBbox = null;
+    try { linkedBbox = JSON.parse(queryParams.get('bbox') || 'null'); } catch { linkedBbox = null; }
+    if (linkedDocument) loadHistoryDocument(linkedDocument, linkedPage, linkedBbox);
 
     return () => {
       active = false;
@@ -358,37 +557,30 @@ export default function OCRPage() {
   }, []);
 
   useEffect(() => {
-    if (!showUserMenu) return undefined;
-    const closeMenu = (event) => {
-      if (event.key === 'Escape' || !userMenuRef.current?.contains(event.target)) setShowUserMenu(false);
+    if (!historyOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setHistoryOpen(false);
     };
-    document.addEventListener('mousedown', closeMenu);
-    document.addEventListener('keydown', closeMenu);
-    return () => {
-      document.removeEventListener('mousedown', closeMenu);
-      document.removeEventListener('keydown', closeMenu);
-    };
-  }, [showUserMenu]);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [historyOpen]);
 
   useEffect(() => {
     setResultTab('text');
-    setAiError('');
   }, [pageNumber]);
-
-  const logout = async () => {
-    setShowUserMenu(false);
-    try {
-      await supabase?.auth.signOut();
-    } finally {
-      clearAppSession();
-      window.location.replace('/login');
-    }
-  };
 
   const loadWithOcr = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const { data } = await apiClient.post('/ocr/upload', formData, {
+    if (processingMode === 'receipt' && groundTruth.trim()) {
+      try {
+        JSON.parse(groundTruth);
+        formData.append('ground_truth_json', groundTruth.trim());
+      } catch {
+        // Plain-text ground truth continues through the existing report evaluator.
+      }
+    }
+    const { data } = await apiClient.post(`/ocr/upload?processing_mode=${processingMode}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
     });
@@ -402,7 +594,9 @@ export default function OCRPage() {
     setPageNumber(1);
     setFileName(data.filename || file.name);
     setCurrentDocumentId(data.document_id || null);
-    refreshHistory();
+    setPreprocessedImageUrl(data.preprocessed_image || '');
+    setPreprocessingInfo(data.preprocessing ? { ...data.preprocessing, timings: data.timings || null, evaluation: data.evaluation || null } : null);
+    setPreviewVariant(data.preprocessed_image ? 'processed' : 'original');
     return data;
   };
 
@@ -472,7 +666,6 @@ export default function OCRPage() {
           headers: { 'Content-Type': 'multipart/form-data' },
           timeout: 60000,
         });
-        refreshHistory();
         setPdf(document);
         setPageTexts(texts);
         setPageItems(extractedPages.map((page) => page.items));
@@ -532,6 +725,7 @@ export default function OCRPage() {
   const prepareFile = async (file) => {
     if (!file) return;
     resetDocumentView();
+    setProcessingMode(await inferProcessingMode(file));
     setPendingFile(file);
     setFileName(file.name);
     setError('');
@@ -624,35 +818,6 @@ export default function OCRPage() {
     }
   };
 
-  const selectResultTab = async (tab, force = false) => {
-    setResultTab(tab);
-    setAiError('');
-    if (tab === 'text' || !currentText.trim()) return;
-
-    const cacheKey = `${currentDocumentId || fileName}:${pageNumber}:${tab}`;
-    if (aiResults[cacheKey] && !force) return;
-
-    setAiLoading(true);
-    try {
-      let result;
-      try {
-        const { data } = await apiClient.post('/chatbot/transform', {
-          text: currentText.slice(0, AI_CONTEXT_LENGTH),
-          mode: tab,
-        }, { timeout: 130000 });
-        result = data.result;
-      } catch (backendError) {
-        if (backendError.response && backendError.response.status !== 503) throw backendError;
-        result = await transformWithLocalOllama(currentText, tab);
-      }
-      setAiResults((results) => ({ ...results, [cacheKey]: result }));
-    } catch (requestError) {
-      setAiError(requestError.response?.data?.detail || 'AI 결과를 생성하지 못했습니다. Ollama와 gemma2:2b 상태를 확인해 주세요.');
-    } finally {
-      setAiLoading(false);
-    }
-  };
-
   const downloadText = () => {
     const body = pageTexts.map((text, index) => `--- ${index + 1} 페이지 ---\n${text}`).join('\n\n');
     const url = URL.createObjectURL(new Blob([body], { type: 'text/plain;charset=utf-8' }));
@@ -663,78 +828,76 @@ export default function OCRPage() {
     URL.revokeObjectURL(url);
   };
   const currentText = pageTexts[pageNumber - 1] || '';
-  const currentItems = pageItems[pageNumber - 1] || [];
+  const currentItems = pageItems[pageNumber - 1] || EMPTY_ITEMS;
   const currentRows = pageRows[pageNumber - 1];
-  const aiResultKey = `${currentDocumentId || fileName}:${pageNumber}:${resultTab}`;
-  const currentAiResult = aiResults[aiResultKey];
   const pageCount = pdf?.numPages || pageTexts.length;
   const hasResult = pageTexts.length > 0;
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user?.role) || user?.email === 'developer@docunex.com';
   const fileExtension = fileName.includes('.') ? fileName.split('.').pop().toUpperCase() : 'FILE';
-  
+  const displayedImageUrl = previewVariant === 'processed' && preprocessedImageUrl ? preprocessedImageUrl : imagePreviewUrl;
+
+  useEffect(() => {
+    setValidationRows(buildExtractionRows(currentRows, currentItems));
+    setSelectedRowIds([]);
+  }, [currentDocumentId, pageNumber, currentRows, currentItems]);
+
+  const createExcelDocument = async () => {
+    const selectedRows = validationRows.filter((row) => selectedRowIds.includes(row.id));
+    if (!selectedRows.length || exportingRows) return;
+    setExportingRows(true);
+    setError('');
+    try {
+      const { data } = await apiClient.post('/ocr/export-workbook', {
+        title: `${fileName.replace(/\.[^.]+$/, '') || '추출 문서'} 선택 데이터`,
+        rows: selectedRows.map((row) => row.cells),
+      }, { responseType: 'blob', timeout: 60000 });
+      if (generatedWorkbookUrlRef.current) URL.revokeObjectURL(generatedWorkbookUrlRef.current);
+      const url = URL.createObjectURL(data);
+      generatedWorkbookUrlRef.current = url;
+      setGeneratedWorkbook({
+        title: `${fileName.replace(/\.[^.]+$/, '') || '추출 문서'} 선택 데이터`,
+        fileName: `${fileName.replace(/\.[^.]+$/, '') || '추출-문서'}-선택행.xlsx`,
+        rows: selectedRows.map((row) => [...row.cells]),
+        url,
+      });
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || '선택한 행으로 Excel 문서를 만들지 못했습니다.');
+    } finally {
+      setExportingRows(false);
+    }
+  };
   return (
     <div className="ocr-app-shell">
-      <aside className="sidebar-panel">
-        <div className="sidebar-brand">
-          <img src="/DocAI.png" alt="DOCUNEX AI" />
+      <Sidebar />
+      {historyOpen && <button className="ocr-history-backdrop" type="button" aria-label="OCR 기록 닫기" onClick={() => setHistoryOpen(false)} />}
+      <aside className={`ocr-history-drawer ${historyOpen ? 'open' : ''}`} aria-hidden={!historyOpen}>
+        <div className="ocr-history-header">
+          <div><strong>OCR 처리 기록</strong><small>재무 문서와 명세서 이력</small></div>
+          <button type="button" aria-label="OCR 기록 닫기" onClick={() => setHistoryOpen(false)}><IoCloseOutline /></button>
         </div>
-        <button className="new-project-button" onClick={startNewProject} disabled={loading || projectTransition}>
-          {projectTransition ? '전환 중...' : '＋ 새 프로젝트'}
-        </button>
-        <label className="sidebar-search">
-          <span aria-hidden="true">⌕</span>
-          <input type="search" placeholder="문서 검색..." />
+        <label className="ocr-history-search">
+          <IoSearchOutline />
+          <input value={historySearch} onChange={(event) => setHistorySearch(event.target.value)} placeholder="문서명 검색" />
         </label>
-        <div className="sidebar-history">
-          <h2>최근 문서</h2>
-          {documentHistory.map((document) => (
-            <button className={`history-item ${document.id === currentDocumentId ? 'active' : ''}`} type="button" key={document.id} onClick={() => loadHistoryDocument(document.id)} disabled={loading}>
-              <span className="doc-icon" aria-hidden="true"><IoDocumentTextOutline /></span>
-              <span className="doc-info">
-                <strong>{document.file_name}</strong>
-                <small>{new Date(document.created_at).toLocaleString('ko-KR')}</small>
-              </span>
+        <div className="ocr-history-list">
+          {historyLoading ? <div className="ocr-history-empty">처리 기록을 불러오는 중입니다.</div> : historyError ? <div className="ocr-history-empty error">{historyError}<button type="button" onClick={loadOcrHistory}>다시 시도</button></div> : historyItems.filter((item) => item.file_name?.toLowerCase().includes(historySearch.trim().toLowerCase())).length ? historyItems.filter((item) => item.file_name?.toLowerCase().includes(historySearch.trim().toLowerCase())).map((item) => (
+            <button key={item.id} type="button" className={`ocr-history-item ${currentDocumentId === item.id ? 'active' : ''}`} onClick={() => { setHistoryOpen(false); loadHistoryDocument(item.id); }} disabled={loading}>
+              <span className="ocr-history-icon"><IoDocumentTextOutline /></span>
+              <span><strong>{item.file_name}</strong><small>{new Date(item.created_at).toLocaleString('ko-KR', { dateStyle: 'medium', timeStyle: 'short' })}</small></span>
+              <em>{item.status === 'COMPLETED' ? '완료' : item.status}</em>
             </button>
-          ))}
-          {!documentHistory.length && <div className="empty-pages">저장된 문서가 없습니다.</div>}
-        </div>
-        <div className="sidebar-user" ref={userMenuRef}>
-            {user?.profileImg && !profileImageFailed ? (
-                <img 
-                src={user.profileImg} 
-                alt={`${user.name}의 프로필`} 
-                className="user-avatar"
-                onError={() => setProfileImageFailed(true)}
-                />
-            ) : (
-                /* DB에 이미지가 없거나 null일 경우 이름의 첫 글자 표시 */
-                <span className="user-avatar">
-                {user?.name ? user.name.charAt(0) : 'U'}
-                </span>
-            )}
-
-            <span className="user-details">
-                <strong>{user?.name || '사용자'}</strong>
-                <small>{user?.email || 'email@company.com'}</small>
-            </span>
-
-            <button type="button" aria-label="설정" aria-expanded={showUserMenu} onClick={() => setShowUserMenu((open) => !open)}><IoMdSettings /></button>
-            {showUserMenu && (
-              <div className="sidebar-user-menu" role="menu">
-                <button type="button" role="menuitem" onClick={logout}><IoLogOutOutline /><span>로그아웃</span></button>
-              </div>
-            )}
+          )) : <div className="ocr-history-empty">{historySearch ? '검색 결과가 없습니다.' : '저장된 OCR 처리 기록이 없습니다.'}</div>}
         </div>
       </aside>
-
       <main className="ocr-workspace">
         <header className="ocr-header">
           <div className="header-title">
+            <button className="history-menu-button" type="button" onClick={openHistory} aria-label="OCR 처리 기록 열기" aria-expanded={historyOpen}><IoMenuOutline /></button>
             <button className="back-button" type="button" onClick={() => window.history.back()} aria-label="뒤로 가기">‹</button>
-            <div><h1>OCR Viewer</h1></div>
+            <div><h1>재무 데이터 분석 및 검증</h1><p>OCR · 표 인식 · 정량 데이터 검증 워크스페이스</p></div>
           </div>
           <div className="ocr-header-actions">
-            <span className="extract-method"><i /> PDF.js 텍스트 추출</span>
+            <span className="extract-method"><i /> 문서 원문과 추출 데이터 대조</span>
             {isDeveloper && <button className="developer-jump-button" type="button" onClick={() => evaluationPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>비교 텍스트 보기</button>}
             {isDeveloper && <button className="developer-report-button" type="button" onClick={() => { window.location.href = '/reports'; }}>성능 리포트</button>}
             <button className="ocr-primary" onClick={() => inputRef.current?.click()}>파일 선택</button>
@@ -744,6 +907,7 @@ export default function OCRPage() {
         <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
 
         <div className="ocr-filebar">
+          <div className={`processing-mode auto ${processingMode}`}><span>자동 판별</span><strong>{processingMode === 'receipt' ? '영수증·거래 증빙' : '재무 문서'}</strong></div>
           <div className="file-identity">
             <span className="pdf-badge">{fileExtension}</span>
             <span><strong>{fileName}</strong><small>{hasResult ? `${pageCount}페이지 · 텍스트 추출 완료` : pendingFile ? '파일 준비 완료 · 추출 버튼을 눌러주세요' : 'PDF, 이미지, DOCX 및 텍스트 파일'}</small></span>
@@ -776,20 +940,19 @@ export default function OCRPage() {
                 <span>{hasResult ? `${pageNumber} / ${pageCount}` : '0 / 0'}</span>
                 <button disabled={!hasResult || pageNumber === pageCount} onClick={() => setPageNumber((p) => p + 1)} aria-label="다음 페이지">›</button>
               </div>
-              <strong>문서 미리보기</strong>
+              <strong>{generatedWorkbook ? '새 Excel 문서 미리보기' : '원문 및 OCR 근거'}</strong>
               <div>
+                {preprocessedImageUrl && <div className="preview-variant" role="group" aria-label="이미지 비교">
+                  <button className={previewVariant === 'original' ? 'active' : ''} onClick={() => setPreviewVariant('original')}>원본</button>
+                  <button className={previewVariant === 'processed' ? 'active' : ''} onClick={() => setPreviewVariant('processed')}>전처리</button>
+                </div>}
                 <button onClick={() => setZoom((z) => Math.max(0.55, z - 0.15))} aria-label="축소">−</button>
                 <span>{Math.round(zoom * 100)}%</span>
                 <button onClick={() => setZoom((z) => Math.min(2, z + 0.15))} aria-label="확대">＋</button>
               </div>
             </div>
             <div className="preview-stage">
-              {projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : imagePreviewUrl ? (
-                <div className="image-preview-wrap" style={{ width: `${zoom * 100}%` }}>
-                  <img className="image-main-preview" src={imagePreviewUrl} alt={`${fileName} 미리보기`} />
-                  {loading && <div className="image-processing"><span />OCR 처리 중...</div>}
-                </div>
-              ) : hasResult ? (
+              {generatedWorkbook ? <GeneratedWorkbookPreview title={generatedWorkbook.title} rows={generatedWorkbook.rows} onBack={() => setGeneratedWorkbook(null)} onDownload={() => { const anchor = document.createElement('a'); anchor.href = generatedWorkbook.url; anchor.download = generatedWorkbook.fileName; anchor.click(); }} /> : projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : displayedImageUrl ? <ImagePreview src={displayedImageUrl} fileName={fileName} scale={zoom} items={previewVariant === 'processed' ? [] : currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} loading={loading} /> : hasResult ? (
                 <div className="loader">OCR 텍스트 추출이 완료되었습니다.</div>
               ) : pendingFile ? (
                 <div className="pending-document" role="status">
@@ -810,54 +973,17 @@ export default function OCRPage() {
 
           <aside className="text-panel">
             <div className="text-tabs">
-              <button className={resultTab === 'text' ? 'active' : ''} onClick={() => selectResultTab('text')}>텍스트 보기</button>
-              <button className={resultTab === 'structured' ? 'active' : ''} onClick={() => selectResultTab('structured')} disabled={!hasResult || aiLoading}>구조화</button>
-              <button className={resultTab === 'table' ? 'active' : ''} onClick={() => selectResultTab('table')} disabled={!hasResult || aiLoading}>표</button>
-              {isDeveloper && <button className={resultTab === 'evaluation' ? 'active' : ''} onClick={() => setResultTab('evaluation')} disabled={!hasResult}>정답 데이터</button>}
+              <button className={resultTab === 'text' ? 'active' : ''} onClick={() => setResultTab('text')}>문서 추출 워크시트</button>
+              <button className={resultTab === 'raw' ? 'active' : ''} onClick={() => setResultTab('raw')}>OCR 원문</button>
             </div>
             <div className="text-header">
-              <div><span>{resultTab === 'text' ? '추출된 텍스트' : resultTab === 'structured' ? 'AI 구조화 결과' : resultTab === 'table' ? 'AI 표 변환 결과' : 'OCR 정답 데이터 입력'}</span><small>{hasResult ? `${pageNumber} 페이지` : '대기 중'}</small></div>
-              {resultTab === 'text' && <button disabled={!hasResult} onClick={downloadText} title="텍스트 다운로드">⇩</button>}
+              <div><span>{resultTab === 'text' ? 'Excel형 문서 추출 워크시트' : 'OCR 원문 데이터'}</span><small>{hasResult ? `${pageNumber} 페이지 · ${validationRows.length}행` : '대기 중'}</small></div>
+              {resultTab === 'text' ? <div className="worksheet-actions"><span>{selectedRowIds.length}행 선택</span><button className="create-document-button" disabled={!selectedRowIds.length || exportingRows} onClick={createExcelDocument}>{exportingRows ? '문서 생성 중...' : '새 Excel 문서 만들기'}</button></div> : <button disabled={!hasResult} onClick={downloadText} title="텍스트 다운로드">⇩</button>}
             </div>
-            <div className="text-meta"><span>{currentText.length.toLocaleString()}자</span><span>{resultTab === 'text' ? '텍스트 레이어' : resultTab === 'evaluation' ? 'Ground Truth' : 'Gemma2:2b'}</span></div>
-            {resultTab === 'text' ? (
-              <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>
-                {hasResult ? (currentItems.length ? currentItems.map((item, index) => (
-                  <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>
-                )) : (currentText || '이 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 추출 텍스트가 여기에 표시됩니다.'}
-              </div>
-            ) : resultTab === 'evaluation' ? (
-              <div className="developer-ground-truth">
-                <div className="evaluation-summary"><span>개발자 전용</span><b>{processingTimeMs ? `${(processingTimeMs / 1000).toFixed(2)}초` : '시간 측정 대기'}</b></div>
-                <p>현재 문서의 사람이 검수한 전체 정답 텍스트를 입력하세요. OCR 결과와 비교한 지표는 리포트 페이지에 저장됩니다.</p>
-                <textarea value={groundTruth} onChange={(event) => { setGroundTruth(event.target.value); setEvaluationStatus(''); }} placeholder="Ground Truth 전체 텍스트를 입력하세요." />
-                <button disabled={!groundTruth.trim() || !currentDocumentId || evaluationStatus === '저장 중...'} onClick={saveDeveloperEvaluation}>정답 데이터 저장 및 평가</button>
-                {evaluationStatus && <small className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus}</small>}
-              </div>
-            ) : (
-              <div className={`ai-result ${aiLoading || aiError || !currentAiResult ? 'placeholder' : ''}`}>
-                {aiLoading ? <div className="ai-result-loading"><span />Gemma2가 문서를 분석하고 있습니다...</div> : aiError ? (
-                  <div className="ai-result-error"><p>{aiError}</p><button onClick={() => selectResultTab(resultTab, true)}>다시 시도</button></div>
-                ) : resultTab === 'structured' && currentAiResult ? (
-                  <article className="structured-result">
-                    <h3>{currentAiResult.title || '구조화 결과'}</h3>
-                    {currentAiResult.summary && <p className="result-summary">{currentAiResult.summary}</p>}
-                    {Array.isArray(currentAiResult.sections) && currentAiResult.sections.map((section, index) => (
-                      <section key={`${section.heading}-${index}`}><h4>{section.heading || `항목 ${index + 1}`}</h4><p>{section.content}</p></section>
-                    ))}
-                  </article>
-                ) : resultTab === 'table' && currentAiResult ? (
-                  <div className="table-result">
-                    <h3>{currentAiResult.title || '표 변환 결과'}</h3>
-                    {Array.isArray(currentAiResult.columns) && currentAiResult.columns.length && Array.isArray(currentAiResult.rows) && currentAiResult.rows.length ? (
-                      <div className="result-table-scroll"><table><thead><tr>{currentAiResult.columns.map((column, index) => <th key={`${column}-${index}`}>{column}</th>)}</tr></thead><tbody>{currentAiResult.rows.map((row, rowIndex) => <tr key={rowIndex}>{currentAiResult.columns.map((_, columnIndex) => <td key={columnIndex}>{row?.[columnIndex] ?? ''}</td>)}</tr>)}</tbody></table></div>
-                    ) : <p>현재 페이지에서 표로 구성할 수 있는 내용을 찾지 못했습니다.</p>}
-                    {currentAiResult.note && <p className="table-note">{currentAiResult.note}</p>}
-                  </div>
-                ) : <p>결과를 준비하고 있습니다.</p>}
-              </div>
-            )}
-            <div className="text-note"><b>i</b><p>{resultTab === 'text' ? '일반 PDF는 문자 레이어를 직접 추출하고, 스캔 PDF와 이미지 문서는 PaddleOCR로 인식합니다.' : '추출된 현재 페이지의 텍스트를 로컬 Gemma2:2b 모델로 변환합니다.'}</p></div>
+            <div className="text-meta"><span>{currentText.length.toLocaleString()}자</span><span>{resultTab === 'text' ? '드래그 행 선택' : '텍스트 레이어'}</span></div>
+            {preprocessingInfo && <div className="receipt-preprocess-status"><strong>영수증 전처리 완료</strong><span>{(preprocessingInfo.applied_steps || []).map((step) => ({ perspective_correction: '원근', deskew: '기울기', crop: '여백', upscale: '확대', illumination_correction: '조명', contrast_enhancement: '대비', closing: '획 연결', sharpen: '선명화' }[step] || step)).join(' · ')}</span></div>}
+            {resultTab === 'text' ? <ExtractionWorksheet rows={validationRows} onChange={setValidationRows} selectedIds={selectedRowIds} onSelectRange={setSelectedRowIds} onEvidence={(itemIndex) => { setSelectedItemIndex(itemIndex); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /> : <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>{hasResult ? (currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : (currentText || '현재 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 OCR 원문이 표시됩니다.'}</div>}
+            <div className="text-note"><b>i</b><p>{resultTab === 'text' ? '행 번호를 누른 채 위아래로 드래그해 범위를 선택하고, 새 Excel 문서 만들기를 누르세요.' : 'OCR 원문을 선택하면 오른쪽 원본의 해당 근거 영역이 강조됩니다.'}</p></div>
           </aside>
         </section>
         {isDeveloper && <section ref={evaluationPanelRef} className={`developer-evaluation-panel ${hasResult ? '' : 'waiting'}`}>

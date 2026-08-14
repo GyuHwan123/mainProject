@@ -1,24 +1,24 @@
-import json
-import re
 from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.auth import require_current_user
 from app.core.config import settings
 from app.models.user import User
+from app.services.supabase_service import supabase_service
+from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
 
 router = APIRouter()
-MODEL_NAME = "gemma2:2b"
-MAX_CONTEXT_LENGTH = 6_000
+MODEL_NAME = settings.RAG_LLM_MODEL
 LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 
 
 class ChatMessage(BaseModel):
     message: str
     context: str | None = None
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
 
 
 class ChatReply(BaseModel):
@@ -26,15 +26,46 @@ class ChatReply(BaseModel):
     model: str = MODEL_NAME
 
 
-class TransformRequest(BaseModel):
-    text: str = Field(min_length=1, max_length=MAX_CONTEXT_LENGTH)
-    mode: Literal["structured", "table"]
+class ChatSessionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    document_id: str
 
 
-class TransformReply(BaseModel):
-    mode: Literal["structured", "table"]
-    result: dict[str, Any]
-    model: str = MODEL_NAME
+class ChatMessageCreate(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=50_000)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    model_name: str | None = None
+
+
+class StoredChatSession(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str
+    title: str
+
+
+class StoredChatMessage(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str
+    session_id: str
+    role: str
+    content: str
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class KnowledgeScrapCreate(BaseModel):
+    question: str = Field(min_length=1, max_length=10_000)
+    answer: str = Field(min_length=1, max_length=50_000)
+    document_id: str | None = None
+    document_name: str | None = None
+    source_count: int = Field(default=0, ge=0)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+    model_name: str | None = None
+
+
+class KnowledgeScrap(KnowledgeScrapCreate):
+    model_config = ConfigDict(extra="allow")
+    id: str
 
 
 async def generate(
@@ -48,7 +79,12 @@ async def generate(
         "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",
-        "options": {"temperature": 0.1, "num_predict": num_predict},
+        "options": {
+            "temperature": 0.05,
+            "num_predict": num_predict,
+            "num_ctx": 8192,
+            "repeat_penalty": 1.08,
+        },
     }
     if json_format:
         payload["format"] = "json"
@@ -72,27 +108,26 @@ async def generate(
     ) from last_error
 
 
-def parse_json_response(raw: str) -> dict[str, Any]:
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", raw, flags=re.DOTALL)
-        if not match:
-            raise HTTPException(status_code=502, detail="AI가 구조화된 결과를 반환하지 못했습니다.")
-        try:
-            value = json.loads(match.group(0))
-        except json.JSONDecodeError as exc:
-            raise HTTPException(status_code=502, detail="AI 응답을 해석할 수 없습니다. 다시 시도해 주세요.") from exc
-    if not isinstance(value, dict):
-        raise HTTPException(status_code=502, detail="AI 응답 형식이 올바르지 않습니다.")
-    return value
-
-
 @router.post("/ask", response_model=ChatReply)
-async def ask_chatbot(payload: ChatMessage) -> ChatReply:
+async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_current_user)) -> ChatReply:
+    if is_sensitive_query(payload.message):
+        return ChatReply(reply=PRIVACY_RESPONSE, model="privacy-policy")
     context = (payload.context or "문서 근거가 제공되지 않았습니다.")[:6000]
-    prompt = f"""당신은 문서 질의응답 도우미입니다. 아래 문서 근거만 사용해 한국어로 답하세요.
-근거가 없으면 추측하지 말고 '제공된 문서에서 확인할 수 없습니다'라고 답하세요.
+    history = "\n".join(
+        f"{'사용자' if item.get('role') == 'user' else 'AI'}: {str(item.get('content', ''))[:800]}"
+        for item in payload.history[-8:]
+        if item.get("role") in {"user", "assistant"} and item.get("content")
+    )[:4000]
+    prompt = f"""당신은 정확한 문서 질의응답 도우미입니다. 아래 문서 근거만 사용해 한국어로 답하세요.
+- 질문에 대한 직접적인 답을 첫 문장에 쓰세요.
+- 저자, 사람, 기관, 날짜, 수치가 근거에 있으면 생략하지 말고 원문 그대로 쓰세요.
+- 대화 기록은 대명사와 후속 질문을 이해하는 용도로만 사용하세요.
+- 문서 근거에 없는 내용은 추측하지 마세요.
+- [민감정보 보호]로 표시된 값은 절대 유추하거나 복원하지 말고, 개인정보 보호로 제공할 수 없다고 답하세요.
+- 답변에 사용한 근거 번호를 문장 끝에 [근거 1] 형식으로 표시하세요.
+
+[최근 대화]
+{history or '이전 대화 없음'}
 
 [문서 근거]
 {context}
@@ -104,34 +139,60 @@ async def ask_chatbot(payload: ChatMessage) -> ChatReply:
     return ChatReply(reply=await generate(prompt))
 
 
-@router.post("/transform", response_model=TransformReply)
-async def transform_document(
-    payload: TransformRequest,
-    _user: User = Depends(require_current_user),
-) -> TransformReply:
-    source = payload.text[:MAX_CONTEXT_LENGTH]
-    if payload.mode == "structured":
-        instruction = """문서의 원래 언어를 유지하며 내용을 구조화하세요.
-반드시 다음 JSON 형식만 반환하세요:
-{"title":"문서 제목", "summary":"핵심 요약", "sections":[{"heading":"항목 제목", "content":"항목 내용"}]}
-원문에 없는 사실은 만들지 마세요. sections는 중요한 순서대로 구성하세요."""
-    else:
-        instruction = """문서에서 표로 표현할 수 있는 사실과 관계를 찾아 표로 정리하세요.
-반드시 다음 JSON 형식만 반환하세요:
-{"title":"표 제목", "columns":["열1", "열2"], "rows":[["값1", "값2"]], "note":"필요한 설명"}
-각 행의 값 개수는 columns 개수와 같아야 합니다. 표로 만들 근거가 부족하면 columns와 rows를 빈 배열로 반환하세요.
-원문에 없는 사실은 만들지 마세요."""
+@router.get("/sessions", response_model=list[StoredChatSession])
+def list_sessions(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    return supabase_service.list_chat_sessions(user.email)
 
-    raw = await generate(
-        f"{instruction}\n\n[원문]\n{source}",
-        json_format=True,
-        num_predict=500 if payload.mode == "structured" else 800,
+
+@router.post("/sessions", response_model=StoredChatSession)
+def create_session(payload: ChatSessionCreate, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return supabase_service.create_chat_session(user.email, payload.title.strip(), payload.document_id)
+
+
+@router.get("/sessions/{session_id}/messages", response_model=list[StoredChatMessage])
+def list_messages(session_id: str, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    return supabase_service.list_chat_messages(user.email, session_id)
+
+
+@router.post("/sessions/{session_id}/messages", response_model=StoredChatMessage)
+def create_message(session_id: str, payload: ChatMessageCreate, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return supabase_service.save_chat_message(
+        user_email=user.email, session_id=session_id, role=payload.role,
+        content=payload.content, sources=payload.sources, model_name=payload.model_name,
     )
-    return TransformReply(mode=payload.mode, result=parse_json_response(raw))
+
+
+@router.delete("/sessions/{session_id}", status_code=204)
+def delete_session(session_id: str, user: User = Depends(require_current_user)) -> None:
+    supabase_service.delete_chat_session(user.email, session_id)
+
+
+@router.get("/scraps", response_model=list[KnowledgeScrap])
+def list_scraps(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    return supabase_service.list_knowledge_scraps(user.email)
+
+
+@router.post("/scraps", response_model=KnowledgeScrap)
+def create_scrap(payload: KnowledgeScrapCreate, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return supabase_service.create_knowledge_scrap(user.email, payload.model_dump())
+
+
+@router.delete("/scraps/{scrap_id}", status_code=204)
+def delete_scrap(scrap_id: str, user: User = Depends(require_current_user)) -> None:
+    supabase_service.delete_knowledge_scrap(user.email, scrap_id)
 
 
 @router.get("/status")
 async def chatbot_status() -> dict[str, Any]:
+    configuration = {
+        "model": MODEL_NAME,
+        "embedding_model": settings.RAG_EMBEDDING_MODEL,
+        "embedding_dimensions": settings.RAG_EMBEDDING_DIMENSIONS,
+        "rerank_model": settings.RAG_RERANK_MODEL or None,
+        "prompt_version": settings.RAG_PROMPT_VERSION,
+        "top_k": settings.RAG_TOP_K,
+        "chunk_target_chars": settings.RAG_CHUNK_TARGET_CHARS,
+    }
     urls = list(dict.fromkeys([settings.OLLAMA_BASE_URL.rstrip("/"), LOCAL_OLLAMA_URL]))
     for base_url in urls:
         try:
@@ -140,7 +201,7 @@ async def chatbot_status() -> dict[str, Any]:
                 response.raise_for_status()
                 models = [model.get("name", "") for model in response.json().get("models", [])]
             if any(name.startswith(MODEL_NAME) for name in models):
-                return {"ready": True, "model": MODEL_NAME}
+                return {"ready": True, **configuration}
         except httpx.HTTPError:
             continue
-    return {"ready": False, "model": MODEL_NAME}
+    return {"ready": False, **configuration}

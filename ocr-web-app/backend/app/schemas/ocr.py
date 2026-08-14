@@ -25,6 +25,11 @@ class OCRResponse(BaseModel):
     filename: str
     content_type: str
     pages: list[OCRPage]
+    processing_mode: str = "document"
+    preprocessing: dict | None = None
+    timings: dict[str, float] | None = None
+    preprocessed_image: str | None = None
+    evaluation: dict | None = None
 
 
 class DocumentHistoryItem(BaseModel):

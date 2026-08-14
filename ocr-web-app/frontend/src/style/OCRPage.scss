@@ -140,215 +140,6 @@
     font: inherit;
   }
 
-  .sidebar-panel {
-    width: 250px;
-    flex: none;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    background: $all;
-    border-right: 1px solid rgba($line, 0.55);
-    border-radius: 0;
-
-    .sidebar-brand {
-      height: 72px;
-      padding: 16px 20px;
-      display: flex;
-      align-items: center;
-      border-bottom: 1px solid rgba($line, 0.32);
-
-      img {
-        width: 90%;
-        object-fit: contain;
-      }
-    }
-
-    .new-project-button {
-      height: 38px;
-      margin: 16px 16px 10px;
-      color: $all;
-      background: $main-color;
-      border: 0;
-      border-radius: 6px;
-      box-shadow: 0 5px 12px rgba($main-color, 0.18);
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-
-      &:hover {
-        background: $midel-color;
-      }
-
-      &:disabled {
-        opacity: 0.55;
-        cursor: wait;
-      }
-    }
-
-    .sidebar-search {
-      position: relative;
-      margin: 0 16px 18px;
-
-      > span {
-        position: absolute;
-        left: 11px;
-        top: 50%;
-        color: $midel-color;
-        transform: translateY(-54%);
-      }
-
-      input {
-        width: 100%;
-        height: 34px;
-        padding: 0 10px 0 31px;
-        color: $bgd;
-        background: $bg-app;
-        border: 1px solid rgba($line, 0.5);
-        border-radius: 6px;
-        outline: 0;
-        font-size: 12px;
-        font-weight: 500;
-
-        &:focus {
-          border-color: $sub-color;
-          box-shadow: 0 0 0 3px rgba($sub-color, 0.12);
-        }
-        &::placeholder {
-          color: rgba($bgd, 0.45);
-        }
-      }
-    }
-
-    .sidebar-history {
-      flex: 1;
-      min-height: 0;
-      overflow-y: auto;
-      border-top: 1px solid rgba($line, 0.32);
-
-      h2 {
-        margin: 18px 18px 8px;
-        color: $bgd;
-        font-size: 16px;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-      }
-
-      .history-item {
-        width: calc(100% - 20px);
-        margin: 0 10px;
-        padding: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        gap: 10px;
-        color: $bgd;
-        background: transparent;
-        border: 0;
-        border-radius: 7px;
-        text-align: left;
-        cursor: pointer;
-
-        &:hover, &.active {
-          color: $main-color;
-          background: rgba($sub-color, 0.12);
-        }
-
-        .doc-icon { font-size: 25px; }
-        .doc-info {
-          min-width: 0;
-          display: grid;
-          gap: 3px;
-        }
-
-        strong {
-          @extend %text-ellipsis;
-          font-size: 13px;
-        }
-
-        small {
-          color: rgba($bgd, 0.6);
-          font-size: 10px;
-          font-weight: 500;
-        }
-      }
-    }
-
-    .sidebar-user {
-      position: relative;
-      min-height: 100px;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      border-top: 1px solid rgba($line, 0.42);
-
-      .user-avatar {
-        width: 32px;
-        height: 32px;
-        @extend %grid-center;
-        flex: none;
-        color: $all;
-        background: $midel-color;
-        border-radius: 50%;
-        font-size: 11px;
-        font-weight: 800;
-        object-fit: cover;
-      }
-
-      .user-details {
-        min-width: 0;
-        display: grid;
-        gap: 2px;
-      }
-
-      strong { font-size: 16px; }
-      small { color: rgba($bgd, 0.5); font-size: 12px; }
-
-      button {
-        margin-left: auto;
-        color: $midel-color;
-        background: none;
-        border: 0;
-        font-size: 25px;
-        cursor: pointer;
-      }
-
-      .sidebar-user-menu {
-        position: absolute;
-        right: 14px;
-        bottom: 76px;
-        z-index: 20;
-        width: 148px;
-        padding: 6px;
-        background: $all;
-        border: 1px solid rgba($line, 0.65);
-        border-radius: 8px;
-        box-shadow: 0 10px 28px rgba($bgd, 0.16);
-
-        button {
-          width: 100%;
-          min-height: 36px;
-          margin: 0;
-          padding: 0 10px;
-          display: flex;
-          align-items: center;
-          justify-content: flex-start;
-          gap: 8px;
-          color: #a52b37;
-          background: transparent;
-          border-radius: 6px;
-          font-size: 13px;
-          font-weight: 700;
-
-          &:hover {
-            background: #fff1f2;
-          }
-
-          svg { font-size: 18px; }
-        }
-      }
-    }
-  }
   .ocr-workspace {
     flex: 1;
     width: 0;
@@ -382,6 +173,11 @@
           color: $main-color;
           font-size: 24px;
           letter-spacing: -0.02em;
+        }
+        p {
+          margin: 0;
+          color: rgba($bgd, 0.5);
+          font-size: 11px;
         }
       }
 
@@ -431,6 +227,30 @@
       }
     }
 
+    .financial-overview {
+      min-height: 66px;
+      padding: 9px 24px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(130px, 1fr));
+      gap: 10px;
+      background: $bg-app;
+      border-bottom: 1px solid rgba($line, 0.4);
+
+      > div {
+        min-width: 0;
+        padding: 9px 13px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: $all;
+        border: 1px solid rgba($line, 0.48);
+        border-radius: 7px;
+      }
+      small { color: rgba($bgd, 0.52); font-size: 10px; font-weight: 650; }
+      strong { color: $main-color; font-size: 13px; text-align: right; }
+    }
+
     .ocr-filebar {
       min-height: 67px;
       padding: 9px 24px;
@@ -439,6 +259,23 @@
       justify-content: space-between;
       background: $all;
       border-bottom: 1px solid rgba($line, 0.4);
+
+      .processing-mode {
+        flex: none;
+        margin-right: 14px;
+        padding: 6px 10px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        color: $main-color;
+        background: rgba($sub-color, 0.12);
+        border: 1px solid rgba($sub-color, 0.42);
+        border-radius: 7px;
+
+        span { color: rgba($bgd, 0.55); font-size: 9px; font-weight: 700; }
+        strong { font-size: 10px; }
+        &.receipt { color: #8a5a12; background: #fff7e6; border-color: #f1d49e; }
+      }
 
       .file-identity {
         min-width: 0;
@@ -539,11 +376,11 @@
 
     .ocr-editor {
       width: 100%;
-      height: calc(100vh - 139px);
+      height: calc(100vh - 205px);
       min-height: 620px;
       flex: none;
       display: grid;
-      grid-template-columns: 150px minmax(360px, 1fr) minmax(300px, 36%);
+      grid-template-columns: 110px minmax(390px, 44%) minmax(520px, 1fr);
       overflow: hidden;
       background: $all;
 
@@ -660,6 +497,16 @@
             align-items: center;
             gap: 6px;
           }
+          .preview-variant {
+            margin-right: 5px;
+            padding: 2px;
+            display: flex;
+            gap: 2px;
+            background: $bg-app;
+            border-radius: 5px;
+            button { width: auto; padding: 0 7px; border: 0; background: transparent; font-size: 9px; }
+            button.active { color: $all; background: $main-color; }
+          }
           strong {
             color: $main-color;
             font-size: 14px;
@@ -714,6 +561,24 @@
             flex: none;
             min-width: 80px;
             transition: width 0.15s ease;
+
+            .bbox-overlay {
+              position: absolute;
+              z-index: 2;
+              padding: 0;
+              min-width: 3px;
+              min-height: 3px;
+              background: rgba($point-color, 0.2);
+              border: 1px solid rgba($main-color, 0.52);
+              border-radius: 2px;
+              cursor: pointer;
+
+              &:hover, &.selected {
+                background: rgba($point-color, 0.38);
+                border: 2px solid $main-color;
+                box-shadow: 0 0 0 2px rgba($all, 0.8);
+              }
+            }
 
             .image-main-preview {
               width: 100%;
@@ -809,6 +674,38 @@
             }
           }
 
+          .generated-workbook-preview {
+            align-self: stretch;
+            width: 100%;
+            min-height: 100%;
+            padding: 18px;
+            background: #fff;
+            border: 1px solid #d4dde7;
+            border-radius: 8px;
+            box-shadow: 0 6px 22px rgba($bgd, 0.08);
+
+            > header {
+              margin-bottom: 14px;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              .xlsx-mark { width: 34px; height: 34px; display: grid; place-items: center; color: #fff; background: #217346; border-radius: 5px; font-weight: 800; }
+              div { display: flex; flex: 1; flex-direction: column; gap: 2px; }
+              strong { color: $bgd; font-size: 14px; }
+              small { color: #7a8798; font-size: 10px; }
+              nav { display: flex; gap: 7px; }
+              button { padding: 7px 11px; color: $main-color; background: #fff; border: 1px solid #b9c8d8; border-radius: 5px; font-size: 10px; cursor: pointer; }
+              button.download { color: #fff; background: #217346; border-color: #217346; }
+            }
+            .workbook-sheet { overflow: auto; border: 1px solid #bdc9d5; }
+            table { width: 100%; min-width: 560px; border-collapse: collapse; font-size: 11px; }
+            th, td { min-width: 110px; height: 31px; padding: 6px 8px; border: 1px solid #cfd8e1; text-align: left; white-space: nowrap; }
+            thead th { color: #fff; background: #217346; text-align: center; }
+            tbody th { min-width: 40px; color: #506073; background: #edf2f5; text-align: center; }
+            tbody tr:nth-child(even) td { background: #f4f9f6; }
+            .sheet-corner { min-width: 40px; }
+          }
+
           .dropzone {
             width: min(360px, 86%);
             min-height: 220px;
@@ -884,6 +781,7 @@
           padding: 0 12px;
           display: flex;
           gap: 16px;
+          overflow-x: auto;
           border-bottom: 1px solid rgba($line, 0.35);
 
           button {
@@ -895,6 +793,7 @@
             font-size: 14px;
             font-weight: 600;
             cursor: pointer;
+            flex: none;
 
             &:disabled { opacity: 0.45; cursor: wait; }
 
@@ -927,6 +826,15 @@
           span { color: $main-color; font-size: 14px; font-weight: 800; }
           small { color: rgba($bgd, 0.45); font-size: 12px; font-weight: 500}
           button { @include icon-button(28px); }
+          .worksheet-actions {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            > span { color: #64748b; font-size: 9px; font-weight: 700; }
+            button { width: auto; padding: 0 8px; font-size: 8px; font-weight: 700; }
+            .create-document-button { color: $all; background: $main-color; border-color: $main-color; }
+            .create-document-button:disabled { color: #8d97a6; background: #edf0f4; border-color: #dfe4ea; }
+          }
         }
 
         .text-meta {
@@ -1042,84 +950,133 @@
           }
         }
 
-        .ai-result {
+        .financial-sheet {
           flex: 1;
           min-height: 0;
-          padding: 18px;
-          overflow: auto;
-          color: $bgd;
-          font-size: 14px;
-          line-height: 1.65;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          background: #fbfcfe;
 
-          &.placeholder {
-            @extend %grid-center;
-            color: rgba($bgd, 0.48);
-            text-align: center;
-          }
-
-          h3 { margin: 0 0 14px; color: $main-color; font-size: 18px; }
-          h4 { margin: 18px 0 5px; color: $midel-color; font-size: 14px; }
-          p { margin: 0; white-space: pre-wrap; }
-
-          .result-summary {
-            padding: 12px;
-            color: $midel-color;
-            background: rgba($sub-color, 0.1);
-            border-left: 3px solid $point-color;
-            border-radius: 4px;
-          }
-
-          .ai-result-loading {
+          .sheet-column-head, .sheet-row {
+            min-width: 720px;
             display: grid;
-            justify-items: center;
-            gap: 12px;
-
-            span {
-              width: 28px;
-              height: 28px;
-              border: 3px solid rgba($main-color, 0.15);
-              border-top-color: $main-color;
-              border-radius: 50%;
-              animation: spin 0.8s linear infinite;
+            grid-template-columns: 38px minmax(130px, 1.15fr) minmax(125px, 1fr) minmax(125px, 1fr) 90px 92px 78px;
+            align-items: stretch;
+          }
+          .sheet-column-head {
+            flex: none;
+            color: #4f5d73;
+            background: #e9edf3;
+            border-bottom: 1px solid #cfd7e2;
+            b {
+              min-height: 31px;
+              padding: 8px 7px;
+              border-right: 1px solid #cfd7e2;
+              font-size: 9px;
+              text-align: center;
             }
           }
-
-          .ai-result-error {
-            display: grid;
-            justify-items: center;
-            gap: 12px;
-            color: #b94a48;
-
-            button {
-              padding: 7px 13px;
-              color: $all;
-              background: $main-color;
+          .sheet-rows { flex: 1; min-height: 0; overflow: auto; }
+          .sheet-row {
+            background: $all;
+            border-bottom: 1px solid #dfe4eb;
+            user-select: none;
+            &.selected { background: #eaf3ff; box-shadow: inset 3px 0 #2f78de; }
+            > b {
+              padding: 9px 5px;
+              color: #788396;
+              background: #f0f3f7;
+              border-right: 1px solid #d7dee7;
+              font-size: 10px;
+              text-align: center;
+            }
+            input {
+              width: 100%;
+              min-width: 0;
+              padding: 8px;
+              color: $bgd;
+              background: transparent;
               border: 0;
-              border-radius: 6px;
+              border-right: 1px solid #e1e6ed;
+              outline: 0;
+              font-size: 10px;
+              &:focus { position: relative; box-shadow: inset 0 0 0 2px #2f78de; background: #f8fbff; }
+              &::placeholder { color: #a5adba; }
+            }
+            > span { padding: 9px 6px; border-right: 1px solid #e1e6ed; font-size: 9px; text-align: center; }
+            > span.negative { color: #c3424b; background: #fff4f4; font-weight: 750; }
+            .validation-state { color: #8a6a20; background: #fff9e8; }
+            .validation-state.matched { color: #257556; background: #edf9f3; }
+            .validation-state.exception { color: #bd3844; background: #fff0f1; font-weight: 750; }
+            > button {
+              margin: 5px;
+              color: $main-color;
+              background: rgba($sub-color, .1);
+              border: 1px solid rgba($sub-color, .35);
+              border-radius: 4px;
+              font-size: 8px;
               cursor: pointer;
+              &:disabled { color: #a7aebb; background: #f5f6f8; border-color: #e2e5ea; cursor: default; }
+            }
+            > .row-selector {
+              margin: 0;
+              color: #69778c;
+              background: #f0f3f7;
+              border: 0;
+              border-right: 1px solid #d7dee7;
+              border-radius: 0;
+              font-size: 10px;
+              cursor: ns-resize;
+            }
+            &.selected > .row-selector { color: #fff; background: #2f78de; }
+          }
+          .sheet-row.table-row {
+            input {
+              border-right: 1px solid #cbd7e5;
+              background: #fff;
             }
           }
+          .sheet-row.text-row input:not(:first-of-type) { background: #f8fafc; }
+          .sheet-empty { padding: 60px 20px; display: grid; justify-items: center; gap: 6px; color: #8690a1; text-align: center; strong { color: $main-color; font-size: 13px; } p { margin: 0; font-size: 10px; } }
+        }
 
-          .result-table-scroll { overflow: auto; }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-
-            th, td {
-              padding: 9px 10px;
-              border: 1px solid rgba($line, 0.7);
-              text-align: left;
-              vertical-align: top;
-              white-space: pre-wrap;
-            }
-
-            th { color: $main-color; background: rgba($point-color, 0.22); }
-            tr:nth-child(even) td { background: rgba($sub-color, 0.05); }
+        .excel-agent-dock {
+          flex: none;
+          padding: 9px 12px;
+          display: grid;
+          gap: 7px;
+          background: #f5f8fc;
+          border-top: 1px solid rgba($line, .42);
+          .agent-quick-actions { display: flex; gap: 5px; button { padding: 5px 8px; color: $main-color; background: $all; border: 1px solid rgba($line, .55); border-radius: 5px; font-size: 8px; cursor: pointer; } }
+          > p { margin: 0; padding: 7px 9px; color: #315d4a; background: #eaf7f0; border-radius: 5px; font-size: 9px; line-height: 1.45; }
+          form {
+            display: grid;
+            grid-template-columns: 28px 1fr auto;
+            align-items: center;
+            overflow: hidden;
+            background: $all;
+            border: 1px solid rgba($sub-color, .5);
+            border-radius: 7px;
+            box-shadow: 0 3px 10px rgba($main-color, .06);
+            span { width: 22px; height: 22px; margin-left: 4px; display: grid; place-items: center; color: $all; background: $main-color; border-radius: 5px; font-size: 8px; font-weight: 800; }
+            input { min-width: 0; padding: 9px 6px; border: 0; outline: 0; font-size: 10px; }
+            button { align-self: stretch; padding: 0 12px; color: $all; background: $main-color; border: 0; font-size: 9px; font-weight: 750; cursor: pointer; }
           }
+        }
 
-          .table-note { margin-top: 12px; color: rgba($bgd, 0.6); font-size: 12px; }
+        .receipt-preprocess-status {
+          padding: 9px 15px;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          align-items: center;
+          gap: 8px;
+          color: #237454;
+          background: #edf9f3;
+          border-bottom: 1px solid #ccebdd;
+          strong { font-size: 10px; }
+          span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+          small { color: #4f806c; font-size: 9px; }
         }
 
         .developer-jump-button {
@@ -1193,7 +1150,6 @@
   }
 
   @media (max-width: 1050px) {
-    .sidebar-panel { width: 190px; }
     .ocr-workspace .ocr-editor {
       grid-template-columns: 112px minmax(340px, 1fr) 290px;
     }
@@ -1203,47 +1159,6 @@
     height: auto;
     min-height: 100vh;
     overflow: auto;
-
-    .sidebar-panel {
-      width: 68px;
-      min-height: 100vh;
-      position: sticky;
-      top: 0;
-      align-self: flex-start;
-
-      .sidebar-brand {
-        padding-inline: 10px;
-        img { width: 46px; }
-      }
-
-      .new-project-button {
-        margin-inline: 8px;
-        font-size: 0;
-        &::after {
-          content: "+";
-          font-size: 20px;
-        }
-      }
-
-      .sidebar-search,
-      .sidebar-history h2,
-      .history-item .doc-info,
-      .sidebar-user .user-details,
-      .sidebar-user button {
-        display: none;
-      }
-
-      .sidebar-history .history-item {
-        width: 48px;
-        margin: 10px;
-        justify-content: center;
-      }
-
-      .sidebar-user {
-        justify-content: center;
-        padding-inline: 0;
-      }
-    }
 
     .ocr-workspace {
       width: auto;
@@ -1314,4 +1229,239 @@
 
 @keyframes ocr-spin {
   to { transform: rotate(360deg); }
+}
+
+// Compact audit workspace: spreadsheet first, source document alongside it.
+.ocr-app-shell {
+  .ocr-workspace {
+    width: 100%;
+
+    .ocr-header {
+      min-height: 62px;
+      padding-inline: 20px;
+      .back-button { display: none; }
+      .header-title h1 { font-size: 19px; }
+      .header-title p { font-size: 10px; }
+      .extract-method, .developer-jump-button, .developer-report-button { display: none; }
+    }
+
+    .ocr-filebar {
+      min-height: 64px;
+      padding: 8px 20px;
+      gap: 12px;
+      .processing-mode { order: 1; margin: 0; }
+      .file-identity { order: 2; flex: 1; }
+      .developer-truth-upload { display: none; }
+      .filebar-actions { order: 3; }
+    }
+
+    .ocr-editor {
+      height: calc(100vh - 126px);
+      min-height: 600px;
+      grid-template-columns: minmax(620px, 1fr) minmax(360px, 38%);
+      grid-template-areas: "sheet preview";
+
+      .pages-panel { display: none; }
+      .text-panel {
+        grid-area: sheet;
+        border: 0;
+        border-right: 1px solid rgba($line, .48);
+      }
+      .preview-panel {
+        grid-area: preview;
+        border: 0;
+      }
+      .preview-panel .preview-stage { padding: 14px; }
+      .preview-panel .preview-toolbar,
+      .text-panel .text-tabs { min-height: 44px; height: 44px; }
+      .text-panel .text-tabs { gap: 18px; padding-inline: 15px; }
+      .text-panel .text-tabs button { font-size: 11px; }
+      .text-panel .text-header { min-height: 48px; }
+      .text-panel .text-meta { padding: 6px 14px; }
+      .text-panel .text-meta span { padding: 3px 6px; font-size: 9px; }
+      .text-panel .text-note { display: none; }
+      .text-panel .financial-sheet .sheet-column-head,
+      .text-panel .financial-sheet .sheet-row { min-width: 680px; }
+      .text-panel .excel-agent-dock { padding: 8px 12px; }
+    }
+  }
+}
+
+@media (max-width: 980px) {
+  .ocr-app-shell .ocr-workspace {
+    .ocr-header { align-items: center; }
+    .ocr-header .header-title p { display: none; }
+    .ocr-filebar .file-identity { display: none; }
+    .ocr-editor {
+      height: auto;
+      min-height: 1050px;
+      grid-template-columns: 1fr;
+      grid-template-rows: 560px 490px;
+      grid-template-areas: "sheet" "preview";
+      .text-panel { grid-column: auto; border-right: 0; border-bottom: 1px solid rgba($line, .48); }
+    }
+  }
+}
+
+.ocr-history-backdrop {
+  position: fixed;
+  inset: 0 0 0 92px;
+  z-index: 80;
+  padding: 0;
+  background: rgba(18, 34, 52, 0.28);
+  border: 0;
+  cursor: default;
+  backdrop-filter: blur(1px);
+}
+
+.ocr-history-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 92px;
+  z-index: 90;
+  width: min(340px, calc(100vw - 92px));
+  display: flex;
+  flex-direction: column;
+  color: #172033;
+  background: #fff;
+  border-right: 1px solid #dfe5ec;
+  box-shadow: 14px 0 36px rgba(18, 68, 112, 0.14);
+  transform: translateX(-105%);
+  visibility: hidden;
+  transition: transform 0.22s ease, visibility 0.22s;
+
+  &.open {
+    transform: translateX(0);
+    visibility: visible;
+  }
+}
+
+.ocr-history-header {
+  min-height: 76px;
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e6ebf1;
+
+  > div { display: grid; gap: 4px; }
+  strong { font-size: 16px; }
+  small { color: #7b8798; font-size: 11px; }
+  button {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: #64748b;
+    background: #f4f7fa;
+    border: 0;
+    border-radius: 10px;
+    font-size: 21px;
+    cursor: pointer;
+  }
+}
+
+.ocr-history-search {
+  height: 40px;
+  margin: 14px 16px 10px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8491a3;
+  background: #f6f8fb;
+  border: 1px solid #e1e7ee;
+  border-radius: 10px;
+
+  input {
+    width: 100%;
+    min-width: 0;
+    color: #172033;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font-size: 12px;
+  }
+}
+
+.ocr-history-list {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 10px 18px;
+  overflow-y: auto;
+}
+
+.ocr-history-item {
+  width: 100%;
+  min-height: 68px;
+  padding: 10px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: #26364a;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: #f4f8fc; }
+  &.active { background: #edf6fd; border-color: #bed8ee; }
+  &:disabled { opacity: 0.6; cursor: wait; }
+  > span:nth-child(2) { min-width: 0; display: grid; gap: 5px; }
+  strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  small { color: #8491a3; font-size: 10px; }
+  em { color: #21845e; font-size: 9px; font-style: normal; font-weight: 800; }
+}
+
+.ocr-history-icon {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  color: #245f91;
+  background: #eaf3fb;
+  border-radius: 10px;
+  font-size: 19px;
+}
+
+.ocr-history-empty {
+  min-height: 180px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  color: #8290a2;
+  text-align: center;
+  font-size: 12px;
+
+  &.error { color: #b0444d; }
+  button { padding: 7px 11px; color: #245f91; background: #edf6fd; border: 0; border-radius: 8px; cursor: pointer; }
+}
+
+.history-menu-button {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #124470;
+  background: #edf5fb;
+  border: 1px solid #d5e5f1;
+  border-radius: 11px;
+  font-size: 21px;
+  cursor: pointer;
+
+  &:hover { background: #deedf8; }
+}
+
+@media (max-width: 1120px) {
+  .ocr-history-backdrop { inset: 0; }
+  .ocr-history-drawer { left: 0; width: min(340px, 88vw); }
 }

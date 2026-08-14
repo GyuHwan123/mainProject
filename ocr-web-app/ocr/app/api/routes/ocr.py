@@ -1,20 +1,32 @@
+import json
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile
 
 from app.schemas.ocr import OCRResponse
 from app.services.ocr.ocr_service import process_ocr
 from app.services.docx_service import convert_docx_to_pdf_bytes
 from app.services.spreadsheet_service import extract_spreadsheet
+from app.services.receipt_evaluate_service import evaluate_receipt
 
 
 router = APIRouter()
 
 
 @router.post("/upload", response_model=OCRResponse)
-async def upload(file: UploadFile = File(...)):
-    return await process_ocr(file)
+async def upload(
+    file: UploadFile = File(...),
+    ground_truth_json: str | None = Form(default=None),
+    processing_mode: str = Query(default="document", pattern="^(document|receipt)$"),
+):
+    result = await process_ocr(file, processing_mode=processing_mode)
+    if ground_truth_json:
+        try:
+            result.evaluation = evaluate_receipt(result, ground_truth_json)
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="정답 JSON 형식이 올바르지 않습니다.") from exc
+    return result
 
 
 @router.post("/docx-preview")

@@ -18,6 +18,7 @@ class LoginResponse(BaseModel):
     user_email: EmailStr
     user_name: str
     user_role: str = "USER"
+    user_subscription_tier: str = "PERSONAL"
 
 
 class SocialLoginRequest(BaseModel):

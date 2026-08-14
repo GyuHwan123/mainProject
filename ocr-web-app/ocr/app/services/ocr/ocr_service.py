@@ -1,7 +1,10 @@
+import base64
 import json
+import cv2
 import numpy as np
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from time import perf_counter
 
 from fastapi import UploadFile
 from paddleocr import PaddleOCR
@@ -14,7 +17,8 @@ from app.services.file_classifier import (
 from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_images
 from app.services.docx_service import extract_docx_text, extract_docx_text_and_images
 from app.services.ocr.ocr_parser import build_ocr_page
-from app.services.preprocess_service import preprocess_image
+from app.services.preprocess_service import preprocess_image, scale_bbox_to_image
+from app.services.receipt_preprocess_service import PreprocessOptions, preprocess_receipt_image
 from app.services.spreadsheet_service import extract_spreadsheet
 
 
@@ -166,7 +170,14 @@ def extract_txt_text(
 
 async def process_ocr(
     file: UploadFile,
+    processing_mode: str = "document",
 ) -> OCRResponse:
+
+    total_started = perf_counter()
+    preprocess_ms = 0.0
+    ocr_ms = 0.0
+    preprocessing = None
+    preprocessed_image = None
 
     suffix = (
         Path(file.filename or "")
@@ -298,8 +309,35 @@ async def process_ocr(
                     run_paddle_ocr,
                 )
             else:
-                processed_image = preprocess_image(temp_path)
+                preprocess_started = perf_counter()
+                receipt_result = preprocess_receipt_image(temp_path) if processing_mode == "receipt" else None
+                processed_image = receipt_result.image if receipt_result else preprocess_image(temp_path)
+                preprocess_ms = (perf_counter() - preprocess_started) * 1000
+                ocr_started = perf_counter()
                 pages = run_paddle_ocr(processed_image)
+                ocr_ms = (perf_counter() - ocr_started) * 1000
+                original_image = cv2.imread(str(temp_path), cv2.IMREAD_COLOR)
+                if receipt_result:
+                    for page in pages:
+                        for item in page.items:
+                            item.bbox = receipt_result.bbox_to_original(item.bbox)
+                    encoded, buffer = cv2.imencode(".jpg", processed_image, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    if encoded:
+                        preprocessed_image = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("ascii")
+                    preprocessing = {
+                        "options": PreprocessOptions().to_dict(),
+                        "applied_steps": receipt_result.applied_steps,
+                        "original_size": [receipt_result.original_shape[1], receipt_result.original_shape[0]],
+                        "processed_size": [processed_image.shape[1], processed_image.shape[0]],
+                    }
+                elif original_image is not None and processed_image.shape[:2] != original_image.shape[:2]:
+                    for page in pages:
+                        for item in page.items:
+                            item.bbox = scale_bbox_to_image(
+                                item.bbox,
+                                processed_image.shape,
+                                original_image.shape,
+                            )
 
         # =================================
         # TEXT_AND_IMAGE
@@ -385,6 +423,14 @@ async def process_ocr(
             filename=file.filename or "unknown",
             content_type=content_type.value,
             pages=pages,
+            processing_mode=processing_mode,
+            preprocessing=preprocessing,
+            timings={
+                "preprocess_ms": round(preprocess_ms, 2),
+                "ocr_ms": round(ocr_ms, 2),
+                "total_ms": round((perf_counter() - total_started) * 1000, 2),
+            },
+            preprocessed_image=preprocessed_image,
         )
 
     finally:

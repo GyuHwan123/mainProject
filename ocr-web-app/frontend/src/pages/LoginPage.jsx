@@ -63,7 +63,7 @@ export default function LoginPage() {
         ? { email, password }
         : { name, email, password };
 
-      const response = await apiClient.post(endpoint, payload);
+      const response = await apiClient.post(endpoint, payload, { timeout: 30000 });
 
       if (mode === 'login') {
         saveAppSession(response.data);
@@ -77,7 +77,9 @@ export default function LoginPage() {
       setPassword('');
       setConfirmPassword('');
     } catch (error) {
-      const detail = error?.response?.data?.detail || error?.message || '요청 처리 중 오류가 발생했습니다.';
+      const detail = error?.code === 'ECONNABORTED'
+        ? '로그인 서버의 외부 인증 확인이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.'
+        : error?.response?.data?.detail || error?.message || '요청 처리 중 오류가 발생했습니다.';
       alert(detail);
     } finally {
       setLoading(false);

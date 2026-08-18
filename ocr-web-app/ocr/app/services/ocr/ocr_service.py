@@ -24,9 +24,11 @@ from app.services.spreadsheet_service import extract_spreadsheet
 
 ocr = PaddleOCR(
     lang="korean",
-    use_doc_orientation_classify=True,
-    use_doc_unwarping=True,
-    use_textline_orientation=True,
+    # Geometry is handled by our preprocessing service. Disabling Paddle's
+    # second geometry pass keeps rec_boxes in the input-image coordinate space.
+    use_doc_orientation_classify=False,
+    use_doc_unwarping=False,
+    use_textline_orientation=False,
     text_detection_model_name="PP-OCRv5_mobile_det",
     text_recognition_model_name="korean_PP-OCRv5_mobile_rec",
     enable_mkldnn=False,

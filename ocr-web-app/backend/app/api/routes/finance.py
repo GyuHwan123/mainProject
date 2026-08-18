@@ -1,0 +1,424 @@
+from __future__ import annotations
+
+import json
+import hashlib
+import re
+from datetime import date, datetime, timezone
+from io import BytesIO
+from typing import Any, Literal
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+
+from app.api.routes.auth import require_current_user
+from app.api.routes.chatbot import MODEL_NAME, generate
+from app.models.user import User
+from app.services.finance_workbook_service import build_finance_workbook
+from app.services.supabase_service import supabase_service
+
+router = APIRouter()
+DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
+
+
+class FinanceClassifyRequest(BaseModel):
+    document_id: str
+
+
+class FinanceExportRequest(BaseModel):
+    record_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class FinanceRecordUpdate(BaseModel):
+    document_type: DocumentType
+    expense_category: str = Field(min_length=1, max_length=100)
+    merchant: str | None = Field(default=None, max_length=200)
+    transaction_date: date | None = None
+    supply_amount: float = Field(default=0, ge=0)
+    tax_amount: float = Field(default=0, ge=0)
+    total_amount: float = Field(default=0, ge=0)
+    payment_method: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=1000)
+    status: Literal["REVIEW", "CONFIRMED"] = "CONFIRMED"
+
+
+class FinanceRecord(BaseModel):
+    id: str
+    document_id: str
+    document_type: DocumentType
+    expense_category: str
+    merchant: str | None = None
+    transaction_date: date | None = None
+    supply_amount: float = 0
+    tax_amount: float = 0
+    total_amount: float = 0
+    payment_method: str | None = None
+    description: str | None = None
+    structured_data: dict[str, Any] = Field(default_factory=dict)
+    model_name: str
+    status: str
+    created_at: datetime
+
+
+def _clean_number(value: Any) -> float:
+    if isinstance(value, (int, float)):
+        return max(float(value), 0)
+    text = "".join(character for character in str(value or "") if character.isdigit() or character in ".-")
+    try:
+        return max(float(text), 0)
+    except ValueError:
+        return 0
+
+
+def _receipt_number(value: str) -> int:
+    value = re.sub(r"\s+", "", value.strip())
+    if not value:
+        return 0
+    # Korean receipts commonly use both commas and periods as thousands separators.
+    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", value):
+        return int(re.sub(r"[.,]", "", value))
+    digits = re.sub(r"\D", "", value)
+    return int(digits) if digits else 0
+
+
+def _receipt_fingerprint(text: str) -> str:
+    canonical = re.sub(r"[^0-9a-z가-힣]", "", text.lower())
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _receipt_identity_key(text: str, hints: dict[str, Any]) -> str | None:
+    reference = re.search(r"(?:승인\s*번호|거래\s*번호|주문\s*번호)\s*[:：]?\s*([0-9A-Za-z*-]{4,})", text, re.IGNORECASE)
+    if not reference:
+        return None
+    reference_value = re.sub(r"[^0-9A-Za-z]", "", reference.group(1)).lower()
+    if len(reference_value) < 4:
+        return None
+    raw = f"{reference_value}|{hints.get('transaction_date') or ''}|{hints.get('total_amount') or 0}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _legacy_receipt_key(record: dict[str, Any]) -> str | None:
+    data = record.get("structured_data") or {}
+    filename = re.sub(r"\s*\(\d+\)(?=\.[^.]+$)", "", str(data.get("source_filename") or "").lower())
+    filename = re.sub(r"[^0-9a-z가-힣.]", "", filename)
+    transaction_date = str(record.get("transaction_date") or "")
+    total = round(float(record.get("total_amount") or 0), 2)
+    supply = round(float(record.get("supply_amount") or 0), 2)
+    tax = round(float(record.get("tax_amount") or 0), 2)
+    if not filename or not transaction_date or total <= 0:
+        return None
+    return f"{filename}|{transaction_date}|{supply}|{tax}|{total}"
+
+
+def _mark_duplicate(record: dict[str, Any]) -> dict[str, Any]:
+    duplicate = dict(record)
+    structured_data = dict(duplicate.get("structured_data") or {})
+    structured_data["duplicate_detection"] = {"is_duplicate": True, "message": "이미 문서화된 영수증입니다."}
+    duplicate["structured_data"] = structured_data
+    return duplicate
+
+
+def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
+    # OCR often removes the space between date and time (2025-10-0516:50).
+    # The separators make the date boundary unambiguous, so parse the optional
+    # attached time instead of rejecting a digit immediately after the day.
+    date_match = re.search(
+        r"(?<!\d)(20\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?:\s*\d{1,2}:\d{2})?",
+        text,
+    )
+    transaction_date = None
+    if date_match:
+        try:
+            transaction_date = date(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))).isoformat()
+        except ValueError:
+            pass
+
+    amount_tokens = re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
+    amounts = sorted({amount for token in amount_tokens if 100 <= (amount := _receipt_number(token)) <= 100_000_000})
+    won_amounts = [_receipt_number(token) for token in re.findall(r"(\d[\d.,\s]{0,15})\s*원", text)]
+    won_amounts = [amount for amount in won_amounts if 100 <= amount <= 100_000_000]
+    triples: list[tuple[int, int, int]] = []
+    for total in sorted(set(won_amounts + amounts), reverse=True):
+        for supply in amounts:
+            for tax in amounts:
+                if supply >= tax and supply + tax == total:
+                    triples.append((supply, tax, total))
+    supply = tax = total = 0
+    if triples:
+        supply, tax, total = max(triples, key=lambda triple: triple[2])
+    elif won_amounts:
+        total = max(won_amounts)
+
+    name = filename.lower()
+    document_type = None
+    expense_category = None
+    if any(keyword in name for keyword in ("출장", "여비", "교통", "숙박", "ktx", "srt", "택시")):
+        document_type = "TRAVEL_EXPENSE"
+        if any(keyword in name for keyword in ("식비", "식대", "음료", "카페")):
+            expense_category = "일비/식대"
+        elif "숙박" in name:
+            expense_category = "숙박비"
+        else:
+            expense_category = "교통비"
+    elif any(keyword in name for keyword in ("복지", "도서", "교육", "병원", "검진", "경조")):
+        document_type = "WELFARE_BENEFIT"
+    elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
+        document_type = "PURCHASE_REQUEST"
+
+    return {
+        "transaction_date": transaction_date,
+        "supply_amount": supply,
+        "tax_amount": tax,
+        "total_amount": total,
+        "document_type": document_type,
+        "expense_category": expense_category,
+    }
+
+
+def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
+    hints = _receipt_hints(text, filename)
+    allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
+    document_type = str(hints.get("document_type") or result.get("document_type") or "EXPENSE_REPORT").upper()
+    if document_type not in allowed:
+        document_type = "EXPENSE_REPORT"
+    supply = hints.get("supply_amount") or _clean_number(result.get("supply_amount"))
+    tax = hints.get("tax_amount") or _clean_number(result.get("tax_amount"))
+    total = hints.get("total_amount") or _clean_number(result.get("total_amount")) or supply + tax
+    transaction_date = hints.get("transaction_date") or str(result.get("transaction_date") or "").strip() or None
+    if transaction_date:
+        try:
+            date.fromisoformat(transaction_date)
+        except ValueError:
+            transaction_date = None
+    result["source_filename"] = filename
+    result["deterministic_hints"] = hints
+    return {
+        "document_type": document_type,
+        "expense_category": str(hints.get("expense_category") or result.get("expense_category") or "기타").strip()[:100],
+        "merchant": str(result.get("merchant") or "").strip()[:200] or None,
+        "transaction_date": transaction_date,
+        "supply_amount": supply,
+        "tax_amount": tax,
+        "total_amount": total,
+        "payment_method": str(result.get("payment_method") or "").strip()[:100] or None,
+        "description": str(result.get("description") or "").strip()[:1000] or None,
+        "structured_data": result,
+        "model_name": str(result.get("_model_name") or MODEL_NAME),
+        "status": "REVIEW",
+    }
+
+
+async def _classify_receipt(text: str, filename: str) -> dict[str, Any]:
+    hints = _receipt_hints(text, filename)
+    prompt = f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
+
+문서 유형은 반드시 다음 중 하나입니다.
+- EXPENSE_REPORT: 일반 경비, 회의비, 식비, 소모품, 접대비, 통신비 등
+- TRAVEL_EXPENSE: 출장 교통, 숙박, 출장 식대와 일비
+- PURCHASE_REQUEST: 비품·장비·소프트웨어 등 구매 또는 구매 요청
+- WELFARE_BENEFIT: 도서, 교육, 의료, 건강검진, 경조사 등 복리후생
+
+필수 JSON 키:
+document_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
+supply_amount, tax_amount, total_amount, payment_method, description,
+route, location, transport_method, service_type, evidence_status, evidence_type, note,
+items(각 항목은 name, quantity, unit_price, supply_amount, tax_amount, total_amount, note)
+
+규칙:
+- OCR에 없는 값을 추측하지 말고 null 또는 빈 배열로 작성합니다.
+- 금액은 쉼표와 통화 기호가 없는 숫자로 작성합니다.
+- 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.
+- 결제금액, 공급가액, 부가세는 서로 검산하고 공급가액 + 부가세 = 결제금액인 조합을 우선합니다.
+- 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
+
+[파일명]
+{filename}
+
+[코드로 복원한 힌트]
+{json.dumps(hints, ensure_ascii=False)}
+
+[OCR 텍스트]
+{text[:12000]}
+"""
+    try:
+        raw = await generate(prompt, json_format=True, num_predict=1200)
+        result = json.loads(raw)
+        if not isinstance(result, dict):
+            raise ValueError("object expected")
+        return result
+    except Exception:
+        # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
+        # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
+        return {
+            "document_type": hints.get("document_type") or "EXPENSE_REPORT",
+            "expense_category": hints.get("expense_category") or "확인 필요",
+            "transaction_date": hints.get("transaction_date"),
+            "supply_amount": hints.get("supply_amount") or 0,
+            "tax_amount": hints.get("tax_amount") or 0,
+            "total_amount": hints.get("total_amount") or 0,
+            "description": "LLM 분류 전 OCR 자동 입력",
+            "items": [],
+            "_model_name": "rules-fallback",
+        }
+
+
+@router.post("/records/classify", response_model=FinanceRecord)
+async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    document = supabase_service.get_ocr_document(user.email, payload.document_id)
+    extracted_text = (document.get("extracted_text") or "").strip()
+    if not extracted_text:
+        raise HTTPException(status_code=422, detail="분류할 OCR 텍스트가 없습니다.")
+    existing_records = supabase_service.list_finance_records(user.email, limit=1000)
+    hints = _receipt_hints(extracted_text, document.get("file_name") or "receipt")
+    fingerprint = _receipt_fingerprint(extracted_text)
+    identity_key = _receipt_identity_key(extracted_text, hints)
+    for existing in existing_records:
+        data = existing.get("structured_data") or {}
+        if data.get("receipt_fingerprint") == fingerprint or (identity_key and data.get("receipt_identity_key") == identity_key):
+            return _mark_duplicate(existing)
+
+    classified = await _classify_receipt(extracted_text, document.get("file_name") or "receipt")
+    normalized = _normalize(classified, document.get("file_name") or "receipt", extracted_text)
+    normalized["structured_data"]["receipt_fingerprint"] = fingerprint
+    normalized["structured_data"]["receipt_identity_key"] = identity_key
+    candidate = {**normalized, "structured_data": normalized["structured_data"]}
+    candidate_legacy_key = _legacy_receipt_key(candidate)
+    if candidate_legacy_key:
+        for existing in existing_records:
+            if _legacy_receipt_key(existing) == candidate_legacy_key:
+                return _mark_duplicate(existing)
+    return supabase_service.save_finance_record(
+        user_email=user.email,
+        document_id=payload.document_id,
+        payload=normalized,
+    )
+
+
+@router.get("/records", response_model=list[FinanceRecord])
+def list_records(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    unique_records = []
+    seen = set()
+    for record in supabase_service.list_finance_records(user.email):
+        data = record.get("structured_data") or {}
+        duplicate_key = data.get("receipt_identity_key") or data.get("receipt_fingerprint") or _legacy_receipt_key(record)
+        if duplicate_key and duplicate_key in seen:
+            continue
+        if duplicate_key:
+            seen.add(duplicate_key)
+        unique_records.append(record)
+    return unique_records
+
+
+@router.get("/history")
+def finance_history(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    history = []
+    for record in supabase_service.list_finance_records(user.email, limit=1000):
+        workflow = (record.get("structured_data") or {}).get("finance_workflow") or {}
+        if not workflow.get("submitted_at"):
+            continue
+        history.append({
+            "id": record.get("id"),
+            "document_type": record.get("document_type"),
+            "expense_category": record.get("expense_category"),
+            "merchant": record.get("merchant"),
+            "total_amount": record.get("total_amount"),
+            "document_filename": workflow.get("document_filename") or f"finance-receipt-{record.get('id')}.xlsx",
+            "finance_team_status": workflow.get("finance_team_status") or "확인 필요",
+            "submitted_at": workflow.get("submitted_at"),
+            "finance_confirmed_at": workflow.get("finance_confirmed_at"),
+        })
+    return history
+
+
+@router.patch("/records/{record_id}", response_model=FinanceRecord)
+def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    values = payload.model_dump(mode="json")
+    if not values["total_amount"]:
+        values["total_amount"] = values["supply_amount"] + values["tax_amount"]
+    return supabase_service.update_finance_record(user.email, record_id, values)
+
+
+@router.post("/records/{record_id}/submit", response_model=FinanceRecord)
+def submit_to_finance(record_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    if not record:
+        raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
+    if record.get("status") != "CONFIRMED":
+        raise HTTPException(status_code=422, detail="사용자가 최종 확정한 문서만 재무팀에 보낼 수 있습니다.")
+    structured_data = dict(record.get("structured_data") or {})
+    workflow = dict(structured_data.get("finance_workflow") or {})
+    workflow.update({
+        "finance_team_status": "확인 필요",
+        "submitted_at": workflow.get("submitted_at") or datetime.now(timezone.utc).isoformat(),
+        "finance_confirmed_at": None,
+        "document_filename": workflow.get("document_filename") or f"finance-receipt-{record_id}.xlsx",
+    })
+    structured_data["finance_workflow"] = workflow
+    return supabase_service.update_finance_record(user.email, record_id, {"structured_data": structured_data})
+
+
+@router.post("/records/{record_id}/finance-confirm", response_model=FinanceRecord)
+def confirm_by_finance(record_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    if user.role not in {"ADMIN", "DEVELOPER"}:
+        raise HTTPException(status_code=403, detail="재무팀 확인 권한이 없습니다.")
+    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    if not record:
+        raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
+    structured_data = dict(record.get("structured_data") or {})
+    workflow = dict(structured_data.get("finance_workflow") or {})
+    if not workflow.get("submitted_at"):
+        raise HTTPException(status_code=422, detail="아직 재무팀에 제출되지 않은 문서입니다.")
+    workflow.update({"finance_team_status": "확인", "finance_confirmed_at": datetime.now(timezone.utc).isoformat()})
+    structured_data["finance_workflow"] = workflow
+    return supabase_service.update_finance_record(user.email, record_id, {"structured_data": structured_data})
+
+
+@router.get("/records/{record_id}/export")
+def export_record(record_id: str, user: User = Depends(require_current_user)) -> StreamingResponse:
+    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    if not record:
+        raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
+    content = build_finance_workbook([record], author={"name": user.name, "email": user.email})
+    filename = f"finance-receipt-{record_id}.xlsx"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/records/export")
+def export_selected_records(payload: FinanceExportRequest, user: User = Depends(require_current_user)) -> StreamingResponse:
+    requested_ids = list(dict.fromkeys(payload.record_ids))
+    records_by_id = {
+        record.get("id"): record
+        for record in supabase_service.list_finance_records(user.email, limit=1000)
+        if record.get("id") in requested_ids
+    }
+    records = [records_by_id[record_id] for record_id in requested_ids if record_id in records_by_id]
+    if len(records) != len(requested_ids):
+        raise HTTPException(status_code=404, detail="일부 재무 기록을 찾을 수 없습니다.")
+    document_types = {record.get("document_type") for record in records}
+    if len(document_types) != 1:
+        raise HTTPException(status_code=422, detail="같은 재무 문서 유형의 기록만 한 문서로 만들 수 있습니다.")
+    content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
+    filename = f"finance-receipts-{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/export")
+def export_records(user: User = Depends(require_current_user)) -> StreamingResponse:
+    records = [record for record in supabase_service.list_finance_records(user.email, limit=1000) if record.get("status") == "CONFIRMED"]
+    if not records:
+        raise HTTPException(status_code=422, detail="확정된 재무 문서가 없습니다. 내용을 검토하고 확정해 주세요.")
+    content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
+    filename = f"finance-receipts-{date.today().isoformat()}.xlsx"
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

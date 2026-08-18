@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IoBookmarkOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoLockClosedOutline, IoRefreshOutline, IoServerOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoLockClosedOutline, IoRefreshOutline, IoServerOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
@@ -18,15 +18,15 @@ export default function MyPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelSaving, setCancelSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
-  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [] });
+  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
 
   const loadAccountData = useCallback(async () => {
     setLoading(true); setError('');
     const results = await Promise.allSettled([
-      apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'),
+      apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'), apiClient.get('/finance/history'),
     ]);
     const values = results.map((result) => result.status === 'fulfilled' && Array.isArray(result.value.data) ? result.value.data : []);
-    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3] });
+    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3], financeHistory: values[5] });
     if (results[4]?.status === 'fulfilled') setSubscription(results[4].value.data);
     if (results.every((result) => result.status === 'rejected')) setError('계정 사용 현황을 불러오지 못했습니다.');
     setLoading(false);
@@ -53,6 +53,31 @@ export default function MyPage() {
     } finally { setCancelSaving(false); }
   };
 
+  const downloadFinanceDocument = async (record) => {
+    setError('');
+    try {
+      const response = await apiClient.get(`/finance/records/${record.id}/export`, { responseType: 'blob', timeout: 60000 });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = record.document_filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || '재무 문서 파일을 다운로드하지 못했습니다.');
+    }
+  };
+
+  const confirmFinanceDocument = async (record) => {
+    setError('');
+    try {
+      await apiClient.post(`/finance/records/${record.id}/finance-confirm`);
+      await loadAccountData();
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || '재무팀 확인 상태를 변경하지 못했습니다.');
+    }
+  };
+
   return <div className="app-shell mypage-shell"><Sidebar />
     <main className="mypage-workspace">
       <header className="mypage-header"><div><p>ACCOUNT WORKSPACE</p><h1>내 정보</h1><span>계정 정보와 문서 AI 사용 현황을 확인합니다.</span></div><button type="button" disabled={loading} onClick={loadAccountData}><IoRefreshOutline />{loading ? '불러오는 중' : '새로고침'}</button></header>
@@ -68,6 +93,23 @@ export default function MyPage() {
         <article><span><IoServerOutline /></span><div><small>RAG 지식</small><strong>{loading ? '—' : readyRag}</strong><p>검색 준비 완료 문서</p></div></article>
         <article><span><IoChatbubbleEllipsesOutline /></span><div><small>AI 채팅</small><strong>{loading ? '—' : data.sessions.length}</strong><p>저장된 대화 기록</p></div></article>
         <article><span><IoBookmarkOutline /></span><div><small>지식 바구니</small><strong>{loading ? '—' : data.scraps.length}</strong><p>보관한 AI 답변</p></div></article>
+      </section>
+
+      <section className="mypage-panel finance-history-panel">
+        <header><div><h2>재무 히스토리</h2><p>사용자가 최종 확정하여 재무팀에 전달한 문서입니다.</p></div><button onClick={() => navigate('/reports')}>재무 문서 관리</button></header>
+        <div className="finance-history-table">
+          <div className="finance-history-head"><span>문서 파일</span><span>금액</span><span>재무팀 상태</span><span>전달일</span><span>확인 날짜</span><span>작업</span></div>
+          {data.financeHistory.map((record) => <div className="finance-history-row" key={record.id}>
+            <button type="button" className="finance-file" onClick={() => downloadFinanceDocument(record)}><i>XLSX</i><span><strong>{record.document_filename}</strong><small>{record.merchant || record.expense_category || '재무 문서'}</small></span></button>
+            <b>{Math.round(Number(record.total_amount || 0)).toLocaleString('ko-KR')}원</b>
+            <span className={record.finance_team_status === '확인' ? 'finance-checked' : 'finance-pending'}>{record.finance_team_status}</span>
+            <time>{record.submitted_at ? new Date(record.submitted_at).toLocaleDateString('ko-KR') : '-'}</time>
+            <time>{record.finance_confirmed_at ? new Date(record.finance_confirmed_at).toLocaleDateString('ko-KR') : '-'}</time>
+            <div className="finance-history-actions"><button type="button" onClick={() => downloadFinanceDocument(record)} title="문서 다운로드"><IoDownloadOutline /></button>{['ADMIN', 'DEVELOPER'].includes(user.role) && record.finance_team_status !== '확인' && <button type="button" className="finance-confirm-button" onClick={() => confirmFinanceDocument(record)}>확인 처리</button>}</div>
+          </div>)}
+          {!loading && !data.financeHistory.length && <div className="mypage-empty">재무팀에 전달한 문서가 아직 없습니다.</div>}
+          {loading && <div className="mypage-empty">재무 히스토리를 불러오는 중입니다.</div>}
+        </div>
       </section>
 
       <section className="mypage-content-grid">

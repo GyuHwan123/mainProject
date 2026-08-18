@@ -213,6 +213,51 @@ class SupabaseService:
             row["document_name"] = names.get(str(row["document_id"]), "알 수 없는 문서")
         return rows
 
+    def save_finance_record(
+        self,
+        *,
+        user_email: str,
+        document_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        self.get_ocr_document(user_email, document_id)
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.post(
+            f"{self.url}/rest/v1/finance_records",
+            params={"on_conflict": "document_id"},
+            headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+            json={"user_id": user_id, "document_id": document_id, **payload, "updated_at": datetime.now(timezone.utc).isoformat()},
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "재무 문서 저장 실패")
+        return response.json()[0]
+
+    def list_finance_records(self, user_email: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/finance_records",
+            params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(limit)},
+            headers=self._service_headers(),
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
+        return response.json()
+
+    def update_finance_record(self, user_email: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.patch(
+            f"{self.url}/rest/v1/finance_records",
+            params={"id": f"eq.{record_id}", "user_id": f"eq.{user_id}"},
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={**payload, "updated_at": datetime.now(timezone.utc).isoformat()},
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "재무 문서 상태 변경 실패")
+        rows = response.json()
+        if not rows:
+            raise HTTPException(status_code=404, detail="재무 문서를 찾을 수 없습니다.")
+        return rows[0]
+
     def create_document_signed_url(self, storage_path: str) -> str:
         encoded_path = quote(storage_path, safe="/")
         response = httpx.post(

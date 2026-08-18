@@ -79,6 +79,31 @@ create index if not exists idx_ocr_evaluations_document_time
   on public.ocr_evaluations(document_id, evaluated_at desc);
 
 -- ---------------------------------------------------------------------------
+-- Finance receipt classification and export history
+-- ---------------------------------------------------------------------------
+create table if not exists public.finance_records (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  document_id uuid not null unique references public.ocr_documents(id) on delete cascade,
+  document_type text not null check (document_type in ('EXPENSE_REPORT', 'TRAVEL_EXPENSE', 'PURCHASE_REQUEST', 'WELFARE_BENEFIT')),
+  expense_category text not null default '기타',
+  merchant text,
+  transaction_date date,
+  supply_amount numeric(18,2) not null default 0 check (supply_amount >= 0),
+  tax_amount numeric(18,2) not null default 0 check (tax_amount >= 0),
+  total_amount numeric(18,2) not null default 0 check (total_amount >= 0),
+  payment_method text,
+  description text,
+  structured_data jsonb not null default '{}'::jsonb,
+  model_name text not null,
+  status text not null default 'REVIEW' check (status in ('REVIEW', 'CONFIRMED')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists idx_finance_records_user_type_created
+  on public.finance_records(user_id, document_type, created_at desc);
+
+-- ---------------------------------------------------------------------------
 -- RAG vector index
 -- ---------------------------------------------------------------------------
 create table if not exists public.rag_documents (
@@ -248,6 +273,7 @@ $$;
 
 alter table public.ocr_documents enable row level security;
 alter table public.ocr_evaluations enable row level security;
+alter table public.finance_records enable row level security;
 alter table public.rag_documents enable row level security;
 alter table public.rag_chunks enable row level security;
 alter table public.chat_sessions enable row level security;
@@ -258,6 +284,9 @@ alter table public.subscriptions enable row level security;
 
 drop policy if exists ocr_documents_own on public.ocr_documents;
 create policy ocr_documents_own on public.ocr_documents for all
+  using (user_id = public.current_app_user_id()) with check (user_id = public.current_app_user_id());
+drop policy if exists finance_records_own on public.finance_records;
+create policy finance_records_own on public.finance_records for all
   using (user_id = public.current_app_user_id()) with check (user_id = public.current_app_user_id());
 drop policy if exists rag_documents_own on public.rag_documents;
 create policy rag_documents_own on public.rag_documents for all
@@ -292,4 +321,5 @@ on conflict (id) do update set public = false;
 
 comment on table public.rag_chunks is 'RAG chunks with page and bbox evidence';
 comment on table public.knowledge_scraps is 'User-approved AI answer cards';
+comment on table public.finance_records is 'LLM-classified receipt records used for four-sheet finance workbook exports';
 comment on column public.ocr_documents.upload_origin is 'OCR or RAG upload source';

@@ -219,7 +219,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 
 평가 결과는 서버 업무 데이터와 섞이지 않도록 현재 브라우저의 `localStorage`에 누적됩니다. 같은 정답 항목을 다시 실행하면 최신 결과로 교체되며, 화면의 `결과 JSON` 버튼으로 전체 원본 결과와 통계를 백업할 수 있습니다. 브라우저 저장소를 지우거나 다른 브라우저를 사용하기 전에는 반드시 JSON을 내려받아야 합니다.
 
-Ollama에는 비교할 두 모델이 미리 등록되어 있어야 합니다. 화면의 기본 후보 이름은 `finance-gemma2-qlora`이며 실제 등록 이름과 다르면 입력란에서 변경합니다.
+Ollama에는 비교할 세 모델이 미리 등록되어 있어야 합니다. 화면은 기본적으로 `gemma2:2b`, `finance-gemma2-qlora-v1`, `finance-gemma2-qlora-v2`를 비교하며 실제 등록 이름과 다르면 입력란에서 변경합니다.
 
 1. 화면 경로는 `frontend/src/App.jsx`에서 찾습니다.
 2. 화면 동작은 해당 `frontend/src/pages/*Page.jsx`를 확인합니다.

@@ -6,7 +6,7 @@ import Sidebar from '../components/Sidebar';
 import '../style/FinanceEvaluationPage.scss';
 
 const STORAGE_KEY = 'pic_to_text_finance_evaluations_v1';
-const DEFAULT_MODELS = ['gemma2:2b', 'finance-gemma2-qlora'];
+const DEFAULT_MODELS = ['gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
 const LABELS = {
   document_type: '문서 유형', expense_category: '카테고리', merchant: '상호', transaction_date: '날짜',
   supply_amount: '공급가액', tax_amount: '부가세', total_amount: '합계금액', payment_method: '결제수단',
@@ -68,11 +68,15 @@ export default function FinanceEvaluationPage() {
 
   const current = dataset[selectedIndex];
   const summaries = useMemo(() => models.flatMap((model) => ['pure', 'system'].map((mode) => ({ model, mode, ...summarize(runs, mode, model) }))), [runs, models]);
-  const comparison = useMemo(() => ['pure', 'system'].map((mode) => {
+  const comparison = useMemo(() => ['pure', 'system'].flatMap((mode) => {
     const baseline = summarize(runs, mode, models[0]);
-    const trained = summarize(runs, mode, models[1]);
-    return { mode, baseline, trained, delta: trained.accuracy - baseline.accuracy };
+    return models.slice(1).map((model) => {
+      const candidate = summarize(runs, mode, model);
+      return { mode, model, baseline, candidate, delta: candidate.accuracy - baseline.accuracy };
+    });
   }), [runs, models]);
+
+  const setModel = (index, value) => setModels((currentModels) => currentModels.map((model, modelIndex) => modelIndex === index ? value : model));
 
   const saveRuns = (next) => { setRuns(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); };
   const loadDataset = async (file) => {
@@ -117,8 +121,9 @@ export default function FinanceEvaluationPage() {
     <header><div><p>FINANCE MODEL LAB</p><h1>영수증 모델 비교 평가</h1><span>동일 OCR 입력으로 순수 모델과 최종 시스템 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> 결과 JSON</button></header>
     <section className="eval-setup">
       <label><span>정답 데이터</span><input type="file" accept=".json,application/json" onChange={(event) => loadDataset(event.target.files?.[0])} /><small>{datasetName || 'receipt_kr.json을 선택하세요'}</small></label>
-      <label><span>기존 모델</span><input value={models[0]} onChange={(event) => setModels([event.target.value, models[1]])} /></label>
-      <label><span>학습 모델</span><input value={models[1]} onChange={(event) => setModels([models[0], event.target.value])} /></label>
+      <label><span>기준 모델</span><input value={models[0]} onChange={(event) => setModel(0, event.target.value)} /></label>
+      <label><span>QLoRA 이전 버전</span><input value={models[1]} onChange={(event) => setModel(1, event.target.value)} /></label>
+      <label><span>QLoRA 신규 버전</span><input value={models[2]} onChange={(event) => setModel(2, event.target.value)} /></label>
       <label><span>현재 정답 항목</span><select disabled={!dataset.length} value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{dataset.map((row, index) => <option value={index} key={`${nameOf(row)}-${index}`}>{index + 1}. {nameOf(row) || `항목 ${index + 1}`}</option>)}</select></label>
       <button className="eval-upload" disabled={!current || loading || models.some((model) => !model.trim())} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : '현재 영수증 이미지 선택·평가'}</button>
       <input ref={imageRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" onChange={(event) => runEvaluation(event.target.files?.[0])} />
@@ -126,7 +131,7 @@ export default function FinanceEvaluationPage() {
     </section>
 
     <section className="eval-summary-grid">{summaries.map((item) => <article key={`${item.model}-${item.mode}`}><small>{item.mode === 'pure' ? 'PURE MODEL' : 'FINAL SYSTEM'}</small><h2>{item.model}</h2><strong>{(item.accuracy * 100).toFixed(1)}%</strong><p>필드 정확도 · {item.documents}건</p><dl><div><dt>완전 정답</dt><dd>{item.complete}/{item.documents}</dd></div><div><dt>호출 성공</dt><dd>{item.success}/{item.documents}</dd></div><div><dt>평균 응답</dt><dd>{(item.latency / 1000).toFixed(1)}초</dd></div></dl></article>)}</section>
-    <section className="eval-comparison">{comparison.map((item) => <article key={item.mode}><div><small>{item.mode === 'pure' ? '순수 모델 비교' : '최종 시스템 비교'}</small><strong>{models[1]}</strong><span>vs {models[0]}</span></div><em className={item.delta >= 0 ? 'ok' : 'bad'}>{item.delta >= 0 ? '+' : ''}{(item.delta * 100).toFixed(1)}%p</em></article>)}</section>
+    <section className="eval-comparison">{comparison.map((item) => <article key={`${item.mode}-${item.model}`}><div><small>{item.mode === 'pure' ? '순수 모델 비교' : '최종 시스템 비교'}</small><strong>{item.model}</strong><span>vs {models[0]}</span></div><em className={item.delta >= 0 ? 'ok' : 'bad'}>{item.delta >= 0 ? '+' : ''}{(item.delta * 100).toFixed(1)}%p</em></article>)}</section>
 
     <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 정답 항목을 다시 평가하면 최신 결과로 교체됩니다.</p></div><span>{runs.length}/{dataset.length || 17}건</span></header>
       <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>순수</span><span>최종</span><span>Excel</span><span>응답시간</span></div>

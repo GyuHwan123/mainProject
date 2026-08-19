@@ -208,9 +208,9 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     }
 
 
-async def _classify_receipt(text: str, filename: str) -> dict[str, Any]:
+def _receipt_prompt(text: str, filename: str) -> str:
     hints = _receipt_hints(text, filename)
-    prompt = f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
+    return f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
 
 문서 유형은 반드시 다음 중 하나입니다.
 - EXPENSE_REPORT: 일반 경비, 회의비, 식비, 소모품, 접대비, 통신비 등
@@ -240,12 +240,20 @@ items(각 항목은 name, quantity, unit_price, supply_amount, tax_amount, total
 [OCR 텍스트]
 {text[:12000]}
 """
+
+
+async def _classify_receipt_with_model(text: str, filename: str, model_name: str) -> dict[str, Any]:
+    raw = await generate(_receipt_prompt(text, filename), json_format=True, num_predict=1200, model_name=model_name)
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError("object expected")
+    return result
+
+
+async def _classify_receipt(text: str, filename: str) -> dict[str, Any]:
+    hints = _receipt_hints(text, filename)
     try:
-        raw = await generate(prompt, json_format=True, num_predict=1200)
-        result = json.loads(raw)
-        if not isinstance(result, dict):
-            raise ValueError("object expected")
-        return result
+        return await _classify_receipt_with_model(text, filename, MODEL_NAME)
     except Exception:
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.

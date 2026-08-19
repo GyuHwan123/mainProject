@@ -15,6 +15,7 @@ const items = [
   { label: 'PDF 추출', icon: <IoDocumentTextOutline />, path: '/ocr' },
   { label: 'AI 채팅', icon: '✦', path: '/chat' },
   { label: '리포트', icon: <GrCatalogOption />, path: '/reports' },
+  { label: '모델 평가', icon: '≋', path: '/finance-evaluations', developerOnly: true },
   { label: '내 정보', icon: <RiUser3Fill />, path: '/mypage' },
 ];
 
@@ -26,7 +27,8 @@ export default function Sidebar() {
   const settingsRef = useRef(null);
   const currentUser = getAppUser();
   const canViewReports = currentUser.subscriptionTier === 'ENTERPRISE' || ['DEVELOPER', 'ADMIN'].includes(currentUser.role);
-  const visibleItems = items.filter((item) => item.path !== '/reports' || canViewReports);
+  const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(currentUser.role) || currentUser.email === 'developer@docunex.com';
+  const visibleItems = items.filter((item) => (!item.developerOnly || isDeveloper) && (item.path !== '/reports' || canViewReports));
 
   useEffect(() => {
     if (!settingsOpen) return undefined;

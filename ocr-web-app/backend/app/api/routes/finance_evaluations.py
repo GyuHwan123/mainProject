@@ -1,13 +1,22 @@
 from time import perf_counter
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.chatbot import generate
+from app.api.routes.chatbot import LOCAL_OLLAMA_URL, generate
+from app.core.config import settings
 from app.models.user import User
-from app.services.finance_evaluation_service import evaluate_models, normalize_ground_truth
+from app.services.finance_evaluation_service import (
+    CORE_FIELDS,
+    estimate_ocr_impact,
+    evaluate_models,
+    normalize_ground_truth,
+    score_fields,
+    verify_workbook,
+)
 from app.services.supabase_service import supabase_service
 
 
@@ -17,7 +26,7 @@ router = APIRouter()
 class FinanceEvaluationRequest(BaseModel):
     document_id: str
     ground_truth: dict[str, Any]
-    model_names: list[str] = Field(min_length=2, max_length=4)
+    model_names: list[str] = Field(min_length=1, max_length=4)
 
 
 class FinanceEvaluationQuestionRequest(BaseModel):
@@ -26,10 +35,95 @@ class FinanceEvaluationQuestionRequest(BaseModel):
     model_names: list[str] = Field(min_length=1, max_length=4)
 
 
+class FinanceRecordEvaluationRequest(BaseModel):
+    document_id: str
+    record_id: str
+    ground_truth: dict[str, Any]
+    latency_ms: int = Field(default=0, ge=0)
+
+
 def require_developer(user: User = Depends(require_current_user)) -> User:
     if user.role not in {"DEVELOPER", "ADMIN"} and user.email != "developer@docunex.com":
         raise HTTPException(status_code=403, detail="개발자 권한이 필요합니다.")
     return user
+
+
+async def _installed_ollama_models() -> list[str]:
+    # The evaluation UI reflects the models installed on this workstation.
+    # Keep the configured URL as a fallback for deployments without local Ollama.
+    urls = list(dict.fromkeys([LOCAL_OLLAMA_URL, settings.OLLAMA_BASE_URL.rstrip("/")]))
+    for base_url in urls:
+        try:
+            async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
+                response = await client.get("/api/tags")
+                response.raise_for_status()
+                names = sorted({
+                    str(model.get("name") or model.get("model") or "").strip()
+                    for model in response.json().get("models", [])
+                    if isinstance(model, dict) and (model.get("name") or model.get("model"))
+                })
+                return names
+        except (httpx.HTTPError, ValueError):
+            continue
+    raise HTTPException(status_code=503, detail="Ollama에서 설치된 모델 목록을 불러올 수 없습니다.")
+
+
+@router.get("/models")
+async def list_installed_ollama_models(
+    _user: User = Depends(require_developer),
+) -> dict[str, list[str]]:
+    return {"models": await _installed_ollama_models()}
+
+
+@router.post("/record")
+def evaluate_existing_finance_record(
+    payload: FinanceRecordEvaluationRequest,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    """Score the exact record produced by automatic documentation.
+
+    Unlike ``/run``, this endpoint does not invoke the LLM again, so the
+    evaluation reflects the values that were actually written to Excel.
+    """
+    document = supabase_service.get_ocr_document(user.email, payload.document_id)
+    record = next(
+        (
+            item for item in supabase_service.list_finance_records(user.email, limit=1000)
+            if str(item.get("id")) == payload.record_id
+        ),
+        None,
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="평가할 재무 기록을 찾을 수 없습니다.")
+
+    # Duplicate detection can intentionally return an existing finance record
+    # whose original document_id differs from the newly uploaded OCR document.
+    # Ownership is already enforced by list_finance_records(user.email), so use
+    # the requested record with the current upload's OCR evidence for scoring.
+    text = (document.get("extracted_text") or "").strip()
+    truth = normalize_ground_truth(payload.ground_truth)
+    prediction = {field: record.get(field) for field in CORE_FIELDS}
+    prediction["items"] = (record.get("structured_data") or {}).get("items") or []
+    score = score_fields(prediction, truth)
+    return {
+        "document_id": payload.document_id,
+        "document_name": document.get("file_name") or "receipt",
+        "ocr_text": text,
+        "ocr_pages": document.get("bounding_boxes") or [],
+        "ground_truth": payload.ground_truth,
+        "normalized_ground_truth": truth,
+        "results": [{
+            "model_name": record.get("model_name") or "unknown",
+            "success": True,
+            "latency_ms": payload.latency_ms,
+            "system": {
+                "prediction": prediction,
+                "score": score,
+                "ocr_impact": estimate_ocr_impact(text, truth, score),
+                "workbook": verify_workbook(record),
+            },
+        }],
+    }
 
 
 @router.post("/ask")
@@ -82,8 +176,15 @@ async def run_finance_evaluation(
     if not text:
         raise HTTPException(status_code=422, detail="평가할 OCR 텍스트가 없습니다.")
     model_names = list(dict.fromkeys(name.strip() for name in payload.model_names if name.strip()))
-    if len(model_names) < 2:
-        raise HTTPException(status_code=422, detail="서로 다른 모델을 두 개 이상 입력해 주세요.")
+    installed_models = await _installed_ollama_models()
+    unavailable = [name for name in model_names if name not in installed_models]
+    if unavailable:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Ollama에 설치되지 않은 모델입니다: {', '.join(unavailable)}",
+        )
+    if not model_names:
+        raise HTTPException(status_code=422, detail="평가할 Ollama 모델을 하나 이상 선택해 주세요.")
     return {
         "document_id": payload.document_id,
         "document_name": document.get("file_name") or "receipt",

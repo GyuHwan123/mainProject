@@ -862,8 +862,12 @@ export default function OCRPage() {
 
   const prepareFile = async (file) => {
     if (!file) return;
-    resetDocumentView({ preserveFinance: processingMode === 'receipt' });
-    setProcessingMode(await inferProcessingMode(file));
+    const inferredMode = await inferProcessingMode(file);
+    resetDocumentView({
+      preserveGroundTruth: isDeveloper && inferredMode === 'receipt',
+      preserveFinance: processingMode === 'receipt',
+    });
+    setProcessingMode(inferredMode);
     setPendingFile(file);
     setFileName(file.name);
     setError('');
@@ -891,6 +895,16 @@ export default function OCRPage() {
     if (!pendingFile || loading) return;
     setFinanceDuplicateNotice('');
     const truthForEvaluation = groundTruth.trim();
+    let parsedFinanceTruth = null;
+    if (processingMode === 'receipt' && isDeveloper && truthForEvaluation) {
+      try {
+        parsedFinanceTruth = JSON.parse(truthForEvaluation);
+      } catch {
+        setError('결과 데이터는 올바른 JSON 형식으로 입력해 주세요.');
+        setEvaluationStatus('JSON 형식을 확인한 뒤 다시 실행해 주세요.');
+        return;
+      }
+    }
     const result = await loadFile(pendingFile, pdf);
     if (!result?.success) return;
     setPendingFile(null);
@@ -906,13 +920,44 @@ export default function OCRPage() {
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
-        captureFinanceEvaluation({
-          record: financeRecord,
-          documentId: result.documentId,
-          documentName: pendingFile.name || fileName,
-          pages: result.pages || [],
-          latencyMs: performance.now() - classificationStartedAt,
-        });
+        const classificationLatencyMs = performance.now() - classificationStartedAt;
+        if (parsedFinanceTruth) {
+          try {
+            const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
+              document_id: result.documentId,
+              record_id: financeRecord.id,
+              ground_truth: parsedFinanceTruth,
+              latency_ms: Math.round(classificationLatencyMs),
+            });
+            appendFinanceEvaluationRun({
+              ...evaluation,
+              capture_id: `automatic:${result.documentId}:${financeRecord.id}`,
+              source: 'automatic_documentation',
+              dataset_name: '영수증 자동 문서화 · 개발자 정답',
+              dataset_index: null,
+              matched_image: pendingFile.name || fileName,
+              evaluated_at: new Date().toISOString(),
+            });
+            setEvaluationStatus('자동 문서화 결과와 정답 비교가 평가 페이지에 저장되었습니다.');
+          } catch (evaluationError) {
+            captureFinanceEvaluation({
+              record: financeRecord,
+              documentId: result.documentId,
+              documentName: pendingFile.name || fileName,
+              pages: result.pages || [],
+              latencyMs: classificationLatencyMs,
+            });
+            setEvaluationStatus(evaluationError.response?.data?.detail || '문서화는 완료됐지만 정답 비교 결과를 저장하지 못했습니다.');
+          }
+        } else {
+          captureFinanceEvaluation({
+            record: financeRecord,
+            documentId: result.documentId,
+            documentName: pendingFile.name || fileName,
+            pages: result.pages || [],
+            latencyMs: classificationLatencyMs,
+          });
+        }
         setResultTab('text');
       } catch (requestError) {
         setError(requestError.response?.data?.detail || 'OCR은 완료됐지만 재무 양식에 자동 입력하지 못했습니다.');
@@ -921,7 +966,7 @@ export default function OCRPage() {
       }
     }
 
-    if (isDeveloper && truthForEvaluation && result.documentId) {
+    if (processingMode !== 'receipt' && isDeveloper && truthForEvaluation && result.documentId) {
       setEvaluationStatus('평가 저장 중...');
       try {
         await apiClient.post('/reports/evaluations', {
@@ -1199,6 +1244,13 @@ export default function OCRPage() {
         </header>
 
         <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
+
+        {processingMode === 'receipt' && isDeveloper && <section className="developer-receipt-truth">
+          <header><div><span>DEVELOPER ONLY</span><strong>평가용 결과 데이터</strong><p>영수증을 업로드하기 전에 정답 JSON을 입력하면 실제 자동 문서화 결과와 비교해 평가 페이지에 저장합니다.</p></div><button type="button" onClick={() => groundTruthFileRef.current?.click()}>JSON 불러오기</button></header>
+          <textarea value={groundTruth} onChange={(event) => { setGroundTruth(event.target.value); setGroundTruthFileName(''); setEvaluationStatus(''); setError(''); }} placeholder={'{\n  "merchant": "상호명",\n  "transaction_date": "2026-08-20",\n  "total_amount": 10000,\n  "payment_method": "현금",\n  "items": [{ "name": "품목명", "quantity": 1, "unit_price": 10000, "total_amount": 10000 }]\n}'} />
+          <footer><span>{groundTruthFileName || (groundTruth.trim() ? '직접 입력한 JSON' : '정답을 입력하지 않으면 결과만 미평가 상태로 저장됩니다.')}</span>{groundTruth.trim() && <button type="button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>초기화</button>}<small className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus}</small></footer>
+          <input ref={groundTruthFileRef} hidden type="file" accept=".json,application/json" onChange={(event) => { loadGroundTruthFile(event.target.files?.[0]); event.target.value = ''; }} />
+        </section>}
 
         <div className="ocr-filebar">
           <div className={`processing-mode auto ${processingMode}`}><span>자동 판별</span><strong>{processingMode === 'receipt' ? '영수증·거래 증빙' : '재무 문서'}</strong></div>

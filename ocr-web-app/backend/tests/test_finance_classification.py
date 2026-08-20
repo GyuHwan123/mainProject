@@ -94,6 +94,28 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_item_count"], 2)
         self.assertEqual(normalized["structured_data"]["items"], items[:2])
 
+    def test_does_not_treat_nearby_single_quantity_as_item_count(self):
+        ocr = "총품목/총수량 총구매금액\n브러쉬드 알파카 퍼루 1볼/50g"
+        items = [{"name": "첫 품목"}, {"name": "두 번째 품목"}]
+        normalized = _normalize(
+            {"document_type": "PURCHASE_REQUEST", "items": items},
+            "receipt.jpg",
+            ocr,
+        )
+
+        self.assertIsNone(normalized["structured_data"]["deterministic_hints"]["stated_item_count"])
+        self.assertEqual(normalized["structured_data"]["items"], items)
+
+    def test_does_not_shorten_items_from_uncertain_single_llm_count(self):
+        items = [{"name": "첫 품목"}, {"name": "두 번째 품목"}]
+        normalized = _normalize(
+            {"document_type": "PURCHASE_REQUEST", "receipt_summary": {"stated_item_count": 1}, "items": items},
+            "receipt.jpg",
+            "품목 정보",
+        )
+
+        self.assertEqual(normalized["structured_data"]["items"], items)
+
 
 if __name__ == "__main__":
     unittest.main()

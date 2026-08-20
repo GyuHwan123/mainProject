@@ -170,7 +170,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
 
     stated_item_count = None
     item_count_match = re.search(
-        r"총\s*품목(?:\s*수)?(?:\s*[/／]\s*총\s*수량)?[^\d]{0,40}(\d{1,3})(?:\s*[/／]\s*\d{1,3})?",
+        r"총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량[^\d]{0,80}(\d{1,3})\s*[/／]\s*\d{1,3}",
         text,
     )
     if item_count_match:
@@ -192,7 +192,10 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
     stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
     items = result.get("items") if isinstance(result.get("items"), list) else []
-    if stated_item_count and len(items) > int(stated_item_count):
+    # A lone count of 1 is too easy to confuse with nearby quantity/spec text
+    # such as ``1볼/50g``. Only shorten multi-item output when a count of two
+    # or more is supported by the receipt summary.
+    if stated_item_count >= 2 and len(items) > int(stated_item_count):
         result["items"] = items[:int(stated_item_count)]
     if stated_item_count:
         receipt_summary["stated_item_count"] = int(stated_item_count)
@@ -258,7 +261,7 @@ items(각 항목은 name, specification, quantity, unit, unit_price, supply_amou
 - 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.
 - 결제금액, 공급가액, 부가세는 서로 검산하고 공급가액 + 부가세 = 결제금액인 조합을 우선합니다.
 - 문서 유형과 관계없이 실제로 결제된 서로 다른 품목 행만 items 배열의 개별 항목으로 작성합니다.
-- 같은 품목의 한글명·영문명·설명·규격·옵션이 여러 줄에 걸쳐 있으면 하나의 품목으로 합치고 별도 품목으로 세지 않습니다.
+- 같은 품목임이 명확한 한글명·영문명·설명·규격·옵션만 하나로 합치며, 서로 다른 상품명이나 서로 다른 가격이 있으면 별도 품목으로 유지합니다.
 - 소계·합계·공급가액·부가세·할인·쿠폰·안내 문구는 품목으로 세지 않으며, OCR에 총품목 수가 명시되어 있으면 items 개수를 그 수와 일치시킵니다.
 - name에는 상품명만, specification에는 규격·용량·색상·옵션을, unit에는 개·병·박스 등 수량 단위를 작성합니다.
 - 품목별 quantity × unit_price를 검산하고, 품목 금액 합계와 영수증 total_amount가 일치하는지 확인합니다.

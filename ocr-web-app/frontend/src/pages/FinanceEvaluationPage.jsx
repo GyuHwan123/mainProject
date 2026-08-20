@@ -111,6 +111,17 @@ function OcrSheetPreview({ pages, text }) {
   return <div className="ocr-sheet-mini"><table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
+function PipelineLoading({ progress, models, imagePreview }) {
+  return models.map((model) => <article className="model-pipeline-result pipeline-loading-result" key={`loading-${model}`}>
+    <header><div><small>FINAL SERVICE</small><h2>{model}</h2></div><span className="pipeline-stage-label">{progress.stage === 'ocr' ? 'OCR 처리 중' : 'LLM 구조화 및 Excel 생성 중'}</span></header>
+    <div className="pipeline-boxes">
+      <section><h3>1. 입력 이미지</h3><div className="image-mini">{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={progress.document_name} /> : <span className="eval-preview-empty">{progress.document_name}</span>}</div></section>
+      <section><h3>2. OCR Excel형 워크시트</h3>{progress.stage === 'ocr' ? <div className="pipeline-loader"><i /><strong>OCR 결과를 추출하고 있습니다.</strong><span>문자와 표 위치를 분석하는 중입니다.</span></div> : <OcrSheetPreview pages={progress.ocr_pages} text={progress.ocr_text} />}</section>
+      <section><h3>3. LLM 구조화 · Excel 결과</h3><div className="pipeline-loader"><i /><strong>{progress.stage === 'ocr' ? 'OCR 완료 후 LLM을 실행합니다.' : `${model} 응답을 기다리고 있습니다.`}</strong><span>{progress.stage === 'ocr' ? 'OCR 처리 대기' : '품목을 구조화하고 Excel을 생성하는 중입니다.'}</span></div></section>
+    </div>
+  </article>);
+}
+
 function ModelPipelineResult({ run, result, imagePreview }) {
   const [imageOpen, setImageOpen] = useState(false);
   const score = result.system?.score || {};
@@ -191,6 +202,7 @@ export default function FinanceEvaluationPage() {
   const [question, setQuestion] = useState('');
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHistory, setQuestionHistory] = useState([]);
+  const [pipelineProgress, setPipelineProgress] = useState(null);
 
   const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(runs, model) })), [runs, models]);
   const latestRun = runs[runs.length - 1];
@@ -272,10 +284,17 @@ export default function FinanceEvaluationPage() {
     setImagePreview({ url: imageUrlRef.current, type: file.type, name: file.name });
     setSelectedIndex(matched.index);
     setQuestionHistory([]);
+    setPipelineProgress({ stage: 'ocr', document_name: file.name, ocr_text: '', ocr_pages: [] });
     setLoading(true); setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
     try {
       const form = new FormData(); form.append('file', file);
       const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', form, { timeout: 360000 });
+      setPipelineProgress({
+        stage: 'llm',
+        document_name: ocr.filename || file.name,
+        ocr_text: (ocr.pages || []).map((page) => page.text || '').join('\n'),
+        ocr_pages: ocr.pages || [],
+      });
       const { data: evaluation } = await apiClient.post('/finance-evaluations/run', {
         document_id: ocr.document_id,
         ground_truth: truthOf(matched.row),
@@ -288,7 +307,7 @@ export default function FinanceEvaluationPage() {
       if (matched.index < dataset.length - 1) setSelectedIndex(matched.index + 1);
     } catch (error) {
       setStatus(error.response?.data?.detail || error.message || '평가에 실패했습니다.');
-    } finally { setLoading(false); if (imageRef.current) imageRef.current.value = ''; }
+    } finally { setPipelineProgress(null); setLoading(false); if (imageRef.current) imageRef.current.value = ''; }
   };
 
   const exportResults = () => {
@@ -332,7 +351,7 @@ export default function FinanceEvaluationPage() {
       <p>{status}</p>
     </section>
 
-    <section className="latest-pipeline-results"><header><div><h2>최근 실행 결과</h2><p>모델별로 입력 이미지, 공통 OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{latestRun?.document_name || '평가 대기'}</span></header>{latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 모델별 처리 화면이 여기에 표시됩니다.</p>}</section>
+    <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>모델별로 입력 이미지, 공통 OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 모델별 처리 화면이 여기에 표시됩니다.</p>}</section>
 
     <section className="common-question-panel"><header><div><h2>모델 공통 질문</h2><p>최근 평가 영수증의 동일한 OCR 원문과 질문을 모든 모델에 전달합니다.</p></div><span>{latestRun ? `${latestRun.results?.length || 0}개 모델` : '평가 후 사용 가능'}</span></header><div className="question-compose"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="예: 이 영수증의 결제 금액과 주요 구매 품목을 알려줘." disabled={!latestRun || questionLoading} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askAllModels(); } }} /><button type="button" disabled={!latestRun || !question.trim() || questionLoading} onClick={askAllModels}>{questionLoading ? '모델 답변 생성 중...' : '모든 모델에 질문'}</button></div><div className="question-history">{questionHistory.map((entry, entryIndex) => <article key={`${entry.asked_at}-${entryIndex}`}><h3>Q. {entry.question}</h3><div>{(entry.answers || []).map((answer) => <section className={answer.success ? '' : 'answer-error'} key={answer.model_name}><header><strong>{answer.model_name}</strong><span>{(Number(answer.latency_ms || 0) / 1000).toFixed(1)}초</span></header><p>{answer.success ? answer.answer : answer.error || '답변 생성 실패'}</p></section>)}</div></article>)}{!questionHistory.length && <p className="eval-empty">평가 완료 후 질문하면 모델별 답변이 나란히 표시됩니다.</p>}</div></section>
 

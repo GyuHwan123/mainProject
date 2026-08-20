@@ -31,7 +31,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(content), data_only=False)
         self.assertEqual(
             workbook.sheetnames,
-            ["경비지출결의서", "출장여비교통비정산서", "구매품의요청서", "복리후생비신청서"],
+            ["경비지출결의서", "출장여비교통비정산서", "구매품의요청서", "복리후생비신청서", "영수증요약"],
         )
         sheet = workbook["경비지출결의서"]
         self.assertEqual(sheet["A5"].value, "문서번호")
@@ -124,6 +124,43 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
             receipt_id = f"receipt-{document_type.lower()}"
             self.assertEqual([sheet["A12"].value, sheet["B12"].value], [receipt_id, 1])
             self.assertEqual([sheet["A13"].value, sheet["B13"].value], [receipt_id, 2])
+
+    def test_adds_receipt_summary_with_stated_and_extracted_reconciliation(self):
+        record = {
+            "document_id": "receipt-summary-001",
+            "document_type": "PURCHASE_REQUEST",
+            "merchant": "테스트 상점",
+            "transaction_date": "2026-08-20",
+            "total_amount": 81300,
+            "structured_data": {
+                "receipt_summary": {
+                    "stated_item_count": 2,
+                    "stated_total_quantity": 7,
+                    "stated_total_amount": 81300,
+                },
+                "items": [
+                    {"name": "품목 A", "quantity": 2, "unit": "개", "total_amount": 33600},
+                    {"name": "품목 B", "quantity": 1, "unit": "개", "total_amount": 11000},
+                    {"name": "품목 C", "quantity": 1, "unit": "개", "total_amount": 8500},
+                    {"name": "품목 D", "quantity": 1, "unit": "개", "total_amount": 14000},
+                    {"name": "품목 E", "quantity": 1, "unit": "개", "total_amount": 49000},
+                ],
+            },
+        }
+        workbook = load_workbook(BytesIO(build_finance_workbook([record])), data_only=False)
+        sheet = workbook["영수증요약"]
+
+        self.assertEqual([sheet.cell(1, column).value for column in range(1, 14)], [
+            "영수증 ID", "문서 유형", "거래일", "거래처", "표시 품목 수", "추출 품목 행 수",
+            "표시 총수량", "추출 총수량", "단위 구성", "영수증 총액", "추출 금액 합계", "차이금액", "검산 상태",
+        ])
+        self.assertEqual(sheet["A2"].value, "receipt-summary-001")
+        self.assertEqual([sheet["E2"].value, sheet["F2"].value], [2, 5])
+        self.assertEqual([sheet["G2"].value, sheet["H2"].value], [7, 6])
+        self.assertEqual(sheet["J2"].value, 81300)
+        self.assertIn("품목 수", sheet["M2"].value)
+        self.assertIn("총수량", sheet["M2"].value)
+        self.assertIn("금액", sheet["M2"].value)
 
 
 if __name__ == "__main__":

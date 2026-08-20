@@ -30,6 +30,13 @@ HEADERS_BY_TYPE = {
     "WELFARE_BENEFIT": ["영수증 ID", "품목 순번", "지원 항목(구분)", "결제일자", "내용(품목명/사유)", "결제처", "신청 금액", "증빙서류", "비고"],
 }
 
+SUMMARY_SHEET_NAME = "영수증요약"
+SUMMARY_HEADERS = [
+    "영수증 ID", "문서 유형", "거래일", "거래처",
+    "표시 품목 수", "추출 품목 행 수", "표시 총수량", "추출 총수량", "단위 구성",
+    "영수증 총액", "추출 금액 합계", "차이금액", "검산 상태",
+]
+
 
 def _number(value: Any) -> float:
     try:
@@ -116,6 +123,88 @@ def _summary_text(records: list[dict[str, Any]], field: str, fallback: str = "�
         if value and str(value) not in values:
             values.append(str(value))
     return " / ".join(values[:3]) or fallback
+
+
+def _optional_number(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _receipt_summary_rows(records: list[dict[str, Any]]) -> list[list[Any]]:
+    rows = []
+    for record in records:
+        data = record.get("structured_data") or {}
+        items = data.get("items") if isinstance(data.get("items"), list) else []
+        stated = data.get("receipt_summary") if isinstance(data.get("receipt_summary"), dict) else {}
+        stated_item_count = _optional_number(stated.get("stated_item_count"))
+        stated_quantity = _optional_number(stated.get("stated_total_quantity"))
+        receipt_total = _optional_number(stated.get("stated_total_amount"))
+        if receipt_total is None:
+            receipt_total = _number(record.get("total_amount"))
+
+        extracted_quantity = sum(_number(item.get("quantity")) for item in items)
+        extracted_total = sum(
+            _number(item.get("total_amount"))
+            or _number(item.get("supply_amount")) + _number(item.get("tax_amount"))
+            or _number(item.get("quantity")) * _number(item.get("unit_price"))
+            for item in items
+        )
+        units: dict[str, float] = {}
+        for item in items:
+            unit = str(item.get("unit") or "단위 미확인")
+            units[unit] = units.get(unit, 0) + _number(item.get("quantity"))
+        unit_summary = " / ".join(
+            f"{unit} {quantity:g}" for unit, quantity in units.items()
+        ) or None
+
+        mismatches = []
+        if stated_item_count is not None and stated_item_count != len(items):
+            mismatches.append("품목 수")
+        if stated_quantity is not None and stated_quantity != extracted_quantity:
+            mismatches.append("총수량")
+        if receipt_total and abs(receipt_total - extracted_total) > 0.01:
+            mismatches.append("금액")
+        if not items:
+            mismatches.append("품목 없음")
+        status = "일치" if not mismatches else f"확인 필요: {', '.join(mismatches)}"
+        rows.append([
+            str(record.get("document_id") or record.get("id") or "미확인"),
+            SHEET_NAMES.get(record.get("document_type"), record.get("document_type")),
+            record.get("transaction_date"), record.get("merchant"),
+            stated_item_count, len(items), stated_quantity, extracted_quantity, unit_summary,
+            receipt_total, extracted_total, receipt_total - extracted_total, status,
+        ])
+    return rows
+
+
+def _style_summary_sheet(ws, records: list[dict[str, Any]]) -> None:
+    dark = "1F4E78"
+    line = Side(style="thin", color="AAB7C4")
+    ws.sheet_view.showGridLines = False
+    ws.freeze_panes = "A2"
+    for column, label in enumerate(SUMMARY_HEADERS, 1):
+        cell = ws.cell(1, column, label)
+        cell.fill = PatternFill("solid", fgColor=dark)
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        cell.border = Border(top=line, bottom=line, left=line, right=line)
+    for row_index, values in enumerate(_receipt_summary_rows(records), 2):
+        for column, value in enumerate(values, 1):
+            cell = ws.cell(row_index, column, value)
+            cell.border = Border(top=line, bottom=line, left=line, right=line)
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+            if column in {5, 6, 7, 8, 10, 11, 12}:
+                cell.number_format = '#,##0.###'
+        status_cell = ws.cell(row_index, 13)
+        status_cell.font = Font(bold=True, color="14835B" if values[12] == "일치" else "C9474F")
+    widths = [38, 22, 16, 26, 14, 16, 14, 14, 24, 18, 18, 16, 30]
+    for index, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(index)].width = width
+    ws.auto_filter.ref = f"A1:M{max(len(records) + 1, 2)}"
 
 
 def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: dict[str, str]) -> None:
@@ -240,6 +329,8 @@ def build_finance_workbook(records: list[dict[str, Any]], author: dict[str, str]
         ws = workbook.create_sheet(sheet_name)
         matching = [record for record in records if record.get("document_type") == document_type]
         _style_sheet(ws, document_type, matching, author or {})
+    summary_sheet = workbook.create_sheet(SUMMARY_SHEET_NAME)
+    _style_summary_sheet(summary_sheet, records)
     first_document_type = records[0].get("document_type") if records else None
     if first_document_type in SHEET_NAMES:
         workbook.active = list(SHEET_NAMES).index(first_document_type)

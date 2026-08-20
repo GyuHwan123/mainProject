@@ -230,6 +230,7 @@ def _receipt_prompt(text: str, filename: str) -> str:
 doc_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
 supply_amount, tax_amount, total_amount, payment_method, description,
 route, location, transport_method, service_type, evidence_status, evidence_type, note,
+receipt_summary(영수증에 명시된 stated_item_count, stated_total_quantity, stated_total_amount),
 items(각 항목은 name, specification, quantity, unit, unit_price, supply_amount, tax_amount, total_amount, note)
 
 규칙:
@@ -243,6 +244,7 @@ items(각 항목은 name, specification, quantity, unit, unit_price, supply_amou
 - name에는 상품명만, specification에는 규격·용량·색상·옵션을, unit에는 개·병·박스 등 수량 단위를 작성합니다.
 - 품목별 quantity × unit_price를 검산하고, 품목 금액 합계와 영수증 total_amount가 일치하는지 확인합니다.
 - 배송비·봉투값·할인·쿠폰처럼 상품이 아닌 조정 금액은 이름을 명확히 표시하고 별도 items 항목으로 작성합니다.
+- receipt_summary 값은 영수증에 총품목·총수량·받을금액 등으로 명시된 경우에만 기록하고, 표시가 없으면 null로 작성합니다.
 - 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
 
 [파일명]

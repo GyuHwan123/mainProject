@@ -238,39 +238,29 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
 
 def _receipt_prompt(text: str, filename: str) -> str:
     hints = _receipt_hints(text, filename)
-    return f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
+    return f"""OCR 영수증을 읽고 JSON 객체 하나만 반환하세요. OCR에 없는 값은 추측하지 말고 null로 작성하세요.
 
-문서 유형은 반드시 다음 중 하나입니다.
-- EXPENSE_REPORT: 일반 경비, 회의비, 식비, 소모품, 접대비, 통신비 등
-- TRAVEL_EXPENSE: 출장 교통, 숙박, 출장 식대와 일비
-- PURCHASE_REQUEST: 비품·장비·소프트웨어 등 구매 또는 구매 요청
-- WELFARE_BENEFIT: 도서, 교육, 의료, 건강검진, 경조사 등 복리후생
+doc_type은 다음 중 하나입니다.
+- EXPENSE_REPORT: 일반 경비
+- TRAVEL_EXPENSE: 출장·교통·숙박
+- PURCHASE_REQUEST: 물품·장비·소프트웨어 구매
+- WELFARE_BENEFIT: 도서·교육·의료·복리후생
 
-필수 JSON 키:
-doc_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
-supply_amount, tax_amount, total_amount, payment_method, description,
-route, location, transport_method, service_type, evidence_status, evidence_type, note,
-receipt_summary(영수증에 명시된 stated_item_count, stated_total_quantity, stated_total_amount),
-items(각 항목은 name, specification, quantity, unit, unit_price, supply_amount, tax_amount, total_amount, note)
+반환 키:
+- 기본: doc_type, expense_category, merchant, transaction_date, supply_amount, tax_amount, total_amount, payment_method, description
+- 선택 정보: route, location, transport_method, service_type, evidence_status, evidence_type, note
+- receipt_summary: stated_item_count, stated_total_quantity, stated_total_amount
+- items 배열: name, specification, quantity, unit, unit_price, supply_amount, tax_amount, total_amount, note
 
 규칙:
-- 문서 유형 키는 반드시 doc_type을 사용하고 document_type이나 다른 이름으로 바꾸지 않습니다.
-- doc_type 값은 EXPENSE_REPORT, TRAVEL_EXPENSE, PURCHASE_REQUEST, WELFARE_BENEFIT 중 하나입니다.
-- OCR에 없는 값을 추측하지 말고 null 또는 빈 배열로 작성합니다.
-- 금액은 쉼표와 통화 기호가 없는 숫자로 작성합니다.
-- 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.
-- 결제금액, 공급가액, 부가세는 서로 검산하고 공급가액 + 부가세 = 결제금액인 조합을 우선합니다.
-- 문서 유형과 관계없이 실제로 결제된 서로 다른 품목 행만 items 배열의 개별 항목으로 작성합니다.
-- 같은 품목임이 명확한 한글명·영문명·설명·규격·옵션만 하나로 합치며, 서로 다른 상품명이나 서로 다른 가격이 있으면 별도 품목으로 유지합니다.
-- 소계·합계·공급가액·부가세·할인·쿠폰·안내 문구는 품목으로 세지 않으며, OCR에 총품목 수가 명시되어 있으면 items 개수를 그 수와 일치시킵니다.
-- name에는 상품명만, specification에는 규격·용량·색상·옵션을, unit에는 개·병·박스 등 수량 단위를 작성합니다.
-- 품목별 quantity × unit_price를 검산하고, 품목 금액 합계와 영수증 total_amount가 일치하는지 확인합니다.
-- 별도로 청구된 배송비·봉투값은 이름을 명확히 표시해 items에 포함할 수 있지만, 할인·쿠폰은 items에 포함하지 않습니다.
-- receipt_summary는 items 배열을 세거나 합산해서 만들지 말고, OCR 원문의 합계·결제·푸터 영역을 독립적으로 읽어 판단합니다.
-- OCR에 총품목·총수량·총구매금액·받을금액·합계 등으로 표시된 값을 각각 stated_item_count, stated_total_quantity, stated_total_amount에 기록합니다.
-- 품목 행에 나타난 숫자와 요약 영역의 숫자가 서로 달라도 OCR 요약 영역에 쓰인 값을 그대로 기록합니다. 이 차이는 후속 검산 단계에서 확인합니다.
-- OCR 원문에 해당 요약값의 근거가 없으면 items에서 계산하거나 추측하지 말고 null로 작성합니다.
-- 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
+1. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
+2. 실제 결제된 상품 행만 items에 넣습니다. 소계·합계·세금·할인·쿠폰·안내 문구는 제외합니다.
+3. 상품명이나 가격이 다르면 별도 품목입니다. 같은 상품의 영문명·규격·옵션만 specification에 합칩니다.
+4. OCR에 총품목 수가 있으면 items 개수를 맞춥니다.
+5. receipt_summary는 OCR의 총품목·총수량·총구매금액 표시를 그대로 옮깁니다. 표시가 없으면 null이며 items로 계산하지 않습니다.
+6. 공급가액 + 부가세 = 결제금액을 우선하고, 품목은 수량 × 단가를 확인합니다.
+7. 별도 청구된 배송비·봉투값은 items에 포함할 수 있습니다.
+8. 파일명과 코드 힌트가 OCR보다 명확한 날짜·금액·업무 목적을 제공하면 힌트를 우선합니다.
 
 [파일명]
 {filename}

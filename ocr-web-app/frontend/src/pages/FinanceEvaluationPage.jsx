@@ -183,7 +183,8 @@ export default function FinanceEvaluationPage() {
   const [dataset, setDataset] = useState([]);
   const [datasetName, setDatasetName] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [models, setModels] = useState(DEFAULT_MODELS);
+  const [installedModels, setInstalledModels] = useState([]);
+  const [models, setModels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('정답 JSON을 불러온 뒤 해당 영수증 이미지를 선택하세요.');
   const [imagePreview, setImagePreview] = useState(null);
@@ -196,6 +197,24 @@ export default function FinanceEvaluationPage() {
 
   useEffect(() => () => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/finance-evaluations/models').then(({ data }) => {
+      if (!active) return;
+      const available = Array.isArray(data?.models) ? data.models : [];
+      setInstalledModels(available);
+      const preferred = DEFAULT_MODELS.filter((model) => available.includes(model));
+      setModels((current) => {
+        const valid = current.filter((model) => available.includes(model));
+        return valid.length ? valid : (preferred.length ? preferred : available.slice(0, 1));
+      });
+      if (!available.length) setStatus('Ollama에 설치된 모델이 없습니다. 먼저 모델을 설치해 주세요.');
+    }).catch((error) => {
+      if (active) setStatus(error.response?.data?.detail || 'Ollama 모델 목록을 불러오지 못했습니다.');
+    });
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -214,6 +233,11 @@ export default function FinanceEvaluationPage() {
   }, []);
 
   const setModel = (index, value) => setModels((currentModels) => currentModels.map((model, modelIndex) => modelIndex === index ? value : model));
+  const addModel = () => setModels((current) => {
+    const next = installedModels.find((model) => !current.includes(model));
+    return next && current.length < 4 ? [...current, next] : current;
+  });
+  const removeModel = (index) => setModels((current) => current.filter((_, modelIndex) => modelIndex !== index));
 
   const saveRuns = (next) => setRuns(saveFinanceEvaluationRuns(next));
   const loadDataset = async (file) => {
@@ -300,11 +324,10 @@ export default function FinanceEvaluationPage() {
     <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> 결과 JSON</button></header>
     <section className="eval-setup">
       <label><span>정답 데이터</span><input type="file" accept=".json,application/json" onChange={(event) => loadDataset(event.target.files?.[0])} /><small>{datasetName || 'receipt_kr.json을 선택하세요'}</small></label>
-      <label><span>기준 모델</span><input value={models[0]} onChange={(event) => setModel(0, event.target.value)} /></label>
-      <label><span>QLoRA 이전 버전</span><input value={models[1]} onChange={(event) => setModel(1, event.target.value)} /></label>
-      <label><span>QLoRA 신규 버전</span><input value={models[2]} onChange={(event) => setModel(2, event.target.value)} /></label>
+      {models.map((model, index) => <label className="model-selector" key={`${model}-${index}`}><span>평가 모델 {index + 1}</span><div><select value={model} onChange={(event) => setModel(index, event.target.value)}>{installedModels.map((name) => <option value={name} key={name} disabled={models.includes(name) && name !== model}>{name}</option>)}</select><button type="button" onClick={() => removeModel(index)} aria-label={`${model} 제거`}>×</button></div></label>)}
+      {models.length < Math.min(4, installedModels.length) && <button className="add-model-button" type="button" onClick={addModel}>＋ 모델 추가</button>}
       <label><span>현재 정답 항목</span><select disabled={!dataset.length} value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{dataset.map((row, index) => <option value={index} key={`${nameOf(row)}-${index}`}>{index + 1}. {nameOf(row) || `항목 ${index + 1}`}</option>)}</select></label>
-      <button className="eval-upload" disabled={!dataset.length || loading || models.some((model) => !model.trim())} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : '영수증 이미지 선택 및 평가 시작'}</button>
+      <button className="eval-upload" disabled={!dataset.length || loading || !models.length || models.some((model) => !installedModels.includes(model))} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : `${models.length || 0}개 모델로 평가 시작`}</button>
       <input ref={imageRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" onChange={(event) => runEvaluation(event.target.files?.[0])} />
       <p>{status}</p>
     </section>

@@ -9,7 +9,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize
-from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, build_finance_workbook
+from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
 CORE_FIELDS = (
@@ -322,11 +322,27 @@ def verify_workbook(record: dict[str, Any]) -> dict[str, Any]:
             [sheet.cell(row, column).value for column in range(1, column_count + 1)]
             for row in range(12, max(12, sheet.max_row))
         ]
+        sheet_previews = {}
+        for worksheet in workbook.worksheets:
+            if worksheet.title == SUMMARY_SHEET_NAME:
+                preview_headers = [worksheet.cell(1, column).value for column in range(1, worksheet.max_column + 1)]
+                preview_rows = [
+                    [worksheet.cell(row, column).value for column in range(1, worksheet.max_column + 1)]
+                    for row in range(2, worksheet.max_row + 1)
+                ]
+            else:
+                preview_headers = [worksheet.cell(11, column).value for column in range(1, worksheet.max_column + 1)]
+                preview_rows = [
+                    [worksheet.cell(row, column).value for column in range(1, worksheet.max_column + 1)]
+                    for row in range(12, max(12, worksheet.max_row))
+                ]
+            sheet_previews[worksheet.title] = {"headers": preview_headers, "rows": preview_rows}
         return {
             "success": expected_sheet in workbook.sheetnames and workbook.active.title == expected_sheet,
             "active_sheet": workbook.active.title,
             "expected_sheet": expected_sheet,
             "preview": {"headers": headers, "rows": rows},
+            "sheet_previews": sheet_previews,
         }
     except Exception as exc:
         return {"success": False, "error": str(exc)}

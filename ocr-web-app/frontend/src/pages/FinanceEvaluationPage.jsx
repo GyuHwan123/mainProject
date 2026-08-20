@@ -58,9 +58,14 @@ function OcrImpact({ impact }) {
 }
 
 function ExcelMiniPreview({ workbook }) {
-  const preview = workbook?.preview;
+  const sheetPreviews = workbook?.sheet_previews || {};
+  const sheetNames = Object.keys(sheetPreviews);
+  const initialSheet = workbook?.active_sheet || sheetNames[0] || '';
+  const [selectedSheet, setSelectedSheet] = useState(initialSheet);
+  useEffect(() => { setSelectedSheet(initialSheet); }, [initialSheet]);
+  const preview = sheetPreviews[selectedSheet] || workbook?.preview;
   if (!preview) return <div className="eval-preview-empty">Excel 미리보기가 없습니다.</div>;
-  return <div className="excel-mini"><div className="excel-mini-title"><strong>{workbook.active_sheet}</strong><span>{workbook.success ? '생성 정상' : '생성 실패'}</span></div><div className="excel-mini-scroll"><table><thead><tr>{(preview.headers || []).map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr></thead><tbody>{(preview.rows || []).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}>{String(cell ?? '')}</td>)}</tr>)}</tbody></table></div></div>;
+  return <div className="excel-mini"><div className="excel-mini-title"><div className="excel-sheet-tabs">{sheetNames.length ? sheetNames.map((sheetName) => <button className={sheetName === selectedSheet ? 'active' : ''} type="button" key={sheetName} onClick={() => setSelectedSheet(sheetName)}>{sheetName}</button>) : <strong>{workbook.active_sheet}</strong>}</div><span>{workbook.success ? '생성 정상' : '생성 실패'}</span></div><div className="excel-mini-scroll"><table><thead><tr>{(preview.headers || []).map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr></thead><tbody>{(preview.rows || []).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}>{String(cell ?? '')}</td>)}</tr>)}</tbody></table></div></div>;
 }
 
 function columnLabel(index) {

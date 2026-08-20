@@ -73,9 +73,10 @@ async def generate(
     *,
     json_format: bool = False,
     num_predict: int = 600,
+    model_name: str | None = None,
 ) -> str:
     payload: dict[str, Any] = {
-        "model": MODEL_NAME,
+        "model": model_name or MODEL_NAME,
         "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",

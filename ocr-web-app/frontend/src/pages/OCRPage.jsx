@@ -5,6 +5,7 @@ import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline }
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
+import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
 import '../style/OCRPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -40,6 +41,65 @@ function financeRecordCells(record, rowNumber) {
     return [rowNumber, item.name || record.description, quantity, financeMoney(unitPrice), financeMoney(supply), financeMoney(tax), financeMoney(item.total_amount || record.total_amount || supply + tax), item.note || record.merchant];
   }
   return [rowNumber, record.transaction_date, record.merchant, record.description || record.expense_category, financeMoney(record.supply_amount), financeMoney(record.tax_amount), financeMoney(record.total_amount), record.payment_method || '영수증'];
+}
+
+function captureFinanceEvaluation({ record, documentId, documentName, pages, latencyMs }) {
+  const definition = FINANCE_DOCUMENTS[record.document_type] || FINANCE_DOCUMENTS.EXPENSE_REPORT;
+  const structured = record.structured_data || {};
+  const prediction = {
+    document_type: record.document_type,
+    expense_category: record.expense_category,
+    merchant: record.merchant,
+    transaction_date: record.transaction_date,
+    supply_amount: record.supply_amount,
+    tax_amount: record.tax_amount,
+    total_amount: record.total_amount,
+    payment_method: record.payment_method,
+    items: Array.isArray(structured.items) ? structured.items : [],
+  };
+  appendFinanceEvaluationRun({
+    capture_id: `automatic:${documentId}:${record.id}`,
+    source: 'automatic_documentation',
+    document_id: documentId,
+    document_name: documentName,
+    ocr_text: (pages || []).map((page) => page.text || '').join('\n'),
+    ocr_pages: pages || [],
+    ground_truth: null,
+    normalized_ground_truth: null,
+    results: [{
+      model_name: record.model_name,
+      success: true,
+      latency_ms: Math.round(latencyMs || 0),
+      system: {
+        prediction,
+        score: {
+          correct_fields: 0,
+          evaluated_fields: 0,
+          field_accuracy: 0,
+          complete_match: false,
+          fields: {
+            evaluation_status: {
+              actual: '자동 문서화 결과 수집 완료 · 정답 미입력',
+              expected: null,
+              correct: true,
+            },
+          },
+          evaluation_status: 'UNSCORED',
+        },
+        ocr_impact: null,
+        workbook: {
+          success: true,
+          active_sheet: definition.title,
+          expected_sheet: definition.title,
+          preview: { headers: definition.headers, rows: [financeRecordCells(record, 1)] },
+        },
+      },
+    }],
+    dataset_name: '영수증 자동 문서화',
+    dataset_index: null,
+    matched_image: documentName,
+    evaluated_at: new Date().toISOString(),
+  });
 }
 
 function FinanceReceiptWorksheet({ records, user }) {
@@ -725,6 +785,7 @@ export default function OCRPage() {
       const texts = extractedPages.map((page) => page.text);
       let documentId = null;
       let resultTexts = texts;
+      let resultPages = extractedPages;
       if (texts.some((text) => text.length > 0)) {
         const archiveData = new FormData();
         archiveData.append('file', file);
@@ -753,9 +814,10 @@ export default function OCRPage() {
         const result = await loadWithOcr(file);
         documentId = result.document_id || null;
         resultTexts = (result.pages || []).map((page) => page.text || '');
+        resultPages = result.pages || [];
         setPdf(document);
       }
-      return { success: true, documentId, texts: resultTexts };
+      return { success: true, documentId, texts: resultTexts, pages: resultPages };
     } catch (requestError) {
       setError(requestError.response?.data?.detail || 'PDF를 읽지 못했습니다. 손상되었거나 지원하지 않는 파일일 수 있습니다.');
       return { success: false };
@@ -787,6 +849,7 @@ export default function OCRPage() {
         success: true,
         documentId: result.document_id || null,
         texts: (result.pages || []).map((page) => page.text || ''),
+        pages: result.pages || [],
       };
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '파일에서 텍스트를 추출하지 못했습니다. OCR 서버 상태와 파일 형식을 확인해 주세요.');
@@ -836,12 +899,20 @@ export default function OCRPage() {
     const shouldCreateFinanceRecord = processingMode === 'receipt' || RECEIPT_TEXT_PATTERN.test(extractedText);
     if (shouldCreateFinanceRecord && result.documentId) {
       setLoading(true);
+      const classificationStartedAt = performance.now();
       try {
         const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 180000 });
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
+        captureFinanceEvaluation({
+          record: financeRecord,
+          documentId: result.documentId,
+          documentName: pendingFile.name || fileName,
+          pages: result.pages || [],
+          latencyMs: performance.now() - classificationStartedAt,
+        });
         setResultTab('text');
       } catch (requestError) {
         setError(requestError.response?.data?.detail || 'OCR은 완료됐지만 재무 양식에 자동 입력하지 못했습니다.');

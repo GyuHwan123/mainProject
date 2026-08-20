@@ -201,6 +201,30 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
 
         self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
 
+    def test_allows_minor_merchant_ocr_typo_and_corporate_notation(self):
+        score = score_fields(
+            {"merchant": "주)바늘이야기-법업스토어"},
+            {"merchant": "(주)바늘이야기-팝업스토어"},
+        )
+
+        self.assertTrue(score["complete_match"])
+
+    def test_matches_item_across_word_order_bilingual_and_descriptor_differences(self):
+        score = score_fields(
+            {"items": [{"name": "알파카 페루 베텔린 스카프(Brushed Alpaca Peru)"}]},
+            {"items": [{"name": "[DIY] 브러쉬드 알파카 페루 베텔린 스카프 (도안)"}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_keeps_different_numeric_product_variants_strict(self):
+        score = score_fields(
+            {"items": [{"name": "케이블 2m"}]},
+            {"items": [{"name": "케이블 3m"}]},
+        )
+
+        self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
 
 if __name__ == "__main__":
     unittest.main()

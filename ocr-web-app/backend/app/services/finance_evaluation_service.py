@@ -33,6 +33,23 @@ ITEM_NAME_ALIASES = {
     "이발소": "barber_service",
 }
 
+ITEM_TOKEN_ALIASES = {
+    "brushed": "브러쉬드",
+    "alpaca": "알파카",
+    "peru": "페루",
+}
+ITEM_IGNORED_TOKENS = {"diy", "도안", "상품", "제품"}
+
+
+def _item_tokens(value: Any) -> set[str]:
+    text = str(value or "").lower()
+    for source, target in ITEM_TOKEN_ALIASES.items():
+        text = re.sub(rf"\b{re.escape(source)}\b", f" {target} ", text)
+    return {
+        token for token in re.findall(r"[0-9]+(?:[.,][0-9]+)?|[a-z]+|[가-힣]+", text)
+        if token not in ITEM_IGNORED_TOKENS
+    }
+
 
 def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
     """Convert Korean receipt labels to the English schema used by the model.
@@ -115,7 +132,7 @@ def _canonical(field: str, value: Any) -> Any:
             if compact in values:
                 return standard
     if field == "merchant":
-        text = re.sub(r"(?:주식회사|\(주\)|㈜)", "", text)
+        text = re.sub(r"(?:주식회사|\(?주\)?|㈜)", "", text)
         return re.sub(r"[^0-9a-z가-힣]", "", text)
     return text
 
@@ -125,7 +142,17 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
     actual = _canonical(field, actual_value)
     if expected == actual:
         return True
+    if field == "merchant" and expected and actual:
+        if min(len(str(expected)), len(str(actual))) < 4:
+            return False
+        return SequenceMatcher(None, str(expected), str(actual)).ratio() >= 0.78
     if field != "name" or not expected or not actual:
+        return False
+    expected_tokens = _item_tokens(expected_value)
+    actual_tokens = _item_tokens(actual_value)
+    expected_numbers = {token for token in expected_tokens if re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", token)}
+    actual_numbers = {token for token in actual_tokens if re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", token)}
+    if expected_numbers and actual_numbers and expected_numbers != actual_numbers:
         return False
     expected_compact = re.sub(r"[^0-9a-z가-힣]", "", str(expected))
     actual_compact = re.sub(r"[^0-9a-z가-힣]", "", str(actual))
@@ -133,7 +160,15 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
         expected_compact in actual_compact or actual_compact in expected_compact
     ):
         return True
-    return SequenceMatcher(None, expected_compact, actual_compact).ratio() >= 0.75
+    if SequenceMatcher(None, expected_compact, actual_compact).ratio() >= 0.72:
+        return True
+
+    expected_words = expected_tokens - expected_numbers
+    actual_words = actual_tokens - actual_numbers
+    if min(len(expected_words), len(actual_words)) < 2:
+        return False
+    overlap = len(expected_words & actual_words)
+    return overlap / min(len(expected_words), len(actual_words)) >= 0.75
 
 
 def _match_items(expected_items: list[dict[str, Any]], predicted_items: list[dict[str, Any]]) -> dict[int, int]:

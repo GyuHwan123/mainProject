@@ -82,6 +82,18 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(hints["transaction_date"], "2016-09-18")
         self.assertEqual(normalized["transaction_date"], "2016-09-18")
 
+    def test_limits_items_to_stated_ocr_item_count_without_reinterpreting_them(self):
+        ocr = "총품목/총수량 총구매금액\n2/7 81,300"
+        items = [{"name": name} for name in ["첫 품목", "두 번째 해석", "오인식 1", "오인식 2", "오인식 3"]]
+        normalized = _normalize(
+            {"document_type": "PURCHASE_REQUEST", "items": items},
+            "receipt.jpg",
+            ocr,
+        )
+
+        self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_item_count"], 2)
+        self.assertEqual(normalized["structured_data"]["items"], items[:2])
+
 
 if __name__ == "__main__":
     unittest.main()

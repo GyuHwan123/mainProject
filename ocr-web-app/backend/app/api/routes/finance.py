@@ -168,6 +168,14 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
         document_type = "PURCHASE_REQUEST"
 
+    stated_item_count = None
+    item_count_match = re.search(
+        r"총\s*품목(?:\s*수)?(?:\s*[/／]\s*총\s*수량)?[^\d]{0,40}(\d{1,3})(?:\s*[/／]\s*\d{1,3})?",
+        text,
+    )
+    if item_count_match:
+        stated_item_count = int(item_count_match.group(1))
+
     return {
         "transaction_date": transaction_date,
         "supply_amount": supply,
@@ -175,11 +183,20 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         "total_amount": total,
         "document_type": document_type,
         "expense_category": expense_category,
+        "stated_item_count": stated_item_count,
     }
 
 
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
+    receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
+    stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    if stated_item_count and len(items) > int(stated_item_count):
+        result["items"] = items[:int(stated_item_count)]
+    if stated_item_count:
+        receipt_summary["stated_item_count"] = int(stated_item_count)
+        result["receipt_summary"] = receipt_summary
     allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
     document_type = str(
         hints.get("document_type")

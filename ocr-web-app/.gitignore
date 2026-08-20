@@ -7,3 +7,8 @@ __pycache__/
 venv/
 .venv/
 .paddlex/
+# Local LLM model files
+models/llama3b-receipt-v3-real-final/venv/
+models/llama3b-receipt-v3-real-final/merged/
+models/llama3b-receipt-v3-real-final/*.gguf
+models/llama3b-receipt-v3-real-final/*.safetensors

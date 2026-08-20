@@ -120,6 +120,15 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 4)
         self.assertTrue(score["complete_match"])
 
+    def test_treats_card_and_credit_card_as_same_payment_method(self):
+        score = score_fields(
+            {"payment_method": "신용카드"},
+            {"payment_method": "카드"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
     def test_matches_items_independent_of_order_and_allows_similar_names(self):
         score = score_fields(
             {"items": [

@@ -107,7 +107,7 @@ def _canonical(field: str, value: Any) -> Any:
         compact = re.sub(r"[^0-9a-z가-힣]", "", text)
         aliases = {
             "cash": ("cash", "현금", "현금결제"),
-            "credit_card": ("creditcard", "card", "신용카드", "카드결제", "법인카드"),
+            "credit_card": ("creditcard", "card", "카드", "신용카드", "카드결제", "법인카드"),
             "debit_card": ("debitcard", "checkcard", "체크카드"),
             "bank_transfer": ("banktransfer", "transfer", "계좌이체", "이체"),
         }

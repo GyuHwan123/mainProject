@@ -50,6 +50,38 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
         self.assertEqual(normalized["total_amount"], 31400)
 
+    def test_normalizes_trained_doc_type_key_for_internal_workbook_schema(self):
+        normalized = _normalize(
+            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통비", "total_amount": 96200},
+            "receipt_005.jpg",
+            "결제금액 96,200원",
+        )
+
+        self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
+        self.assertEqual(normalized["structured_data"]["doc_type"], "TRAVEL_EXPENSE")
+
+    def test_keeps_legacy_document_type_compatible(self):
+        normalized = _normalize(
+            {"document_type": "WELFARE_BENEFIT", "total_amount": 10000},
+            "receipt.jpg",
+            "결제금액 10,000원",
+        )
+
+        self.assertEqual(normalized["document_type"], "WELFARE_BENEFIT")
+
+
+    def test_recovers_korean_date_and_overrides_wrong_llm_date(self):
+        ocr = "[등록]2016년09월 18일(일)12:55 POSNo.01"
+        hints = _receipt_hints(ocr, "receipt_011.jpg")
+        normalized = _normalize(
+            {"transaction_date": "2023-09-18", "total_amount": 30000},
+            "receipt_011.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["transaction_date"], "2016-09-18")
+        self.assertEqual(normalized["transaction_date"], "2016-09-18")
+
 
 if __name__ == "__main__":
     unittest.main()

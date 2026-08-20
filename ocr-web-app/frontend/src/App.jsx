@@ -7,6 +7,7 @@ import MyPage from './pages/MyPage';
 import OCRPage from './pages/OCRPage';
 import ReportPage from './pages/ReportPage';
 import ChatPage from './pages/ChatPage';
+import FinanceEvaluationPage from './pages/FinanceEvaluationPage';
 
 function ProtectedRoute({ children }) {
   if (!hasAppSession()) {
@@ -24,6 +25,14 @@ function EnterpriseRoute({ children }) {
   return children;
 }
 
+function DeveloperRoute({ children }) {
+  if (!hasAppSession()) return <Navigate to="/login" replace />;
+  const user = getAppUser();
+  const canEvaluate = ['DEVELOPER', 'ADMIN'].includes(user.role) || user.email === 'developer@docunex.com';
+  if (!canEvaluate) return <Navigate to="/dashboard" replace />;
+  return children;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -34,6 +43,7 @@ export default function App() {
       <Route path="/ocr" element={<ProtectedRoute><OCRPage /></ProtectedRoute>} />
       <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
       <Route path="/reports" element={<EnterpriseRoute><ReportPage /></EnterpriseRoute>} />
+      <Route path="/finance-evaluations" element={<DeveloperRoute><FinanceEvaluationPage /></DeveloperRoute>} />
       <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
     </Routes>
   );

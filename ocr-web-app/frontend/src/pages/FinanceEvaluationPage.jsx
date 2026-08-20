@@ -3,14 +3,18 @@ import { IoDownloadOutline } from 'react-icons/io5';
 
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
+import {
+  FINANCE_EVALUATION_STORAGE_KEY,
+  readFinanceEvaluationRuns,
+  saveFinanceEvaluationRuns,
+} from '../features/financeEvaluationStorage';
 import '../style/FinanceEvaluationPage.scss';
 
-const LEGACY_STORAGE_KEY = 'pic_to_text_finance_evaluations_v1';
-const STORAGE_KEY = 'pic_to_text_finance_evaluations_v2';
 const DEFAULT_MODELS = ['gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
 const LABELS = {
   document_type: '문서 유형', expense_category: '카테고리', merchant: '상호', transaction_date: '날짜',
   supply_amount: '공급가액', tax_amount: '부가세', total_amount: '합계금액', payment_method: '결제수단',
+  evaluation_status: '평가 상태',
 };
 const IMPACT_LABELS = {
   SUCCESS: '정상 추출', LIKELY_OCR_ERROR: 'OCR 영향 가능',
@@ -118,13 +122,6 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="입력 이미지 확대"><button type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><img src={imagePreview.url} alt={run.document_name} onClick={(event) => event.stopPropagation()} /></div>}</article>;
 }
 
-function readStoredRuns() {
-  try {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  } catch { return []; }
-}
-
 function datasetRows(payload) {
   if (Array.isArray(payload)) return payload;
   return payload.receipts || payload.data || payload.items || [];
@@ -182,7 +179,7 @@ function summarize(runs, model) {
 export default function FinanceEvaluationPage() {
   const imageRef = useRef(null);
   const imageUrlRef = useRef('');
-  const [runs, setRuns] = useState(readStoredRuns);
+  const [runs, setRuns] = useState(readFinanceEvaluationRuns);
   const [dataset, setDataset] = useState([]);
   const [datasetName, setDatasetName] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -201,9 +198,24 @@ export default function FinanceEvaluationPage() {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
   }, []);
 
+  useEffect(() => {
+    const refreshRuns = () => setRuns(readFinanceEvaluationRuns());
+    const refreshFromStorage = (event) => {
+      if (!event.key || event.key === FINANCE_EVALUATION_STORAGE_KEY) refreshRuns();
+    };
+    window.addEventListener('finance-evaluations-updated', refreshRuns);
+    window.addEventListener('storage', refreshFromStorage);
+    window.addEventListener('focus', refreshRuns);
+    return () => {
+      window.removeEventListener('finance-evaluations-updated', refreshRuns);
+      window.removeEventListener('storage', refreshFromStorage);
+      window.removeEventListener('focus', refreshRuns);
+    };
+  }, []);
+
   const setModel = (index, value) => setModels((currentModels) => currentModels.map((model, modelIndex) => modelIndex === index ? value : model));
 
-  const saveRuns = (next) => { setRuns(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); };
+  const saveRuns = (next) => setRuns(saveFinanceEvaluationRuns(next));
   const loadDataset = async (file) => {
     if (!file) return;
     try {

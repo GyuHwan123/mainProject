@@ -244,7 +244,10 @@ items(각 항목은 name, specification, quantity, unit, unit_price, supply_amou
 - name에는 상품명만, specification에는 규격·용량·색상·옵션을, unit에는 개·병·박스 등 수량 단위를 작성합니다.
 - 품목별 quantity × unit_price를 검산하고, 품목 금액 합계와 영수증 total_amount가 일치하는지 확인합니다.
 - 배송비·봉투값·할인·쿠폰처럼 상품이 아닌 조정 금액은 이름을 명확히 표시하고 별도 items 항목으로 작성합니다.
-- receipt_summary 값은 영수증에 총품목·총수량·받을금액 등으로 명시된 경우에만 기록하고, 표시가 없으면 null로 작성합니다.
+- receipt_summary는 items 배열을 세거나 합산해서 만들지 말고, OCR 원문의 합계·결제·푸터 영역을 독립적으로 읽어 판단합니다.
+- OCR에 총품목·총수량·총구매금액·받을금액·합계 등으로 표시된 값을 각각 stated_item_count, stated_total_quantity, stated_total_amount에 기록합니다.
+- 품목 행에 나타난 숫자와 요약 영역의 숫자가 서로 달라도 OCR 요약 영역에 쓰인 값을 그대로 기록합니다. 이 차이는 후속 검산 단계에서 확인합니다.
+- OCR 원문에 해당 요약값의 근거가 없으면 items에서 계산하거나 추측하지 말고 null로 작성합니다.
 - 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
 
 [파일명]

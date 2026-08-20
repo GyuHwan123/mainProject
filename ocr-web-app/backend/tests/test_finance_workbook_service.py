@@ -151,8 +151,8 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         sheet = workbook["영수증요약"]
 
         self.assertEqual([sheet.cell(1, column).value for column in range(1, 14)], [
-            "영수증 ID", "문서 유형", "거래일", "거래처", "표시 품목 수", "추출 품목 행 수",
-            "표시 총수량", "추출 총수량", "단위 구성", "영수증 총액", "추출 금액 합계", "차이금액", "검산 상태",
+            "영수증 ID", "문서 유형", "거래일", "거래처", "OCR/LLM 판단 품목 수", "코드 계산 품목 행 수",
+            "OCR/LLM 판단 총수량", "코드 계산 총수량", "단위 구성", "OCR/LLM 판단 총구매금액", "코드 계산 품목금액 합계", "차이금액", "검산 상태",
         ])
         self.assertEqual(sheet["A2"].value, "receipt-summary-001")
         self.assertEqual([sheet["E2"].value, sheet["F2"].value], [2, 5])

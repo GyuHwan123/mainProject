@@ -151,5 +151,16 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertFalse(score["complete_match"])
 
 
+    def test_korean_date_is_recognized_as_ocr_evidence(self):
+        truth = {"transaction_date": "2016-09-18"}
+        score = score_fields({"transaction_date": "2023-09-18"}, truth)
+        impact = estimate_ocr_impact(
+            "[등록]2016년09월 18일(일)12:55 POSNo.01", truth, score,
+        )
+
+        self.assertTrue(impact["fields"][0]["ocr_evidence_found"])
+        self.assertEqual(impact["fields"][0]["status"], "LIKELY_LLM_ERROR")
+
+
 if __name__ == "__main__":
     unittest.main()

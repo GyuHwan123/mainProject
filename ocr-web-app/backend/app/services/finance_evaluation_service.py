@@ -189,6 +189,16 @@ def score_fields(prediction: dict[str, Any], truth: dict[str, Any]) -> dict[str,
 def _ocr_contains(text: str, field: str, value: Any) -> bool:
     if value is None or value == "":
         return False
+    if field == "transaction_date":
+        parts = re.findall(r"\d+", str(value))[:3]
+        if len(parts) != 3:
+            return False
+        year, month, day = (int(part) for part in parts)
+        date_pattern = (
+            rf"(?<!\d){year:04d}\s*(?:년\s*|[-./]\s*)"
+            rf"0?{month}\s*(?:월\s*|[-./]\s*)0?{day}\s*일?(?!\d)"
+        )
+        return re.search(date_pattern, text) is not None
     if field in NUMBER_FIELDS:
         expected_digits = re.sub(r"\D", "", str(value))
         return bool(expected_digits) and expected_digits in re.sub(r"\D", "", text)

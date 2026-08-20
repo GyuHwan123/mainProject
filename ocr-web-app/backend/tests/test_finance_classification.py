@@ -70,5 +70,18 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(normalized["document_type"], "WELFARE_BENEFIT")
 
 
+    def test_recovers_korean_date_and_overrides_wrong_llm_date(self):
+        ocr = "[등록]2016년09월 18일(일)12:55 POSNo.01"
+        hints = _receipt_hints(ocr, "receipt_011.jpg")
+        normalized = _normalize(
+            {"transaction_date": "2023-09-18", "total_amount": 30000},
+            "receipt_011.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["transaction_date"], "2016-09-18")
+        self.assertEqual(normalized["transaction_date"], "2016-09-18")
+
+
 if __name__ == "__main__":
     unittest.main()

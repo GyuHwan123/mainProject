@@ -862,8 +862,12 @@ export default function OCRPage() {
 
   const prepareFile = async (file) => {
     if (!file) return;
-    resetDocumentView({ preserveFinance: processingMode === 'receipt' });
-    setProcessingMode(await inferProcessingMode(file));
+    const inferredMode = await inferProcessingMode(file);
+    resetDocumentView({
+      preserveGroundTruth: isDeveloper && inferredMode === 'receipt',
+      preserveFinance: processingMode === 'receipt',
+    });
+    setProcessingMode(inferredMode);
     setPendingFile(file);
     setFileName(file.name);
     setError('');

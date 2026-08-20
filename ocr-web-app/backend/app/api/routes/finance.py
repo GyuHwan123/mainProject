@@ -178,7 +178,12 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
-    document_type = str(hints.get("document_type") or result.get("document_type") or "EXPENSE_REPORT").upper()
+    document_type = str(
+        hints.get("document_type")
+        or result.get("doc_type")
+        or result.get("document_type")
+        or "EXPENSE_REPORT"
+    ).upper()
     if document_type not in allowed:
         document_type = "EXPENSE_REPORT"
     supply = hints.get("supply_amount") or _clean_number(result.get("supply_amount"))
@@ -219,12 +224,14 @@ def _receipt_prompt(text: str, filename: str) -> str:
 - WELFARE_BENEFIT: 도서, 교육, 의료, 건강검진, 경조사 등 복리후생
 
 필수 JSON 키:
-document_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
+doc_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
 supply_amount, tax_amount, total_amount, payment_method, description,
 route, location, transport_method, service_type, evidence_status, evidence_type, note,
 items(각 항목은 name, quantity, unit_price, supply_amount, tax_amount, total_amount, note)
 
 규칙:
+- 문서 유형 키는 반드시 doc_type을 사용하고 document_type이나 다른 이름으로 바꾸지 않습니다.
+- doc_type 값은 EXPENSE_REPORT, TRAVEL_EXPENSE, PURCHASE_REQUEST, WELFARE_BENEFIT 중 하나입니다.
 - OCR에 없는 값을 추측하지 말고 null 또는 빈 배열로 작성합니다.
 - 금액은 쉼표와 통화 기호가 없는 숫자로 작성합니다.
 - 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.

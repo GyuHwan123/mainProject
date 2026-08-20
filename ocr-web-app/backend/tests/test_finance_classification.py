@@ -50,6 +50,25 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
         self.assertEqual(normalized["total_amount"], 31400)
 
+    def test_normalizes_trained_doc_type_key_for_internal_workbook_schema(self):
+        normalized = _normalize(
+            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통비", "total_amount": 96200},
+            "receipt_005.jpg",
+            "결제금액 96,200원",
+        )
+
+        self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
+        self.assertEqual(normalized["structured_data"]["doc_type"], "TRAVEL_EXPENSE")
+
+    def test_keeps_legacy_document_type_compatible(self):
+        normalized = _normalize(
+            {"document_type": "WELFARE_BENEFIT", "total_amount": 10000},
+            "receipt.jpg",
+            "결제금액 10,000원",
+        )
+
+        self.assertEqual(normalized["document_type"], "WELFARE_BENEFIT")
+
 
 if __name__ == "__main__":
     unittest.main()

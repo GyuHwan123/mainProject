@@ -18,13 +18,13 @@ const RECEIPT_TEXT_PATTERN = /(결제금액|공급가액|부가세액|사업자\
 const FINANCE_DOCUMENTS = {
   EXPENSE_REPORT: { title: '경비지출결의서', headers: ['No', '결제일시', '상호명(가맹점)', '지출용도(적요)', '공급가액', '부가세', '합계금액', '증빙유형'] },
   TRAVEL_EXPENSE: { title: '출장여비교통비정산서', headers: ['구분', '일자', '출발/도착지', '교통/숙박 수단', '상호(가맹점)', '금액', '증빙여부', '비고'] },
-  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['No', '품목명 및 규격', '수량', '예상 단가', '예상 공급가액', '예상 부가세', '예상 합계금액', '구매처/비고'] },
+  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['No', '품목명', '규격/옵션', '수량', '단위', '단가', '공급가액', '부가세', '합계금액', '비고'] },
   WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['No', '지원 항목(구분)', '결제일자', '내용(도서명/병원명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
 };
 
 const financeMoney = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
 
-function financeRecordCells(record, rowNumber) {
+function financeRecordCells(record, rowNumber, purchaseItem = null) {
   const data = record.structured_data || {};
   if (record.document_type === 'TRAVEL_EXPENSE') {
     return [record.expense_category || '확인 필요', record.transaction_date, data.route || data.location, data.transport_method || data.service_type, record.merchant, financeMoney(record.total_amount), data.evidence_status || '첨부', data.note || record.description];
@@ -33,14 +33,27 @@ function financeRecordCells(record, rowNumber) {
     return [rowNumber, record.expense_category, record.transaction_date, record.description, record.merchant, financeMoney(record.total_amount), data.evidence_type || record.payment_method || '영수증', data.note];
   }
   if (record.document_type === 'PURCHASE_REQUEST') {
-    const item = Array.isArray(data.items) && data.items.length ? data.items[0] : {};
+    const item = purchaseItem || (Array.isArray(data.items) && data.items.length ? data.items[0] : {});
+    const itemCount = Array.isArray(data.items) ? data.items.length : 0;
     const quantity = Number(item.quantity || 1);
     const unitPrice = Number(item.unit_price || 0);
-    const supply = Number(item.supply_amount || record.supply_amount || quantity * unitPrice);
-    const tax = Number(item.tax_amount || record.tax_amount || 0);
-    return [rowNumber, item.name || record.description, quantity, financeMoney(unitPrice), financeMoney(supply), financeMoney(tax), financeMoney(item.total_amount || record.total_amount || supply + tax), item.note || record.merchant];
+    const supply = Number(item.supply_amount || quantity * unitPrice || (itemCount === 1 ? record.supply_amount : 0));
+    const tax = Number(item.tax_amount || (itemCount === 1 ? record.tax_amount : 0));
+    const total = Number(item.total_amount || supply + tax || (itemCount === 1 ? record.total_amount : 0));
+    return [rowNumber, item.name || record.description, item.specification || item.option, quantity, item.unit || '개', unitPrice, supply, tax, total, item.note];
   }
   return [rowNumber, record.transaction_date, record.merchant, record.description || record.expense_category, financeMoney(record.supply_amount), financeMoney(record.tax_amount), financeMoney(record.total_amount), record.payment_method || '영수증'];
+}
+
+function financeRecordRows(records) {
+  let rowNumber = 1;
+  return records.flatMap((record) => {
+    const items = record.document_type === 'PURCHASE_REQUEST' && Array.isArray(record.structured_data?.items)
+      ? record.structured_data.items
+      : [];
+    if (items.length) return items.map((item) => financeRecordCells(record, rowNumber++, item));
+    return [financeRecordCells(record, rowNumber++)];
+  });
 }
 
 function captureFinanceEvaluation({ record, documentId, documentName, pages, latencyMs }) {
@@ -91,7 +104,7 @@ function captureFinanceEvaluation({ record, documentId, documentName, pages, lat
           success: true,
           active_sheet: definition.title,
           expected_sheet: definition.title,
-          preview: { headers: definition.headers, rows: [financeRecordCells(record, 1)] },
+          preview: { headers: definition.headers, rows: financeRecordRows([record]) },
         },
       },
     }],
@@ -109,7 +122,7 @@ function FinanceReceiptWorksheet({ records, user }) {
   return <div className="receipt-form-sheet">
     <div className="receipt-form-title"><strong>{definition.title}</strong><span>{records.length}건 누적 · {record.status === 'CONFIRMED' ? '확정' : '확인 필요'}</span></div>
     <div className="receipt-form-meta"><span><b>작성자</b>{user?.name || '로그인 사용자'}</span><span><b>이메일</b>{user?.email || '미확인'}</span><span><b>최근 결제일</b>{record.transaction_date || '미확인'}</span><span><b>누적 합계</b>{financeMoney(total)}</span></div>
-    <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{records.map((item, rowIndex) => <tr key={item.id}>{financeRecordCells(item, rowIndex + 1).map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
+    <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{financeRecordRows(records).map((row, rowIndex) => <tr key={`${record.id}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
     <p>새 영수증의 선별값이 현재 작업의 다음 행으로 추가됩니다.</p>
   </div>;
 }

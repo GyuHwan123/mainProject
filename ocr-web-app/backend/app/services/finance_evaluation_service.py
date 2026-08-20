@@ -9,7 +9,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize
-from app.services.finance_workbook_service import SHEET_NAMES, build_finance_workbook
+from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, build_finance_workbook
 
 
 CORE_FIELDS = (
@@ -316,9 +316,10 @@ def verify_workbook(record: dict[str, Any]) -> dict[str, Any]:
         workbook = load_workbook(BytesIO(build_finance_workbook([record])), data_only=False)
         expected_sheet = SHEET_NAMES.get(record.get("document_type"))
         sheet = workbook[expected_sheet] if expected_sheet in workbook.sheetnames else workbook.active
-        headers = [sheet.cell(11, column).value for column in range(1, 9)]
+        column_count = len(HEADERS_BY_TYPE.get(record.get("document_type"), [])) or 8
+        headers = [sheet.cell(11, column).value for column in range(1, column_count + 1)]
         rows = [
-            [sheet.cell(row, column).value for column in range(1, 9)]
+            [sheet.cell(row, column).value for column in range(1, column_count + 1)]
             for row in range(12, max(12, sheet.max_row))
         ]
         return {

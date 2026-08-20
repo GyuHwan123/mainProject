@@ -26,7 +26,7 @@ TITLE_BY_TYPE = {
 HEADERS_BY_TYPE = {
     "EXPENSE_REPORT": ["No", "결제일시", "상호명(가맹점)", "지출용도(적요)", "공급가액", "부가세", "합계금액", "증빙유형"],
     "TRAVEL_EXPENSE": ["구분", "일자", "출발/도착지", "교통/숙박 수단", "상호(가맹점)", "금액", "증빙여부", "비고"],
-    "PURCHASE_REQUEST": ["No", "품목명 및 규격", "수량", "예상 단가", "예상 공급가액", "예상 부가세", "예상 합계금액", "구매처/비고"],
+    "PURCHASE_REQUEST": ["No", "품목명", "규격/옵션", "수량", "단위", "단가", "공급가액", "부가세", "합계금액", "비고"],
     "WELFARE_BENEFIT": ["No", "지원 항목(구분)", "결제일자", "내용(도서명/병원명/사유)", "결제처", "신청 금액", "증빙서류", "비고"],
 }
 
@@ -47,10 +47,21 @@ def _record_rows(document_type: str, records: list[dict[str, Any]]) -> list[list
             for item in items:
                 quantity = _number(item.get("quantity")) or 1
                 unit_price = _number(item.get("unit_price"))
-                supply = _number(item.get("supply_amount")) or quantity * unit_price
-                tax = _number(item.get("tax_amount"))
-                total = _number(item.get("total_amount")) or supply + tax
-                rows.append([len(rows) + 1, item.get("name") or record.get("description"), quantity, unit_price, supply, tax, total, item.get("note") or record.get("merchant")])
+                supply = _number(item.get("supply_amount")) or quantity * unit_price or (_number(record.get("supply_amount")) if len(items) == 1 else 0)
+                tax = _number(item.get("tax_amount")) or (_number(record.get("tax_amount")) if len(items) == 1 else 0)
+                total = _number(item.get("total_amount")) or supply + tax or (_number(record.get("total_amount")) if len(items) == 1 else 0)
+                rows.append([
+                    len(rows) + 1,
+                    item.get("name") or record.get("description"),
+                    item.get("specification") or item.get("option"),
+                    quantity,
+                    item.get("unit") or "개",
+                    unit_price,
+                    supply,
+                    tax,
+                    total,
+                    item.get("note"),
+                ])
         elif document_type == "TRAVEL_EXPENSE":
             rows.append([
                 record.get("expense_category") or "교통비", record.get("transaction_date"), data.get("route") or data.get("location"),
@@ -128,7 +139,9 @@ def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: 
     elif document_type == "TRAVEL_EXPENSE":
         metadata = [("출장자", author_name, "소속부서", department), ("출장목적", _summary_text(records, "note", "영수증 자동 정산"), "작성자 이메일", author_email), ("출장기간", _record_period(records), "출장지", _summary_text(records, "location"))]
     elif document_type == "PURCHASE_REQUEST":
-        metadata = [("품의제목", _summary_text(records, "note", "영수증 기반 구매 품의"), "작성자 이메일", author_email), ("기안부서", department, "기안자", author_name), ("구매예정일", _record_period(records), "예산과목", records[0].get("expense_category", "미입력") if records else "미입력")]
+        merchants = " / ".join(dict.fromkeys(str(record.get("merchant")) for record in records if record.get("merchant"))) or "미확인"
+        receipt_total = sum(_number(record.get("total_amount")) for record in records)
+        metadata = [("거래일", _record_period(records), "거래처", merchants), ("작성부서", department, "작성자", author_name), ("영수증 총액", receipt_total, "비용구분", records[0].get("expense_category", "미입력") if records else "미입력")]
     else:
         metadata = [("신청일자", created_on, "소속부서", department), ("신청인", author_name, "작성자 이메일", author_email), ("신청기간", _record_period(records), "신청건수", f"{len(records)}건")]
 
@@ -150,22 +163,31 @@ def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: 
         cell.border = Border(top=line, bottom=line, left=line, right=line)
 
     rows = _record_rows(document_type, records)
+    column_count = len(HEADERS_BY_TYPE[document_type])
     if not rows:
-        rows = [[None] * 8]
+        rows = [[None] * column_count]
     for row_index, values in enumerate(rows, header_row + 1):
         for column, value in enumerate(values, 1):
             cell = ws.cell(row_index, column, value)
             cell.border = Border(top=line, bottom=line, left=line, right=line)
-            cell.alignment = Alignment(horizontal="right" if column in {5, 6, 7} else "left", vertical="center", wrap_text=True)
-            if column in {5, 6, 7}:
+            money_columns = {6, 7, 8, 9} if document_type == "PURCHASE_REQUEST" else {5, 6, 7}
+            cell.alignment = Alignment(horizontal="right" if column in money_columns else "left", vertical="center", wrap_text=True)
+            if column in money_columns:
                 cell.number_format = '#,##0'
 
     total_row = header_row + len(rows) + 1
-    ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=4)
+    total_label_end = 6 if document_type == "PURCHASE_REQUEST" else 4
+    ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=total_label_end)
     ws.cell(total_row, 1, "합 계")
     ws.cell(total_row, 1).font = Font(bold=True)
     ws.cell(total_row, 1).fill = PatternFill("solid", fgColor=light)
-    if document_type in {"EXPENSE_REPORT", "PURCHASE_REQUEST"}:
+    if document_type == "PURCHASE_REQUEST":
+        total_columns = (7, 8, 9)
+        for column in total_columns:
+            letter = get_column_letter(column)
+            ws.cell(total_row, column, f"=SUM({letter}{header_row + 1}:{letter}{total_row - 1})")
+            ws.cell(total_row, column).number_format = '#,##0" 원"'
+    elif document_type == "EXPENSE_REPORT":
         for column in (5, 6, 7):
             letter = get_column_letter(column)
             ws.cell(total_row, column, f"=SUM({letter}{header_row + 1}:{letter}{total_row - 1})")
@@ -173,15 +195,15 @@ def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: 
     else:
         ws.cell(total_row, 6, f"=SUM(F{header_row + 1}:F{total_row - 1})")
         ws.cell(total_row, 6).number_format = '#,##0" 원"'
-    for column in range(1, 9):
+    for column in range(1, column_count + 1):
         ws.cell(total_row, column).border = Border(top=Side(style="medium", color=dark))
 
-    widths = [8, 18, 24, 30, 18, 16, 16, 24]
+    widths = [8, 28, 24, 10, 10, 16, 18, 16, 18, 28] if document_type == "PURCHASE_REQUEST" else [8, 18, 24, 30, 18, 16, 16, 24]
     for index, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(index)].width = width
     ws.row_dimensions[2].height = 30
     ws.row_dimensions[11].height = 34
-    ws.auto_filter.ref = f"A11:H{max(total_row - 1, 12)}"
+    ws.auto_filter.ref = f"A11:{get_column_letter(column_count)}{max(total_row - 1, 12)}"
 
 
 def build_finance_workbook(records: list[dict[str, Any]], author: dict[str, str] | None = None) -> bytes:

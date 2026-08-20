@@ -14,6 +14,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
     def test_builds_four_standard_sheets_and_expense_totals(self):
         content = build_finance_workbook([
             {
+                "document_id": "receipt-expense-001",
                 "document_type": "EXPENSE_REPORT",
                 "expense_category": "회의비",
                 "merchant": "테스트카페",
@@ -38,15 +39,18 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         self.assertEqual(sheet["B7"].value, "테스트 사용자")
         self.assertEqual(sheet["F7"].value, "tester@example.com")
         self.assertEqual(sheet["F3"].value, "테스트 사용자")
-        self.assertEqual([sheet.cell(11, column).value for column in range(1, 9)], [
-            "No", "결제일시", "상호명(가맹점)", "지출용도(적요)", "공급가액", "부가세", "합계금액", "증빙유형",
+        self.assertEqual([sheet.cell(11, column).value for column in range(1, 10)], [
+            "영수증 ID", "품목 순번", "결제일시", "상호명(가맹점)", "지출용도/품목명", "공급가액", "부가세", "합계금액", "증빙유형",
         ])
-        self.assertEqual(sheet["C12"].value, "테스트카페")
-        self.assertEqual(sheet["G12"].value, 11000)
-        self.assertEqual(sheet["G13"].value, "=SUM(G12:G12)")
+        self.assertEqual(sheet["A12"].value, "receipt-expense-001")
+        self.assertEqual(sheet["B12"].value, 1)
+        self.assertEqual(sheet["D12"].value, "테스트카페")
+        self.assertEqual(sheet["H12"].value, 11000)
+        self.assertEqual(sheet["H13"].value, "=SUM(H12:H12)")
 
     def test_places_confirmed_travel_meal_in_travel_sheet_columns(self):
         content = build_finance_workbook([{
+            "document_id": "receipt-travel-001",
             "document_type": "TRAVEL_EXPENSE",
             "expense_category": "일비/식대",
             "merchant": "카페마마스 광화문점",
@@ -59,15 +63,18 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook["출장여비교통비정산서"]
         self.assertEqual(workbook.active.title, "출장여비교통비정산서")
-        self.assertEqual(sheet["A12"].value, "일비/식대")
-        self.assertEqual(sheet["B12"].value, "2025-10-05")
-        self.assertEqual(sheet["C12"].value, "서울 종로구")
-        self.assertEqual(sheet["E12"].value, "카페마마스 광화문점")
-        self.assertEqual(sheet["F12"].value, 31400)
-        self.assertEqual(sheet["H12"].value, "서울 출장 식비")
+        self.assertEqual(sheet["A12"].value, "receipt-travel-001")
+        self.assertEqual(sheet["B12"].value, 1)
+        self.assertEqual(sheet["C12"].value, "일비/식대")
+        self.assertEqual(sheet["D12"].value, "2025-10-05")
+        self.assertEqual(sheet["E12"].value, "서울 종로구")
+        self.assertEqual(sheet["G12"].value, "카페마마스 광화문점")
+        self.assertEqual(sheet["H12"].value, 31400)
+        self.assertEqual(sheet["J12"].value, "서울 출장 식비")
 
     def test_writes_every_purchase_item_to_its_own_row(self):
         content = build_finance_workbook([{
+            "document_id": "receipt-purchase-001",
             "document_type": "PURCHASE_REQUEST",
             "expense_category": "사무용품",
             "merchant": "한국문구",
@@ -81,15 +88,42 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         workbook = load_workbook(BytesIO(content), data_only=False)
         sheet = workbook["구매품의요청서"]
 
-        self.assertEqual([sheet.cell(11, column).value for column in range(1, 11)], [
-            "No", "품목명", "규격/옵션", "수량", "단위", "단가", "공급가액", "부가세", "합계금액", "비고",
+        self.assertEqual([sheet.cell(11, column).value for column in range(1, 12)], [
+            "영수증 ID", "품목 순번", "품목명", "규격/옵션", "수량", "단위", "단가", "공급가액", "부가세", "합계금액", "비고",
         ])
-        self.assertEqual([sheet["B12"].value, sheet["C12"].value, sheet["D12"].value, sheet["E12"].value], ["볼펜", "검정 0.5mm", 2, "자루"])
-        self.assertEqual([sheet["B13"].value, sheet["C13"].value, sheet["D13"].value, sheet["E13"].value], ["노트", "A5 80매", 3, "권"])
-        self.assertEqual(sheet["G14"].value, "=SUM(G12:G13)")
+        self.assertEqual([sheet["A12"].value, sheet["B12"].value, sheet["C12"].value, sheet["D12"].value, sheet["E12"].value, sheet["F12"].value], ["receipt-purchase-001", 1, "볼펜", "검정 0.5mm", 2, "자루"])
+        self.assertEqual([sheet["A13"].value, sheet["B13"].value, sheet["C13"].value, sheet["D13"].value, sheet["E13"].value, sheet["F13"].value], ["receipt-purchase-001", 2, "노트", "A5 80매", 3, "권"])
         self.assertEqual(sheet["H14"].value, "=SUM(H12:H13)")
         self.assertEqual(sheet["I14"].value, "=SUM(I12:I13)")
+        self.assertEqual(sheet["J14"].value, "=SUM(J12:J13)")
         self.assertEqual(sheet["B8"].value, 8800)
+
+    def test_uses_receipt_id_and_item_sequence_for_all_document_types(self):
+        records = []
+        for document_type in ("EXPENSE_REPORT", "TRAVEL_EXPENSE", "WELFARE_BENEFIT"):
+            records.append({
+                "document_id": f"receipt-{document_type.lower()}",
+                "document_type": document_type,
+                "expense_category": "테스트",
+                "merchant": "테스트 거래처",
+                "transaction_date": "2026-08-20",
+                "total_amount": 3000,
+                "structured_data": {"items": [
+                    {"name": "품목 A", "total_amount": 1000},
+                    {"name": "품목 B", "total_amount": 2000},
+                ]},
+            })
+        workbook = load_workbook(BytesIO(build_finance_workbook(records)), data_only=False)
+
+        for document_type, sheet_name in (
+            ("EXPENSE_REPORT", "경비지출결의서"),
+            ("TRAVEL_EXPENSE", "출장여비교통비정산서"),
+            ("WELFARE_BENEFIT", "복리후생비신청서"),
+        ):
+            sheet = workbook[sheet_name]
+            receipt_id = f"receipt-{document_type.lower()}"
+            self.assertEqual([sheet["A12"].value, sheet["B12"].value], [receipt_id, 1])
+            self.assertEqual([sheet["A13"].value, sheet["B13"].value], [receipt_id, 2])
 
 
 if __name__ == "__main__":

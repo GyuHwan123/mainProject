@@ -89,8 +89,8 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         })
         self.assertTrue(result["success"])
         self.assertEqual(result["active_sheet"], "경비지출결의서")
-        self.assertEqual(result["preview"]["headers"][0:3], ["No", "결제일시", "상호명(가맹점)"])
-        self.assertEqual(result["preview"]["rows"][0][2], "테스트카페")
+        self.assertEqual(result["preview"]["headers"][0:4], ["영수증 ID", "품목 순번", "결제일시", "상호명(가맹점)"])
+        self.assertEqual(result["preview"]["rows"][0][3], "테스트카페")
 
     def test_scores_receipt_items(self):
         score = score_fields(

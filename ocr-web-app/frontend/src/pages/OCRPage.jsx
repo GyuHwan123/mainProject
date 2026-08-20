@@ -16,43 +16,49 @@ const RECEIPT_NAME_PATTERN = /(영수증|거래.?증빙|카드.?전표|출장|�
 const RECEIPT_TEXT_PATTERN = /(결제금액|공급가액|부가세액|사업자\s*(?:NO|번호)|승인번호|카드결제|거래종류)/i;
 
 const FINANCE_DOCUMENTS = {
-  EXPENSE_REPORT: { title: '경비지출결의서', headers: ['No', '결제일시', '상호명(가맹점)', '지출용도(적요)', '공급가액', '부가세', '합계금액', '증빙유형'] },
-  TRAVEL_EXPENSE: { title: '출장여비교통비정산서', headers: ['구분', '일자', '출발/도착지', '교통/숙박 수단', '상호(가맹점)', '금액', '증빙여부', '비고'] },
-  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['No', '품목명', '규격/옵션', '수량', '단위', '단가', '공급가액', '부가세', '합계금액', '비고'] },
-  WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['No', '지원 항목(구분)', '결제일자', '내용(도서명/병원명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
+  EXPENSE_REPORT: { title: '경비지출결의서', headers: ['영수증 ID', '품목 순번', '결제일시', '상호명(가맹점)', '지출용도/품목명', '공급가액', '부가세', '합계금액', '증빙유형'] },
+  TRAVEL_EXPENSE: { title: '출장여비교통비정산서', headers: ['영수증 ID', '품목 순번', '구분', '일자', '출발/도착지', '교통/숙박 수단', '상호(가맹점)', '금액', '증빙여부', '비고'] },
+  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['영수증 ID', '품목 순번', '품목명', '규격/옵션', '수량', '단위', '단가', '공급가액', '부가세', '합계금액', '비고'] },
+  WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['영수증 ID', '품목 순번', '지원 항목(구분)', '결제일자', '내용(품목명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
 };
 
 const financeMoney = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
 
-function financeRecordCells(record, rowNumber, purchaseItem = null) {
+function financeRecordCells(record, itemNumber, rowItem = null) {
   const data = record.structured_data || {};
+  const item = rowItem || {};
+  const itemCount = Array.isArray(data.items) ? data.items.length : 0;
+  const isSingle = itemCount <= 1;
+  const receiptId = record.document_id || record.id || '미확인';
   if (record.document_type === 'TRAVEL_EXPENSE') {
-    return [record.expense_category || '확인 필요', record.transaction_date, data.route || data.location, data.transport_method || data.service_type, record.merchant, financeMoney(record.total_amount), data.evidence_status || '첨부', data.note || record.description];
+    return [receiptId, itemNumber, record.expense_category || '확인 필요', record.transaction_date, data.route || data.location, data.transport_method || data.service_type, record.merchant, Number(item.total_amount || (isSingle ? record.total_amount : 0)), data.evidence_status || '첨부', item.name || item.note || data.note || record.description];
   }
   if (record.document_type === 'WELFARE_BENEFIT') {
-    return [rowNumber, record.expense_category, record.transaction_date, record.description, record.merchant, financeMoney(record.total_amount), data.evidence_type || record.payment_method || '영수증', data.note];
+    return [receiptId, itemNumber, record.expense_category, record.transaction_date, item.name || record.description, record.merchant, Number(item.total_amount || (isSingle ? record.total_amount : 0)), data.evidence_type || record.payment_method || '영수증', item.note || data.note];
   }
   if (record.document_type === 'PURCHASE_REQUEST') {
-    const item = purchaseItem || (Array.isArray(data.items) && data.items.length ? data.items[0] : {});
-    const itemCount = Array.isArray(data.items) ? data.items.length : 0;
     const quantity = Number(item.quantity || 1);
     const unitPrice = Number(item.unit_price || 0);
-    const supply = Number(item.supply_amount || quantity * unitPrice || (itemCount === 1 ? record.supply_amount : 0));
-    const tax = Number(item.tax_amount || (itemCount === 1 ? record.tax_amount : 0));
-    const total = Number(item.total_amount || supply + tax || (itemCount === 1 ? record.total_amount : 0));
-    return [rowNumber, item.name || record.description, item.specification || item.option, quantity, item.unit || '개', unitPrice, supply, tax, total, item.note];
+    const supply = Number(item.supply_amount || quantity * unitPrice || (isSingle ? record.supply_amount : 0));
+    const tax = Number(item.tax_amount || (isSingle ? record.tax_amount : 0));
+    const total = Number(item.total_amount || supply + tax || (isSingle ? record.total_amount : 0));
+    return [receiptId, itemNumber, item.name || record.description, item.specification || item.option, quantity, item.unit || '개', unitPrice, supply, tax, total, item.note];
   }
-  return [rowNumber, record.transaction_date, record.merchant, record.description || record.expense_category, financeMoney(record.supply_amount), financeMoney(record.tax_amount), financeMoney(record.total_amount), record.payment_method || '영수증'];
+  const quantity = Number(item.quantity || 1);
+  const unitPrice = Number(item.unit_price || 0);
+  const supply = Number(item.supply_amount || quantity * unitPrice || (isSingle ? record.supply_amount : 0));
+  const tax = Number(item.tax_amount || (isSingle ? record.tax_amount : 0));
+  const total = Number(item.total_amount || supply + tax || (isSingle ? record.total_amount : 0));
+  return [receiptId, itemNumber, record.transaction_date, record.merchant, item.name || record.description || record.expense_category, supply, tax, total, record.payment_method || '영수증'];
 }
 
 function financeRecordRows(records) {
-  let rowNumber = 1;
   return records.flatMap((record) => {
-    const items = record.document_type === 'PURCHASE_REQUEST' && Array.isArray(record.structured_data?.items)
+    const items = Array.isArray(record.structured_data?.items)
       ? record.structured_data.items
       : [];
-    if (items.length) return items.map((item) => financeRecordCells(record, rowNumber++, item));
-    return [financeRecordCells(record, rowNumber++)];
+    if (items.length) return items.map((item, index) => financeRecordCells(record, index + 1, item));
+    return [financeRecordCells(record, 1)];
   });
 }
 

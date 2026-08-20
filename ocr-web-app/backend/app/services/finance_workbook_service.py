@@ -24,10 +24,10 @@ TITLE_BY_TYPE = {
 }
 
 HEADERS_BY_TYPE = {
-    "EXPENSE_REPORT": ["No", "결제일시", "상호명(가맹점)", "지출용도(적요)", "공급가액", "부가세", "합계금액", "증빙유형"],
-    "TRAVEL_EXPENSE": ["구분", "일자", "출발/도착지", "교통/숙박 수단", "상호(가맹점)", "금액", "증빙여부", "비고"],
-    "PURCHASE_REQUEST": ["No", "품목명", "규격/옵션", "수량", "단위", "단가", "공급가액", "부가세", "합계금액", "비고"],
-    "WELFARE_BENEFIT": ["No", "지원 항목(구분)", "결제일자", "내용(도서명/병원명/사유)", "결제처", "신청 금액", "증빙서류", "비고"],
+    "EXPENSE_REPORT": ["영수증 ID", "품목 순번", "결제일시", "상호명(가맹점)", "지출용도/품목명", "공급가액", "부가세", "합계금액", "증빙유형"],
+    "TRAVEL_EXPENSE": ["영수증 ID", "품목 순번", "구분", "일자", "출발/도착지", "교통/숙박 수단", "상호(가맹점)", "금액", "증빙여부", "비고"],
+    "PURCHASE_REQUEST": ["영수증 ID", "품목 순번", "품목명", "규격/옵션", "수량", "단위", "단가", "공급가액", "부가세", "합계금액", "비고"],
+    "WELFARE_BENEFIT": ["영수증 ID", "품목 순번", "지원 항목(구분)", "결제일자", "내용(품목명/사유)", "결제처", "신청 금액", "증빙서류", "비고"],
 }
 
 
@@ -43,15 +43,20 @@ def _record_rows(document_type: str, records: list[dict[str, Any]]) -> list[list
     for record in records:
         data = record.get("structured_data") or {}
         items = data.get("items") if isinstance(data.get("items"), list) else []
-        if document_type == "PURCHASE_REQUEST" and items:
-            for item in items:
+        row_items = items or [None]
+        receipt_id = str(record.get("document_id") or record.get("id") or "미확인")
+        for item_index, item_value in enumerate(row_items, 1):
+            item = item_value or {}
+            is_single = len(row_items) == 1
+            if document_type == "PURCHASE_REQUEST":
                 quantity = _number(item.get("quantity")) or 1
                 unit_price = _number(item.get("unit_price"))
-                supply = _number(item.get("supply_amount")) or quantity * unit_price or (_number(record.get("supply_amount")) if len(items) == 1 else 0)
-                tax = _number(item.get("tax_amount")) or (_number(record.get("tax_amount")) if len(items) == 1 else 0)
-                total = _number(item.get("total_amount")) or supply + tax or (_number(record.get("total_amount")) if len(items) == 1 else 0)
+                supply = _number(item.get("supply_amount")) or quantity * unit_price or (_number(record.get("supply_amount")) if is_single else 0)
+                tax = _number(item.get("tax_amount")) or (_number(record.get("tax_amount")) if is_single else 0)
+                total = _number(item.get("total_amount")) or supply + tax or (_number(record.get("total_amount")) if is_single else 0)
                 rows.append([
-                    len(rows) + 1,
+                    receipt_id,
+                    item_index,
                     item.get("name") or record.get("description"),
                     item.get("specification") or item.get("option"),
                     quantity,
@@ -62,24 +67,31 @@ def _record_rows(document_type: str, records: list[dict[str, Any]]) -> list[list
                     total,
                     item.get("note"),
                 ])
-        elif document_type == "TRAVEL_EXPENSE":
-            rows.append([
-                record.get("expense_category") or "교통비", record.get("transaction_date"), data.get("route") or data.get("location"),
-                data.get("transport_method") or data.get("service_type"), record.get("merchant"), _number(record.get("total_amount")),
-                data.get("evidence_status") or "첨부", data.get("note") or record.get("description"),
-            ])
-        elif document_type == "WELFARE_BENEFIT":
-            rows.append([
-                len(rows) + 1, record.get("expense_category") or "기타 복리후생", record.get("transaction_date"),
-                record.get("description"), record.get("merchant"), _number(record.get("total_amount")),
-                data.get("evidence_type") or record.get("payment_method") or "영수증", data.get("note"),
-            ])
-        else:
-            rows.append([
-                len(rows) + 1, record.get("transaction_date"), record.get("merchant"), record.get("description") or record.get("expense_category"),
-                _number(record.get("supply_amount")), _number(record.get("tax_amount")), _number(record.get("total_amount")),
-                record.get("payment_method") or "영수증",
-            ])
+            elif document_type == "TRAVEL_EXPENSE":
+                rows.append([
+                    receipt_id, item_index, record.get("expense_category") or "교통비", record.get("transaction_date"),
+                    data.get("route") or data.get("location"), data.get("transport_method") or data.get("service_type"),
+                    record.get("merchant"), _number(item.get("total_amount")) or (_number(record.get("total_amount")) if is_single else 0),
+                    data.get("evidence_status") or "첨부", item.get("name") or item.get("note") or data.get("note") or record.get("description"),
+                ])
+            elif document_type == "WELFARE_BENEFIT":
+                rows.append([
+                    receipt_id, item_index, record.get("expense_category") or "기타 복리후생", record.get("transaction_date"),
+                    item.get("name") or record.get("description"), record.get("merchant"),
+                    _number(item.get("total_amount")) or (_number(record.get("total_amount")) if is_single else 0),
+                    data.get("evidence_type") or record.get("payment_method") or "영수증", item.get("note") or data.get("note"),
+                ])
+            else:
+                quantity = _number(item.get("quantity")) or 1
+                unit_price = _number(item.get("unit_price"))
+                supply = _number(item.get("supply_amount")) or quantity * unit_price or (_number(record.get("supply_amount")) if is_single else 0)
+                tax = _number(item.get("tax_amount")) or (_number(record.get("tax_amount")) if is_single else 0)
+                total = _number(item.get("total_amount")) or supply + tax or (_number(record.get("total_amount")) if is_single else 0)
+                rows.append([
+                    receipt_id, item_index, record.get("transaction_date"), record.get("merchant"),
+                    item.get("name") or record.get("description") or record.get("expense_category"), supply, tax, total,
+                    record.get("payment_method") or "영수증",
+                ])
     return rows
 
 
@@ -170,35 +182,47 @@ def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: 
         for column, value in enumerate(values, 1):
             cell = ws.cell(row_index, column, value)
             cell.border = Border(top=line, bottom=line, left=line, right=line)
-            money_columns = {6, 7, 8, 9} if document_type == "PURCHASE_REQUEST" else {5, 6, 7}
+            money_columns = {
+                "EXPENSE_REPORT": {6, 7, 8},
+                "TRAVEL_EXPENSE": {8},
+                "PURCHASE_REQUEST": {7, 8, 9, 10},
+                "WELFARE_BENEFIT": {7},
+            }[document_type]
             cell.alignment = Alignment(horizontal="right" if column in money_columns else "left", vertical="center", wrap_text=True)
             if column in money_columns:
                 cell.number_format = '#,##0'
 
     total_row = header_row + len(rows) + 1
-    total_label_end = 6 if document_type == "PURCHASE_REQUEST" else 4
+    total_label_end = {"EXPENSE_REPORT": 5, "TRAVEL_EXPENSE": 7, "PURCHASE_REQUEST": 7, "WELFARE_BENEFIT": 6}[document_type]
     ws.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=total_label_end)
     ws.cell(total_row, 1, "합 계")
     ws.cell(total_row, 1).font = Font(bold=True)
     ws.cell(total_row, 1).fill = PatternFill("solid", fgColor=light)
     if document_type == "PURCHASE_REQUEST":
-        total_columns = (7, 8, 9)
+        total_columns = (8, 9, 10)
         for column in total_columns:
             letter = get_column_letter(column)
             ws.cell(total_row, column, f"=SUM({letter}{header_row + 1}:{letter}{total_row - 1})")
             ws.cell(total_row, column).number_format = '#,##0" 원"'
     elif document_type == "EXPENSE_REPORT":
-        for column in (5, 6, 7):
+        for column in (6, 7, 8):
             letter = get_column_letter(column)
             ws.cell(total_row, column, f"=SUM({letter}{header_row + 1}:{letter}{total_row - 1})")
             ws.cell(total_row, column).number_format = '#,##0" 원"'
     else:
-        ws.cell(total_row, 6, f"=SUM(F{header_row + 1}:F{total_row - 1})")
-        ws.cell(total_row, 6).number_format = '#,##0" 원"'
+        amount_column = 8 if document_type == "TRAVEL_EXPENSE" else 7
+        letter = get_column_letter(amount_column)
+        ws.cell(total_row, amount_column, f"=SUM({letter}{header_row + 1}:{letter}{total_row - 1})")
+        ws.cell(total_row, amount_column).number_format = '#,##0" 원"'
     for column in range(1, column_count + 1):
         ws.cell(total_row, column).border = Border(top=Side(style="medium", color=dark))
 
-    widths = [8, 28, 24, 10, 10, 16, 18, 16, 18, 28] if document_type == "PURCHASE_REQUEST" else [8, 18, 24, 30, 18, 16, 16, 24]
+    widths = {
+        "EXPENSE_REPORT": [38, 10, 16, 24, 30, 18, 16, 18, 18],
+        "TRAVEL_EXPENSE": [38, 10, 14, 16, 24, 22, 24, 18, 16, 28],
+        "PURCHASE_REQUEST": [38, 10, 28, 24, 10, 10, 16, 18, 16, 18, 28],
+        "WELFARE_BENEFIT": [38, 10, 20, 16, 30, 24, 18, 18, 24],
+    }[document_type]
     for index, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(index)].width = width
     ws.row_dimensions[2].height = 30

@@ -161,6 +161,37 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertTrue(impact["fields"][0]["ocr_evidence_found"])
         self.assertEqual(impact["fields"][0]["status"], "LIKELY_LLM_ERROR")
 
+    def test_matches_multilingual_item_name_aliases(self):
+        score = score_fields(
+            {
+                "items": [{
+                    "name": "HAIR SALON",
+                    "quantity": 1,
+                    "unit_price": 140000,
+                    "total_amount": 140000,
+                }],
+            },
+            {
+                "items": [{
+                    "name": "미용 서비스",
+                    "quantity": 1,
+                    "unit_price": 140000,
+                    "total_amount": 140000,
+                }],
+            },
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+        self.assertTrue(score["complete_match"])
+
+    def test_does_not_match_unlisted_cross_language_item_names(self):
+        score = score_fields(
+            {"items": [{"name": "NAIL SALON"}]},
+            {"items": [{"name": "미용 서비스"}]},
+        )
+
+        self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
 
 if __name__ == "__main__":
     unittest.main()

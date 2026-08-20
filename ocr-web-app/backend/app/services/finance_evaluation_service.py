@@ -18,6 +18,21 @@ CORE_FIELDS = (
 )
 NUMBER_FIELDS = {"supply_amount", "tax_amount", "total_amount", "quantity", "unit_price"}
 
+# Explicit receipt-domain aliases keep evaluation deterministic while allowing
+# equivalent item names written in different languages. Keys are compacted by
+# removing spaces and punctuation before lookup; values are stable concepts.
+ITEM_NAME_ALIASES = {
+    "hairsalon": "beauty_service",
+    "beautysalon": "beauty_service",
+    "hairdressingservice": "beauty_service",
+    "미용서비스": "beauty_service",
+    "미용실": "beauty_service",
+    "barbershop": "barber_service",
+    "barberservice": "barber_service",
+    "이발서비스": "barber_service",
+    "이발소": "barber_service",
+}
+
 
 def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
     """Convert Korean receipt labels to the English schema used by the model.
@@ -81,6 +96,9 @@ def _canonical(field: str, value: Any) -> Any:
     if value is None:
         return ""
     text = " ".join(str(value).strip().lower().split())
+    if field == "name":
+        compact = re.sub(r"[^0-9a-z가-힣]", "", text)
+        return ITEM_NAME_ALIASES.get(compact, text)
     if field == "transaction_date":
         parts = re.findall(r"\d+", text)[:3]
         if len(parts) == 3:

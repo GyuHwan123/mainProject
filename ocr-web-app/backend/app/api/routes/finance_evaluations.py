@@ -61,13 +61,16 @@ def evaluate_existing_finance_record(
         (
             item for item in supabase_service.list_finance_records(user.email, limit=1000)
             if str(item.get("id")) == payload.record_id
-            and str(item.get("document_id")) == payload.document_id
         ),
         None,
     )
     if record is None:
         raise HTTPException(status_code=404, detail="평가할 재무 기록을 찾을 수 없습니다.")
 
+    # Duplicate detection can intentionally return an existing finance record
+    # whose original document_id differs from the newly uploaded OCR document.
+    # Ownership is already enforced by list_finance_records(user.email), so use
+    # the requested record with the current upload's OCR evidence for scoring.
     text = (document.get("extracted_text") or "").strip()
     truth = normalize_ground_truth(payload.ground_truth)
     prediction = {field: record.get(field) for field in CORE_FIELDS}

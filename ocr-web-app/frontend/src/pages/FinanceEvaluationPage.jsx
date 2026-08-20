@@ -135,7 +135,11 @@ function ModelPipelineResult({ run, result, imagePreview }) {
 
 function datasetRows(payload) {
   if (Array.isArray(payload)) return payload;
-  return payload.receipts || payload.data || payload.items || [];
+  const collection = payload?.receipts || payload?.data;
+  if (Array.isArray(collection)) return collection;
+  const truthKeys = ['ground_truth', 'truth', 'label', 'expected', 'merchant', 'transaction_date', 'total_amount', 'payment_method'];
+  if (Array.isArray(payload?.items) && !truthKeys.some((key) => key in payload)) return payload.items;
+  return payload && typeof payload === 'object' ? [payload] : [];
 }
 
 function truthOf(row) {
@@ -157,6 +161,10 @@ function truthOf(row) {
 
 function nameOf(row) {
   return row?.filename || row?.file_name || row?.image || row?.name || row?.id || '';
+}
+
+function imageNameOf(row) {
+  return row?.image || row?.image_name || row?.filename || row?.file_name || row?.document_name || '';
 }
 
 function normalizedFileName(value) {
@@ -265,9 +273,12 @@ export default function FinanceEvaluationPage() {
   const runEvaluation = async (file) => {
     if (!file || !dataset.length || loading) return;
     const uploadedName = normalizedFileName(file.name);
-    const matches = dataset
-      .map((row, index) => ({ row, index }))
-      .filter(({ row }) => normalizedFileName(row?.image) === uploadedName);
+    const singleRowWithoutImageKey = dataset.length === 1 && !imageNameOf(dataset[0]);
+    const matches = singleRowWithoutImageKey
+      ? [{ row: dataset[0], index: 0 }]
+      : dataset
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => normalizedFileName(imageNameOf(row)) === uploadedName);
     if (!matches.length) {
       setStatus(`매핑 실패: 정답 JSON의 image 키에서 ${file.name}을 찾지 못했습니다.`);
       if (imageRef.current) imageRef.current.value = '';

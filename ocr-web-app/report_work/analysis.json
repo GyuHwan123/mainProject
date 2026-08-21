@@ -1,0 +1,844 @@
+{
+  "source_stats": "C:\\Users\\2Class_08\\Downloads\\finance-model-batch-20-statistics (1).json",
+  "source_truth": "C:\\Users\\2Class_08\\Downloads\\라벨링데이터-20260821T030610Z-1-001\\라벨링데이터\\test01_test20_ground_truth.json",
+  "exported_at": "2026-08-21T07:20:07.627Z",
+  "evaluated_images": 20,
+  "models": [
+    "gemma2:2b",
+    "gemma2-yes-category:latest"
+  ],
+  "summaries": {
+    "gemma2:2b": {
+      "documents": 20,
+      "official": {
+        "model": "gemma2:2b",
+        "evaluated_documents": 20,
+        "successful_documents": 20,
+        "extraction_score_95": 38.411111111111104,
+        "schema_success_rate": 0.561111111111111,
+        "total_amount_accuracy": 0.7,
+        "average_latency_ms": 42901.15,
+        "speed_score_3": 3,
+        "local_cost_score_2": 2,
+        "final_score_100": 43.411111111111104,
+        "quality_gate_passed": false
+      },
+      "stored_mean_field_accuracy": 0.3282117882117882,
+      "corrected_mean_field_accuracy": 0.27520361000279864,
+      "complete_matches": 0,
+      "zero_item_outputs": 18,
+      "item_count_accuracy": 0.2,
+      "field_accuracy": {
+        "card_number": 0.4,
+        "discount_amount": 0.7,
+        "expense_category": 0.0,
+        "items.count": 0.2,
+        "items.name": 0.05,
+        "items.quantity": 0.075,
+        "items.total_amount": 0.05,
+        "items.unit_price": 0.025,
+        "merchant": 0.1,
+        "payment_method": 0.75,
+        "total_amount": 0.7,
+        "total_quantity": 0.1,
+        "transaction_date": 0.85
+      },
+      "field_correct_counts": {
+        "expense_category": 0,
+        "merchant": 2,
+        "transaction_date": 17,
+        "total_amount": 14,
+        "payment_method": 15,
+        "total_quantity": 2,
+        "discount_amount": 14,
+        "card_number": 8,
+        "items.count": 4,
+        "items.name": 2,
+        "items.quantity": 3,
+        "items.unit_price": 1,
+        "items.total_amount": 2
+      },
+      "field_totals": {
+        "expense_category": 20,
+        "merchant": 20,
+        "transaction_date": 20,
+        "total_amount": 20,
+        "payment_method": 20,
+        "total_quantity": 20,
+        "discount_amount": 20,
+        "card_number": 20,
+        "items.count": 20,
+        "items.name": 40,
+        "items.quantity": 40,
+        "items.unit_price": 40,
+        "items.total_amount": 40
+      },
+      "present_only_accuracy": {
+        "card_number": 0.21428571428571427,
+        "discount_amount": 0.0,
+        "expense_category": 0.0,
+        "merchant": 0.05263157894736842,
+        "payment_method": 0.7777777777777778,
+        "total_amount": 0.7,
+        "total_quantity": 0.1,
+        "transaction_date": 0.85
+      },
+      "present_only_counts": {
+        "card_number": {
+          "correct": 3,
+          "total": 14
+        },
+        "discount_amount": {
+          "correct": 0,
+          "total": 6
+        },
+        "expense_category": {
+          "correct": 0,
+          "total": 20
+        },
+        "merchant": {
+          "correct": 1,
+          "total": 19
+        },
+        "payment_method": {
+          "correct": 14,
+          "total": 18
+        },
+        "total_amount": {
+          "correct": 14,
+          "total": 20
+        },
+        "total_quantity": {
+          "correct": 2,
+          "total": 20
+        },
+        "transaction_date": {
+          "correct": 17,
+          "total": 20
+        }
+      }
+    },
+    "gemma2-yes-category:latest": {
+      "documents": 20,
+      "official": {
+        "model": "gemma2-yes-category:latest",
+        "evaluated_documents": 20,
+        "successful_documents": 20,
+        "extraction_score_95": 54.31527777777778,
+        "schema_success_rate": 0.661111111111111,
+        "total_amount_accuracy": 0.75,
+        "average_latency_ms": 44208.15,
+        "speed_score_3": 2.911305946980365,
+        "local_cost_score_2": 2,
+        "final_score_100": 59.22658372475814,
+        "quality_gate_passed": false
+      },
+      "stored_mean_field_accuracy": 0.5636868686868687,
+      "corrected_mean_field_accuracy": 0.46321155022574906,
+      "complete_matches": 0,
+      "zero_item_outputs": 2,
+      "item_count_accuracy": 0.65,
+      "field_accuracy": {
+        "card_number": 0.3,
+        "discount_amount": 0.7,
+        "expense_category": 0.0,
+        "items.count": 0.65,
+        "items.name": 0.475,
+        "items.quantity": 0.775,
+        "items.total_amount": 0.125,
+        "items.unit_price": 0.3,
+        "merchant": 0.3,
+        "payment_method": 0.75,
+        "total_amount": 0.75,
+        "total_quantity": 0.1,
+        "transaction_date": 0.85
+      },
+      "field_correct_counts": {
+        "expense_category": 0,
+        "merchant": 6,
+        "transaction_date": 17,
+        "total_amount": 15,
+        "payment_method": 15,
+        "total_quantity": 2,
+        "discount_amount": 14,
+        "card_number": 6,
+        "items.count": 13,
+        "items.name": 19,
+        "items.quantity": 31,
+        "items.unit_price": 12,
+        "items.total_amount": 5
+      },
+      "field_totals": {
+        "expense_category": 20,
+        "merchant": 20,
+        "transaction_date": 20,
+        "total_amount": 20,
+        "payment_method": 20,
+        "total_quantity": 20,
+        "discount_amount": 20,
+        "card_number": 20,
+        "items.count": 20,
+        "items.name": 40,
+        "items.quantity": 40,
+        "items.unit_price": 40,
+        "items.total_amount": 40
+      },
+      "present_only_accuracy": {
+        "card_number": 0.0,
+        "discount_amount": 0.0,
+        "expense_category": 0.0,
+        "merchant": 0.3157894736842105,
+        "payment_method": 0.7777777777777778,
+        "total_amount": 0.75,
+        "total_quantity": 0.1,
+        "transaction_date": 0.85
+      },
+      "present_only_counts": {
+        "card_number": {
+          "correct": 0,
+          "total": 14
+        },
+        "discount_amount": {
+          "correct": 0,
+          "total": 6
+        },
+        "expense_category": {
+          "correct": 0,
+          "total": 20
+        },
+        "merchant": {
+          "correct": 6,
+          "total": 19
+        },
+        "payment_method": {
+          "correct": 14,
+          "total": 18
+        },
+        "total_amount": {
+          "correct": 15,
+          "total": 20
+        },
+        "total_quantity": {
+          "correct": 2,
+          "total": 20
+        },
+        "transaction_date": {
+          "correct": 17,
+          "total": 20
+        }
+      }
+    }
+  },
+  "worst_cases": {
+    "gemma2:2b": [
+      {
+        "image": "test02.jpg",
+        "accuracy": 0.07692307692307693,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "transaction_date",
+          "total_amount",
+          "payment_method",
+          "total_quantity",
+          "discount_amount",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "PURCHASE_REQUEST",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2023-10-03",
+          "supply_amount": 3120,
+          "tax_amount": 780,
+          "total_amount": 3900,
+          "payment_method": "카드",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "BUTTER",
+          "total_quantity": 1,
+          "discount_amount": 780,
+          "total_amount": 3120,
+          "expense_category": "생활/쇼핑",
+          "payment_method": null,
+          "card_number": null,
+          "transaction_date": "2025-10-03",
+          "items": [
+            {
+              "name": "아이팝 가방에 쏙 포켓 물티슈 8개입 SET",
+              "quantity": 1,
+              "unit_price": 3900,
+              "total_amount": 3900
+            }
+          ]
+        }
+      },
+      {
+        "image": "test03.jpg",
+        "accuracy": 0.11764705882352941,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "transaction_date",
+          "payment_method",
+          "total_quantity",
+          "card_number",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "PURCHASE_REQUEST",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2023-02-06",
+          "supply_amount": 17000,
+          "tax_amount": 17000,
+          "total_amount": 36000,
+          "payment_method": null,
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "현대백화점 무역센터점",
+          "total_quantity": 2,
+          "total_amount": 36000,
+          "expense_category": "식비",
+          "payment_method": "카드",
+          "card_number": "95000030****28941300",
+          "discount_amount": null,
+          "transaction_date": "2025-10-03",
+          "items": [
+            {
+              "name": "송 메밀국수정식",
+              "quantity": 1,
+              "unit_price": 17000,
+              "total_amount": 17000
+            },
+            {
+              "name": "송 치즈돈까스",
+              "quantity": 1,
+              "unit_price": 19000,
+              "total_amount": 19000
+            }
+          ]
+        }
+      },
+      {
+        "image": "test09.jpg",
+        "accuracy": 0.11764705882352941,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "total_amount",
+          "payment_method",
+          "total_quantity",
+          "discount_amount",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "TRAVEL_EXPENSE",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2025-10-04",
+          "supply_amount": 5000,
+          "tax_amount": 5000,
+          "total_amount": 10000,
+          "payment_method": "현금",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "이마트에브리데이 서초내곡점",
+          "total_quantity": 6,
+          "discount_amount": 5000,
+          "total_amount": 7000,
+          "expense_category": "식품/쇼핑",
+          "payment_method": "카카오페이 머니",
+          "card_number": null,
+          "transaction_date": "2025-10-04",
+          "items": [
+            {
+              "name": "떡붕어싸만코",
+              "quantity": 5,
+              "unit_price": 2000,
+              "total_amount": 10000
+            },
+            {
+              "name": "롯데 월드콘 말차 160",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            }
+          ]
+        }
+      },
+      {
+        "image": "test16.jpg",
+        "accuracy": 0.14285714285714285,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "payment_method",
+          "total_quantity",
+          "discount_amount",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "TRAVEL_EXPENSE",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2025-09-21",
+          "supply_amount": 143274,
+          "tax_amount": 14326,
+          "total_amount": 157600,
+          "payment_method": null,
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "COS 현대 무역센터점",
+          "total_quantity": 3,
+          "discount_amount": 82500,
+          "total_amount": 157600,
+          "expense_category": "의류/쇼핑",
+          "payment_method": "카드",
+          "card_number": null,
+          "transaction_date": "2025-09-21",
+          "items": [
+            {
+              "name": "저지 S 노란색",
+              "quantity": 1,
+              "unit_price": 135000,
+              "total_amount": 94500
+            },
+            {
+              "name": "저지 S 흰색",
+              "quantity": 1,
+              "unit_price": 105000,
+              "total_amount": 63000
+            },
+            {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            }
+          ]
+        }
+      },
+      {
+        "image": "test06.jpg",
+        "accuracy": 0.16,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "total_quantity",
+          "card_number",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "PURCHASE_REQUEST",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2025-10-01",
+          "supply_amount": 23181,
+          "tax_amount": 2319,
+          "total_amount": 25500,
+          "payment_method": "카드",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "청년다방(선릉역점)",
+          "total_quantity": 4,
+          "total_amount": 25500,
+          "expense_category": "식비",
+          "payment_method": "카드",
+          "card_number": "6556-20**-****-****",
+          "discount_amount": null,
+          "transaction_date": "2025-10-01",
+          "items": [
+            {
+              "name": "불향차돌떡볶이",
+              "quantity": 1,
+              "unit_price": 17500,
+              "total_amount": 17500
+            },
+            {
+              "name": "찰순대",
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_amount": 4000
+            },
+            {
+              "name": "쫄면사리",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            },
+            {
+              "name": "콜라",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            }
+          ]
+        }
+      }
+    ],
+    "gemma2-yes-category:latest": [
+      {
+        "image": "test06.jpg",
+        "accuracy": 0.28,
+        "errors": [
+          "expense_category",
+          "total_quantity",
+          "card_number",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "PURCHASE_REQUEST",
+          "expense_category": "기타",
+          "merchant": "청년다방(선릉역점)",
+          "transaction_date": "2025-10-01",
+          "supply_amount": 23181,
+          "tax_amount": 2319,
+          "total_amount": 25500,
+          "payment_method": "카드",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": [
+            {
+              "name": "콜라",
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_price": null
+            }
+          ]
+        },
+        "truth": {
+          "merchant": "청년다방(선릉역점)",
+          "total_quantity": 4,
+          "total_amount": 25500,
+          "expense_category": "식비",
+          "payment_method": "카드",
+          "card_number": "6556-20**-****-****",
+          "discount_amount": null,
+          "transaction_date": "2025-10-01",
+          "items": [
+            {
+              "name": "불향차돌떡볶이",
+              "quantity": 1,
+              "unit_price": 17500,
+              "total_amount": 17500
+            },
+            {
+              "name": "찰순대",
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_amount": 4000
+            },
+            {
+              "name": "쫄면사리",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            },
+            {
+              "name": "콜라",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            }
+          ]
+        }
+      },
+      {
+        "image": "test16.jpg",
+        "accuracy": 0.2857142857142857,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "payment_method",
+          "total_quantity",
+          "discount_amount",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "EXPENSE_REPORT",
+          "expense_category": "기타",
+          "merchant": "COS",
+          "transaction_date": "2025-09-21",
+          "supply_amount": 143274,
+          "tax_amount": 14326,
+          "total_amount": 157600,
+          "payment_method": null,
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": [
+            {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 14326,
+              "total_price": null
+            },
+            {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 14326,
+              "total_price": null
+            }
+          ]
+        },
+        "truth": {
+          "merchant": "COS 현대 무역센터점",
+          "total_quantity": 3,
+          "discount_amount": 82500,
+          "total_amount": 157600,
+          "expense_category": "의류/쇼핑",
+          "payment_method": "카드",
+          "card_number": null,
+          "transaction_date": "2025-09-21",
+          "items": [
+            {
+              "name": "저지 S 노란색",
+              "quantity": 1,
+              "unit_price": 135000,
+              "total_amount": 94500
+            },
+            {
+              "name": "저지 S 흰색",
+              "quantity": 1,
+              "unit_price": 105000,
+              "total_amount": 63000
+            },
+            {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            }
+          ]
+        }
+      },
+      {
+        "image": "test09.jpg",
+        "accuracy": 0.29411764705882354,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "payment_method",
+          "total_quantity",
+          "discount_amount"
+        ],
+        "prediction": {
+          "document_type": "EXPENSE_REPORT",
+          "expense_category": "기타",
+          "merchant": "arLeceryoas",
+          "transaction_date": "2025-10-04",
+          "supply_amount": 5000,
+          "tax_amount": 5000,
+          "total_amount": 7000,
+          "payment_method": "현금",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": [
+            {
+              "name": "샌드류 5개 5천원",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_price": null
+            },
+            {
+              "name": "가세",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_price": null
+            }
+          ]
+        },
+        "truth": {
+          "merchant": "이마트에브리데이 서초내곡점",
+          "total_quantity": 6,
+          "discount_amount": 5000,
+          "total_amount": 7000,
+          "expense_category": "식품/쇼핑",
+          "payment_method": "카카오페이 머니",
+          "card_number": null,
+          "transaction_date": "2025-10-04",
+          "items": [
+            {
+              "name": "떡붕어싸만코",
+              "quantity": 5,
+              "unit_price": 2000,
+              "total_amount": 10000
+            },
+            {
+              "name": "롯데 월드콘 말차 160",
+              "quantity": 1,
+              "unit_price": 2000,
+              "total_amount": 2000
+            }
+          ]
+        }
+      },
+      {
+        "image": "test15.jpg",
+        "accuracy": 0.29411764705882354,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "total_quantity",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "EXPENSE_REPORT",
+          "expense_category": "기타",
+          "merchant": "유니클로",
+          "transaction_date": "2025-10-03",
+          "supply_amount": 54546,
+          "tax_amount": 5454,
+          "total_amount": 60000,
+          "payment_method": "card",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": []
+        },
+        "truth": {
+          "merchant": "유니클로 스타필드 코엑스몰점",
+          "total_quantity": 2,
+          "total_amount": 60000,
+          "expense_category": "의류/쇼핑",
+          "payment_method": "카드",
+          "card_number": null,
+          "discount_amount": null,
+          "transaction_date": "2025-10-03",
+          "items": [
+            {
+              "name": "수플레얀스탠드칼라가디건",
+              "quantity": 1,
+              "unit_price": 59900,
+              "total_amount": 59900
+            },
+            {
+              "name": "Shopping bag",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            }
+          ]
+        }
+      },
+      {
+        "image": "test12.jpg",
+        "accuracy": 0.38095238095238093,
+        "errors": [
+          "expense_category",
+          "merchant",
+          "total_amount",
+          "total_quantity",
+          "items"
+        ],
+        "prediction": {
+          "document_type": "PURCHASE_REQUEST",
+          "expense_category": "기타",
+          "merchant": null,
+          "transaction_date": "2025-10-05",
+          "supply_amount": 0,
+          "tax_amount": 0,
+          "total_amount": 0,
+          "payment_method": "카드",
+          "total_quantity": null,
+          "discount_amount": null,
+          "card_number": null,
+          "items": [
+            {
+              "name": "네기 타코 야끼 8말",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_price": 5500
+            },
+            {
+              "name": "정통 타고야끼 8말",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_price": 5500
+            }
+          ]
+        },
+        "truth": {
+          "merchant": "호시타코야끼 대치점",
+          "total_quantity": 3,
+          "total_amount": 14000,
+          "expense_category": "식비",
+          "payment_method": "카드",
+          "card_number": null,
+          "discount_amount": null,
+          "transaction_date": "2025-10-05",
+          "items": [
+            {
+              "name": "네기 타코야끼 8알",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            {
+              "name": "정통 타코야끼 8알",
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            {
+              "name": "까르보불닭볶음면(비조리컵라면)",
+              "quantity": 1,
+              "unit_price": 2500,
+              "total_amount": 2500
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "export_field_error_counts": {
+    "상호": 32,
+    "1번 품목 품목 금액": 31,
+    "1번 품목 단가": 28,
+    "1번 품목 상품명": 26,
+    "2번 품목 품목 금액": 24,
+    "품목 수": 23,
+    "2번 품목 단가": 22,
+    "2번 품목 상품명": 21,
+    "1번 품목 수량": 20,
+    "2번 품목 수량": 15,
+    "3번 품목 품목 금액": 12,
+    "합계금액": 11,
+    "3번 품목 단가": 11,
+    "결제수단": 10,
+    "3번 품목 상품명": 8,
+    "3번 품목 수량": 8,
+    "날짜": 6,
+    "4번 품목 단가": 4,
+    "4번 품목 품목 금액": 4,
+    "4번 품목 상품명": 2,
+    "4번 품목 수량": 2,
+    "5번 품목 상품명": 2,
+    "5번 품목 단가": 2,
+    "5번 품목 품목 금액": 2,
+    "5번 품목 수량": 1
+  }
+}

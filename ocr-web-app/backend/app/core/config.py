@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     RAG_EMBEDDING_MODEL: str = "embeddinggemma"
     RAG_EMBEDDING_DIMENSIONS: int = 768
-    RAG_LLM_MODEL: str = "gemma2:2b"
+    RAG_LLM_MODEL: str = "llama3b-receipt-v3:latest"
     RAG_RERANK_MODEL: str = ""
     RAG_PROMPT_VERSION: str = "baseline-v1"
     RAG_TOP_K: int = 8

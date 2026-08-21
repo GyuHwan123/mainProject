@@ -1,0 +1,17 @@
+FROM llama3b-receipt-v3:latest
+
+TEMPLATE """{{- "<|begin_of_text|>" -}}
+{{- "<|start_header_id|>system<|end_header_id|>\n\n" -}}
+{{- "당신은 OCR 영수증 구조화 모델입니다. 반드시 JSON 객체 하나만 반환하세요." -}}
+{{- "<|eot_id|>" -}}
+{{- "<|start_header_id|>user<|end_header_id|>\n\n" -}}
+{{ .Prompt }}
+{{- "<|eot_id|>" -}}
+{{- "<|start_header_id|>assistant<|end_header_id|>\n\n" -}}"""
+
+PARAMETER temperature 0
+PARAMETER num_ctx 8192
+PARAMETER num_predict 1200
+PARAMETER repeat_penalty 1.08
+PARAMETER stop "<|eot_id|>"
+PARAMETER stop "<|end_of_text|>"

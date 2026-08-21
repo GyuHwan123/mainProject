@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import re
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -18,6 +19,7 @@ from app.services.finance_workbook_service import build_finance_workbook
 from app.services.supabase_service import supabase_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 
 
@@ -268,7 +270,7 @@ doc_type은 다음 중 하나입니다.
 8. 공급가액 + 부가세 = 결제금액을 우선하고, 품목은 수량 × 단가를 확인합니다.
 9. 별도 청구된 배송비·봉투값은 items에 포함할 수 있습니다.
 10. 파일명과 코드 힌트가 OCR보다 명확한 날짜·금액·업무 목적을 제공하면 힌트를 우선합니다.
-
+q
 [파일명]
 {filename}
 
@@ -282,8 +284,13 @@ doc_type은 다음 중 하나입니다.
 
 async def _classify_receipt_with_model(text: str, filename: str, model_name: str) -> dict[str, Any]:
     raw = await generate(_receipt_prompt(text, filename), json_format=True, num_predict=1200, model_name=model_name)
-    result = json.loads(raw)
+    try:
+        result = json.loads(raw)
+    except json.JSONDecodeError:
+        logger.exception("Receipt JSON parsing failed: model=%s filename=%s raw_response=%s", model_name, filename, raw)
+        raise
     if not isinstance(result, dict):
+        logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
         raise ValueError("object expected")
     return result
 
@@ -292,7 +299,8 @@ async def _classify_receipt(text: str, filename: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     try:
         return await _classify_receipt_with_model(text, filename, MODEL_NAME)
-    except Exception:
+    except Exception as exc:
+        logger.exception("Receipt classification fallback: model=%s filename=%s reason=%s", MODEL_NAME, filename, exc)
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
         return {

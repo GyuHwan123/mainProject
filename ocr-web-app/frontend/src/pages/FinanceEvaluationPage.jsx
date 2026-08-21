@@ -10,7 +10,7 @@ import {
 } from '../features/financeEvaluationStorage';
 import '../style/FinanceEvaluationPage.scss';
 
-const DEFAULT_MODELS = ['gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
+const DEFAULT_MODELS = ['llama3b-receipt-v3:latest', 'gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
 const LABELS = {
   document_type: '문서 유형', expense_category: '카테고리', merchant: '상호', transaction_date: '날짜',
   supply_amount: '공급가액', tax_amount: '부가세', total_amount: '합계금액', payment_method: '결제수단',

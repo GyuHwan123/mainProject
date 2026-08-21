@@ -1,10 +1,18 @@
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.routes.finance import _normalize, _receipt_hints  # noqa: E402
+from app.api.routes.finance import (  # noqa: E402
+    _classify_receipt_with_model,
+    _normalize,
+    _receipt_hints,
+    _receipt_item_candidates,
+    _receipt_items_prompt,
+    _receipt_prompt,
+)
 
 
 SAMPLE_OCR = """주문번호 5,125.00
@@ -18,7 +26,50 @@ SAMPLE_OCR = """주문번호 5,125.00
 """
 
 
-class FinanceClassificationTests(unittest.TestCase):
+class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
+    def test_splits_metadata_and_item_prompts(self):
+        prompt = _receipt_prompt(
+            "볼펜 2 1,000",
+            "receipt.jpg",
+            [{"page": 1, "tables": [{"confidence": .95, "rows": [["볼펜", "2", "1,000"]]}]}],
+        )
+        items_prompt = _receipt_items_prompt(
+            "볼펜 2 1,000",
+            [{"page": 1, "tables": [{"confidence": .95, "rows": [["볼펜", "2", "1,000"]]}]}],
+        )
+        self.assertIn("요약 정보만", prompt)
+        self.assertNotIn("품목 행 후보", prompt)
+        self.assertIn("품목 근거", items_prompt)
+        self.assertIn('"raw_cells": ["볼펜", "2", "1,000"]', items_prompt)
+
+    def test_builds_item_candidates_from_table_and_single_box_ocr_lines(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "tables": [{"rows": [["볼펜", "2", "1,000", "2,000"], ["합계", "2,000"]]}],
+            "text": "노트 1 3,000 3,000\n부가세 455",
+        }])
+
+        self.assertEqual([item["name_candidate"] for item in candidates], ["볼펜", "노트"])
+        self.assertEqual(candidates[0]["quantity_candidate"], 2)
+        self.assertEqual(candidates[0]["unit_price_candidate"], 1000)
+        self.assertEqual(candidates[0]["amount_candidate"], 2000)
+
+    async def test_retries_item_only_extraction_when_first_result_is_incomplete(self):
+        pages = [{
+            "page": 1,
+            "text": "볼펜 1 1,000 1,000\n노트 1 3,000 3,000",
+            "tables": [{"rows": [["볼펜", "1", "1,000", "1,000"], ["노트", "1", "3,000", "3,000"]]}],
+        }]
+        responses = [
+            '{"merchant":"문구점","items":[{"name":"볼펜"}]}',
+            '{"items":[{"name":"볼펜"},{"name":"노트"}]}',
+        ]
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
+            result = await _classify_receipt_with_model("품목 정보", "receipt.jpg", "test-model", pages)
+
+        self.assertEqual([item["name"] for item in result["items"]], ["볼펜", "노트"])
+        self.assertEqual(mocked.await_count, 2)
+
     def test_recovers_finance_values_and_filename_context(self):
         hints = _receipt_hints(SAMPLE_OCR, "서울출장_식비.jpg")
         self.assertEqual(hints["document_type"], "TRAVEL_EXPENSE")
@@ -63,8 +114,24 @@ class FinanceClassificationTests(unittest.TestCase):
             ocr,
         )
 
-        self.assertEqual(hints["total_amount"], 81600)
+        self.assertEqual(hints["total_amount"], 81300)
         self.assertEqual(normalized["total_amount"], 81300)
+
+    def test_recognizes_discount_relation_instead_of_tax_relation(self):
+        ocr = "상품합계 3,900원\n할인금액 780원\n최종 결제금액 3,120원"
+
+        hints = _receipt_hints(ocr, "receipt.jpg")
+        normalized = _normalize(
+            {"supply_amount": 3120, "tax_amount": 780, "total_amount": 3900},
+            "receipt.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["total_amount"], 3120)
+        self.assertEqual(hints["discount_amount"], 780)
+        self.assertEqual(hints["amount_relation"]["type"], "GROSS_MINUS_DISCOUNT_EQUALS_PAID")
+        self.assertEqual(normalized["total_amount"], 3120)
+        self.assertEqual(normalized["structured_data"]["discount_amount"], 780)
 
     def test_removes_payment_summary_and_unsupported_zero_amount_items(self):
         normalized = _normalize(

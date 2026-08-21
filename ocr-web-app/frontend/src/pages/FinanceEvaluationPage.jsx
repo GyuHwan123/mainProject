@@ -117,11 +117,63 @@ function OcrSheetPreview({ pages, text }) {
   return <div className="ocr-sheet-mini"><table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
+function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
+  const imageRef = useRef(null);
+  const [imageSize, setImageSize] = useState({ naturalWidth: 0, naturalHeight: 0, width: 0, height: 0 });
+  const items = Array.isArray(pages?.[0]?.items) ? pages[0].items : [];
+
+  useEffect(() => {
+    const image = imageRef.current;
+    if (!image) return undefined;
+    const updateSize = () => setImageSize({
+      naturalWidth: image.naturalWidth || 0,
+      naturalHeight: image.naturalHeight || 0,
+      width: image.clientWidth || 0,
+      height: image.clientHeight || 0,
+    });
+    updateSize();
+    const observer = new ResizeObserver(updateSize);
+    observer.observe(image);
+    return () => observer.disconnect();
+  }, [preview?.url, expanded]);
+
+  const boxes = imageSize.naturalWidth > 0 ? items.map((item, index) => {
+    const points = Array.isArray(item?.bbox) ? item.bbox : [];
+    const xs = points.map((point) => Number(point?.[0])).filter(Number.isFinite);
+    const ys = points.map((point) => Number(point?.[1])).filter(Number.isFinite);
+    if (!xs.length || !ys.length) return null;
+    const x0 = Math.max(0, Math.min(...xs)); const y0 = Math.max(0, Math.min(...ys));
+    const x1 = Math.min(imageSize.naturalWidth, Math.max(...xs)); const y1 = Math.min(imageSize.naturalHeight, Math.max(...ys));
+    const boxWidth = x1 - x0; const boxHeight = y1 - y0;
+    if (boxWidth <= 0 || boxHeight <= 0) return null;
+    if (boxHeight > imageSize.naturalHeight * .2 || boxWidth * boxHeight > imageSize.naturalWidth * imageSize.naturalHeight * .18) return null;
+    return {
+      key: `${index}-${item.text || ''}`,
+      text: String(item.text || '').trim(),
+      left: x0 / imageSize.naturalWidth * imageSize.width,
+      top: y0 / imageSize.naturalHeight * imageSize.height,
+      width: Math.max(boxWidth / imageSize.naturalWidth * imageSize.width, 2),
+      height: Math.max(boxHeight / imageSize.naturalHeight * imageSize.height, 2),
+    };
+  }).filter(Boolean) : [];
+
+  return <div className={`ocr-boxed-image ${expanded ? 'expanded' : ''}`} style={imageSize.width ? { width: imageSize.width, height: imageSize.height } : undefined} onClick={expanded ? (event) => event.stopPropagation() : undefined}>
+    <img ref={imageRef} src={preview.url} alt={alt} draggable="false" onLoad={(event) => setImageSize({
+      naturalWidth: event.currentTarget.naturalWidth,
+      naturalHeight: event.currentTarget.naturalHeight,
+      width: event.currentTarget.clientWidth,
+      height: event.currentTarget.clientHeight,
+    })} />
+    {boxes.map((box) => <span className="eval-bbox-overlay" key={box.key} title={box.text || 'OCR 감지 영역'} style={{ left: box.left, top: box.top, width: box.width, height: box.height }} />)}
+    {!!boxes.length && <em className="ocr-box-count">OCR {boxes.length}개</em>}
+  </div>;
+}
+
 function PipelineLoading({ progress, models, imagePreview }) {
   return models.map((model) => <article className="model-pipeline-result pipeline-loading-result" key={`loading-${model}`}>
     <header><div><small>FINAL SERVICE</small><h2>{model}</h2></div><span className="pipeline-stage-label">{progress.stage === 'ocr' ? 'OCR 처리 중' : 'LLM 구조화 및 Excel 생성 중'}</span></header>
     <div className="pipeline-boxes">
-      <section><h3>1. 입력 이미지</h3><div className="image-mini">{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={progress.document_name} /> : <span className="eval-preview-empty">{progress.document_name}</span>}</div></section>
+      <section><h3>1. 입력 이미지 · OCR 박스</h3><div className="image-mini">{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={progress.ocr_pages} alt={progress.document_name} /> : <span className="eval-preview-empty">{progress.document_name}</span>}</div></section>
       <section><h3>2. OCR Excel형 워크시트</h3>{progress.stage === 'ocr' ? <div className="pipeline-loader"><i /><strong>OCR 결과를 추출하고 있습니다.</strong><span>문자와 표 위치를 분석하는 중입니다.</span></div> : <OcrSheetPreview pages={progress.ocr_pages} text={progress.ocr_text} />}</section>
       <section><h3>3. LLM 구조화 · Excel 결과</h3><div className="pipeline-loader"><i /><strong>{progress.stage === 'ocr' ? 'OCR 완료 후 LLM을 실행합니다.' : `${model} 응답을 기다리고 있습니다.`}</strong><span>{progress.stage === 'ocr' ? 'OCR 처리 대기' : '품목을 구조화하고 Excel을 생성하는 중입니다.'}</span></div></section>
     </div>
@@ -141,7 +193,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
       actual: `결과 ${String(field.actual ?? '-')} · 정답 ${String(field.expected ?? '-')}`,
     }));
   const unmatched = fieldMatches.filter((field) => !field.correct);
-  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="입력 이미지 확대"><button type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><img src={imagePreview.url} alt={run.document_name} onClick={(event) => event.stopPropagation()} /></div>}</article>;
+  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
 }
 
 function datasetRows(payload) {

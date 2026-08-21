@@ -473,21 +473,15 @@ def verify_workbook(record: dict[str, Any]) -> dict[str, Any]:
 
 async def evaluate_models(
     *, text: str, filename: str, truth: dict[str, Any], model_names: list[str],
-    qwen_input: tuple[bytes, str] | None = None,
+     qwen_input: tuple[bytes, str] | None = None,
+    pages: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     truth = normalize_ground_truth(truth)
     results = []
     for model_name in model_names:
         started = perf_counter()
         try:
-            from app.services import qwen_vl_service
-
-            if model_name == qwen_vl_service.model_name():
-                if qwen_input is None:
-                    raise ValueError("Qwen-VL evaluation requires the original receipt image")
-                pure = await qwen_vl_service.predict_receipt(qwen_input[0], qwen_input[1], filename)
-            else:
-                pure = await _classify_receipt_with_model(text, filename, model_name)
+            pure = await _classify_receipt_with_model(text, filename, model_name)
             latency_ms = round((perf_counter() - started) * 1000)
             system = _normalize(dict(pure), filename, text)
             system_prediction = {field: system.get(field) for field in CORE_FIELDS}

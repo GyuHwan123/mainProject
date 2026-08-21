@@ -1,3 +1,4 @@
+import json
 from time import perf_counter
 from typing import Any
 
@@ -7,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
 from app.api.routes.chatbot import generate
+from app.api.routes.finance import _receipt_hints, _receipt_item_candidates
 from app.core.config import settings
 from app.models.user import User
 from app.services.finance_evaluation_service import (
@@ -133,6 +135,33 @@ def evaluate_existing_finance_record(
     }
 
 
+def _evaluation_question_prompt(
+    text: str,
+    question: str,
+    pages: list[dict[str, Any]] | None,
+    filename: str,
+) -> str:
+    return f"""당신은 영수증 분석 도우미입니다. 아래 OCR 근거만 사용자의 질문에 한국어로 답하세요.
+- OCR 원문에 없는 내용은 추측하지 마세요.
+- 금액, 날짜, 상호, 품목은 OCR 표기를 가능한 그대로 사용하세요.
+- 품목 행 후보를 하나씩 검토하고 합계·세금·결제 행은 상품에서 제외하세요.
+- 금액 관계가 GROSS_MINUS_DISCOUNT_EQUALS_PAID이면 할인액을 부가세로 해석하지 마세요.
+- 답을 찾을 수 없으면 OCR 원문에서 확인할 수 없다고 명확히 답하세요.
+
+[코드 힌트]
+{json.dumps(_receipt_hints(text, filename), ensure_ascii=False)}
+
+[품목 행 후보]
+{json.dumps(_receipt_item_candidates(pages), ensure_ascii=False)}
+
+[OCR 원문]
+{text[:6000]}
+
+[공통 질문]
+{question}
+"""
+
+
 @router.post("/ask")
 async def ask_evaluated_models(
     payload: FinanceEvaluationQuestionRequest,
@@ -143,17 +172,8 @@ async def ask_evaluated_models(
     if not text:
         raise HTTPException(status_code=422, detail="질문할 OCR 텍스트가 없습니다.")
     model_names = list(dict.fromkeys(name.strip() for name in payload.model_names if name.strip()))
-    prompt = f"""당신은 영수증 분석 도우미입니다. 아래 OCR 원문만 근거로 사용자의 질문에 한국어로 답하세요.
-- OCR 원문에 없는 내용은 추측하지 마세요.
-- 금액, 날짜, 상호, 품목은 OCR 표기를 가능한 그대로 사용하세요.
-- 답을 찾을 수 없으면 OCR 원문에서 확인할 수 없다고 명확히 답하세요.
-
-[OCR 원문]
-{text[:12000]}
-
-[공통 질문]
-{payload.question}
-"""
+    pages = document.get("bounding_boxes") or []
+    prompt = _evaluation_question_prompt(text, payload.question, pages, document.get("file_name") or "receipt")
 
     async def ask_model(model_name: str) -> dict[str, Any]:
         started = perf_counter()
@@ -216,5 +236,6 @@ async def run_finance_evaluation(
             truth=payload.ground_truth,
             model_names=model_names,
             qwen_input=qwen_input,
+            pages=document.get("bounding_boxes") or [],
         ),
     }

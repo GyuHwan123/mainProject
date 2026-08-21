@@ -22,7 +22,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(statuses["payment_method"], "LLM_RECOVERY")
         self.assertEqual(impact["counts"]["LIKELY_LLM_ERROR"], 1)
 
-    def test_normalizes_korean_ground_truth_without_category_classification(self):
+    def test_normalizes_korean_ground_truth_for_selection_rubric(self):
         truth = normalize_ground_truth({
             "image": "receipt_001.jpg",
             "가게명": "(주)바늘이야기-팝업스토어",
@@ -42,11 +42,14 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(truth["transaction_date"], "2025-12-14")
         self.assertEqual(truth["total_amount"], 81300)
         self.assertEqual(truth["payment_method"], "현금")
+        self.assertEqual(truth["total_quantity"], 7)
+        self.assertEqual(truth["expense_category"], "취미/쇼핑")
+        self.assertIsNone(truth["discount_amount"])
+        self.assertIsNone(truth["card_number"])
         self.assertEqual(truth["items"][1], {
             "name": "알파카 실", "unit_price": 12600, "quantity": 6, "total_amount": 75600,
         })
         self.assertNotIn("document_type", truth)
-        self.assertNotIn("expense_category", truth)
 
     def test_scores_model_schema_against_normalized_korean_truth(self):
         truth = normalize_ground_truth({
@@ -59,7 +62,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         })
         score = score_fields({
             "document_type": "PURCHASE_REQUEST",
-            "expense_category": "비품",
+            "expense_category": "취미/쇼핑",
             "merchant": "테스트 상점",
             "transaction_date": "2025-12-14",
             "total_amount": 6000,
@@ -67,10 +70,34 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             "items": [{"name": "상품", "unit_price": 6000.0, "quantity": 1.0, "total_amount": 6000}],
         }, truth)
 
-        self.assertEqual(score["evaluated_fields"], 9)
-        self.assertEqual(score["correct_fields"], 9)
+        self.assertEqual(score["evaluated_fields"], 11)
+        self.assertEqual(score["correct_fields"], 11)
         self.assertNotIn("document_type", score["fields"])
-        self.assertNotIn("expense_category", score["fields"])
+        self.assertIn("expense_category", score["fields"])
+
+    def test_calculates_test01_test20_weighted_selection_rubric(self):
+        truth = normalize_ground_truth({
+            "가게명": "테스트 상점", "구매일자": "2025-10-03", "총 물품 수량": 1,
+            "총 결제액": 6000, "카테고리": "식비", "결제방식": "카드", "카드번호": None,
+            "구매물품": [{"상품명": "국수", "단가": 6000, "수량": 1, "금액": 6000}],
+        })
+        prediction = {
+            "merchant": "테스트 상점", "transaction_date": "2025-10-03", "total_quantity": 1,
+            "discount_amount": None, "total_amount": 6000, "expense_category": "식비",
+            "payment_method": "신한카드", "card_number": None,
+            "items": [{"name": "국수", "unit_price": 6000, "quantity": 1, "total_amount": 6000}],
+        }
+        raw = {
+            "image": "test01.jpg", "merchant": "테스트 상점", "transaction_date": "2025-10-03",
+            "items": prediction["items"], "total_quantity": 1, "total_amount": 6000,
+            "expense_category": "식비", "payment_method": "신한카드", "card_number": None,
+        }
+
+        rubric = score_fields(prediction, truth, raw)["selection_rubric"]
+
+        self.assertEqual(rubric["extraction_score"], 95)
+        self.assertEqual(rubric["schema_rate"], 1)
+        self.assertTrue(rubric["total_amount_correct"])
 
     def test_scores_only_truth_fields_and_normalizes_text(self):
         score = score_fields(

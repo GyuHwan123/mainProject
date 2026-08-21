@@ -15,8 +15,12 @@ from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, 
 CORE_FIELDS = (
     "document_type", "expense_category", "merchant", "transaction_date",
     "supply_amount", "tax_amount", "total_amount", "payment_method",
+    "total_quantity", "discount_amount", "card_number",
 )
-NUMBER_FIELDS = {"supply_amount", "tax_amount", "total_amount", "quantity", "unit_price"}
+NUMBER_FIELDS = {
+    "supply_amount", "tax_amount", "total_amount", "quantity", "unit_price",
+    "total_quantity", "discount_amount",
+}
 
 # Explicit receipt-domain aliases keep evaluation deterministic while allowing
 # equivalent item names written in different languages. Keys are compacted by
@@ -67,12 +71,21 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
 
     korean_to_english = {
         "가게명": "merchant",
+        "총 물품 수량": "total_quantity",
+        "할인액": "discount_amount",
         "총 결제액": "total_amount",
+        "카테고리": "expense_category",
         "결제방식": "payment_method",
+        "카드번호": "card_number",
     }
     for korean_key, english_key in korean_to_english.items():
         if english_key not in normalized and korean_key in truth:
             normalized[english_key] = truth[korean_key]
+
+    # 할인액은 선택 필드다. 정답에서 생략된 경우 모델도 값을 만들지
+    # 않았는지 평가할 수 있도록 명시적인 null로 정규화한다.
+    if "discount_amount" not in normalized:
+        normalized["discount_amount"] = None
 
     raw_date = truth.get("transaction_date", truth.get("구매일자"))
     if raw_date is not None:
@@ -141,6 +154,8 @@ def _canonical(field: str, value: Any) -> Any:
         for descriptor in MERCHANT_IGNORED_DESCRIPTORS:
             text = text.replace(descriptor, "")
         return re.sub(r"[^0-9a-z가-힣]", "", text)
+    if field == "card_number":
+        return re.sub(r"[^0-9*]", "", text)
     return text
 
 
@@ -149,6 +164,9 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
     actual = _canonical(field, actual_value)
     if expected == actual:
         return True
+    if field == "card_number" and expected and actual:
+        expected_pattern = "".join("." if char == "*" else re.escape(char) for char in str(expected))
+        return re.fullmatch(expected_pattern, str(actual)) is not None
     if field == "merchant" and expected and actual:
         if min(len(str(expected)), len(str(actual))) < 4:
             return False
@@ -198,7 +216,104 @@ def _match_items(expected_items: list[dict[str, Any]], predicted_items: list[dic
     return matches
 
 
-def score_fields(prediction: dict[str, Any], truth: dict[str, Any]) -> dict[str, Any]:
+def _empty(value: Any) -> bool:
+    return value is None or value == "" or value == []
+
+
+def _selection_rubric(
+    prediction: dict[str, Any], truth: dict[str, Any], raw_prediction: dict[str, Any] | None,
+) -> dict[str, Any]:
+    expected_items = truth.get("items") if isinstance(truth.get("items"), list) else []
+    predicted_items = prediction.get("items") if isinstance(prediction.get("items"), list) else []
+    item_matches = _match_items(expected_items, predicted_items)
+
+    true_names = sum(
+        _values_match("name", expected.get("name"), predicted_items[actual_index].get("name"))
+        for index, expected in enumerate(expected_items)
+        if (actual_index := item_matches.get(index)) is not None and "name" in expected
+    )
+    if not expected_items and not predicted_items:
+        name_f1 = 1.0
+    else:
+        precision = true_names / len(predicted_items) if predicted_items else 0.0
+        recall = true_names / len(expected_items) if expected_items else 0.0
+        name_f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+
+    def item_accuracy(field: str) -> float:
+        if not expected_items:
+            return 1.0 if not predicted_items else 0.0
+        correct = 0
+        for index, expected in enumerate(expected_items):
+            actual_index = item_matches.get(index)
+            if actual_index is not None and _values_match(field, expected.get(field), predicted_items[actual_index].get(field)):
+                correct += 1
+        return correct / len(expected_items)
+
+    def field_accuracy(field: str) -> float:
+        expected = truth.get(field)
+        actual = prediction.get(field)
+        if field == "discount_amount" and _empty(expected):
+            return 1.0 if _empty(actual) else 0.0
+        return float(_values_match(field, expected, actual))
+
+    components = {
+        "merchant": {"score": field_accuracy("merchant"), "weight": 5},
+        "transaction_date": {"score": field_accuracy("transaction_date"), "weight": 5},
+        "total_quantity": {"score": field_accuracy("total_quantity"), "weight": 4},
+        "discount_amount": {"score": field_accuracy("discount_amount"), "weight": 4},
+        "total_amount": {"score": field_accuracy("total_amount"), "weight": 10},
+        "payment_method": {"score": field_accuracy("payment_method"), "weight": 3},
+        "card_number": {"score": field_accuracy("card_number"), "weight": 4},
+        "item_name_f1": {"score": name_f1, "weight": 12},
+        "item_unit_price": {"score": item_accuracy("unit_price"), "weight": 8},
+        "item_quantity": {"score": item_accuracy("quantity"), "weight": 7},
+        "item_total_amount": {"score": item_accuracy("total_amount"), "weight": 8},
+        "category": {"score": field_accuracy("expense_category"), "weight": 10},
+    }
+
+    raw = raw_prediction or prediction
+    schema_checks = [
+        "image" in raw or "source_filename" in raw,
+        "merchant" in raw,
+        "transaction_date" in raw,
+        isinstance(raw.get("items"), list),
+        "total_quantity" in raw or isinstance(raw.get("receipt_summary"), dict),
+        "total_amount" in raw,
+        "expense_category" in raw,
+        "payment_method" in raw,
+        "card_number" in raw,
+    ]
+    schema_rate = sum(schema_checks) / len(schema_checks)
+    components["json_schema"] = {"score": schema_rate, "weight": 10}
+
+    hallucinations = 0
+    stability_targets = ("merchant", "discount_amount", "payment_method", "card_number")
+    for field in stability_targets:
+        if _empty(truth.get(field)) and not _empty(prediction.get(field)):
+            hallucinations += 1
+    if not expected_items and predicted_items:
+        hallucinations += len(predicted_items)
+    stability_rate = 1.0 if hallucinations == 0 else 0.0
+    components["stability"] = {"score": stability_rate, "weight": 5}
+
+    for component in components.values():
+        component["points"] = component["score"] * component["weight"]
+    extraction_score = sum(component["points"] for component in components.values())
+    return {
+        "version": "test01-test20-v1",
+        "max_extraction_score": 95,
+        "extraction_score": extraction_score,
+        "extraction_rate": extraction_score / 95,
+        "schema_rate": schema_rate,
+        "total_amount_correct": bool(components["total_amount"]["score"]),
+        "hallucination_count": hallucinations,
+        "components": components,
+    }
+
+
+def score_fields(
+    prediction: dict[str, Any], truth: dict[str, Any], raw_prediction: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     details = {}
     evaluated = 0
     correct = 0
@@ -243,6 +358,7 @@ def score_fields(prediction: dict[str, Any], truth: dict[str, Any]) -> dict[str,
         "field_accuracy": correct / evaluated if evaluated else 0,
         "complete_match": bool(evaluated) and correct == evaluated,
         "fields": details,
+        "selection_rubric": _selection_rubric(prediction, truth, raw_prediction),
     }
 
 
@@ -367,8 +483,17 @@ async def evaluate_models(
             latency_ms = round((perf_counter() - started) * 1000)
             system = _normalize(dict(pure), filename, text)
             system_prediction = {field: system.get(field) for field in CORE_FIELDS}
-            system_prediction["items"] = (system.get("structured_data") or {}).get("items") or []
-            system_score = score_fields(system_prediction, truth)
+            structured = system.get("structured_data") or {}
+            system_prediction["items"] = structured.get("items") or []
+            summary = structured.get("receipt_summary") if isinstance(structured.get("receipt_summary"), dict) else {}
+            system_prediction["total_quantity"] = (
+                structured.get("total_quantity")
+                if structured.get("total_quantity") is not None
+                else summary.get("stated_total_quantity")
+            )
+            system_prediction["discount_amount"] = structured.get("discount_amount")
+            system_prediction["card_number"] = structured.get("card_number")
+            system_score = score_fields(system_prediction, truth, pure)
             results.append({
                 "model_name": model_name,
                 "success": True,

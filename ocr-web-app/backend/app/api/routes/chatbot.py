@@ -12,7 +12,6 @@ from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
 
 router = APIRouter()
 MODEL_NAME = settings.RAG_LLM_MODEL
-LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 
 
 class ChatMessage(BaseModel):
@@ -90,22 +89,20 @@ async def generate(
     if json_format:
         payload["format"] = "json"
 
-    urls = list(dict.fromkeys([settings.OLLAMA_BASE_URL.rstrip("/"), LOCAL_OLLAMA_URL]))
-    last_error: Exception | None = None
-    for base_url in urls:
-        try:
-            async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
-                response = await client.post("/api/generate", json=payload)
-                response.raise_for_status()
-                answer = response.json().get("response", "").strip()
-                if not answer:
-                    raise ValueError("empty model response")
-                return answer
-        except (httpx.HTTPError, ValueError) as exc:
-            last_error = exc
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+            response = await client.post("/api/generate", json=payload)
+            response.raise_for_status()
+            answer = response.json().get("response", "").strip()
+            if not answer:
+                raise ValueError("empty model response")
+            return answer
+    except (httpx.HTTPError, ValueError) as exc:
+        last_error = exc
     raise HTTPException(
         status_code=503,
-        detail="Gemma2 모델에 연결할 수 없습니다. Ollama 실행 상태와 gemma2:2b 설치 여부를 확인해 주세요.",
+        detail=f"Ollama 모델 {payload['model']}에 연결할 수 없습니다. {base_url}의 실행 상태와 모델 설치 여부를 확인해 주세요.",
     ) from last_error
 
 
@@ -194,15 +191,14 @@ async def chatbot_status() -> dict[str, Any]:
         "top_k": settings.RAG_TOP_K,
         "chunk_target_chars": settings.RAG_CHUNK_TARGET_CHARS,
     }
-    urls = list(dict.fromkeys([settings.OLLAMA_BASE_URL.rstrip("/"), LOCAL_OLLAMA_URL]))
-    for base_url in urls:
-        try:
-            async with httpx.AsyncClient(base_url=base_url, timeout=5) as client:
-                response = await client.get("/api/tags")
-                response.raise_for_status()
-                models = [model.get("name", "") for model in response.json().get("models", [])]
-            if any(name.startswith(MODEL_NAME) for name in models):
-                return {"ready": True, **configuration}
-        except httpx.HTTPError:
-            continue
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=5) as client:
+            response = await client.get("/api/tags")
+            response.raise_for_status()
+            models = [model.get("name", "") for model in response.json().get("models", [])]
+        if any(name.startswith(MODEL_NAME) for name in models):
+            return {"ready": True, **configuration}
+    except httpx.HTTPError:
+        pass
     return {"ready": False, **configuration}

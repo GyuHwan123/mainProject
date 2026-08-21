@@ -89,8 +89,11 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         })
         self.assertTrue(result["success"])
         self.assertEqual(result["active_sheet"], "경비지출결의서")
-        self.assertEqual(result["preview"]["headers"][0:3], ["No", "결제일시", "상호명(가맹점)"])
-        self.assertEqual(result["preview"]["rows"][0][2], "테스트카페")
+        self.assertEqual(result["preview"]["headers"][0:4], ["영수증 ID", "품목 순번", "결제일시", "상호명(가맹점)"])
+        self.assertEqual(result["preview"]["rows"][0][3], "테스트카페")
+        self.assertIn("경비지출결의서", result["sheet_previews"])
+        self.assertIn("영수증요약", result["sheet_previews"])
+        self.assertEqual(result["sheet_previews"]["영수증요약"]["headers"][0], "영수증 ID")
 
     def test_scores_receipt_items(self):
         score = score_fields(
@@ -128,6 +131,42 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
 
         self.assertEqual(score["correct_fields"], 1)
         self.assertTrue(score["complete_match"])
+
+    def test_treats_card_issuer_name_and_card_as_same_payment_method(self):
+        score = score_fields(
+            {"payment_method": "신한카드"},
+            {"payment_method": "카드"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
+    def test_keeps_issuer_check_card_distinct_from_credit_card(self):
+        score = score_fields(
+            {"payment_method": "신한체크카드"},
+            {"payment_method": "카드"},
+        )
+
+        self.assertEqual(score["correct_fields"], 0)
+        self.assertFalse(score["complete_match"])
+
+    def test_treats_aladin_used_bookstore_name_as_same_merchant(self):
+        score = score_fields(
+            {"merchant": "알라딘 합정점"},
+            {"merchant": "알라딘 중고서점 합정점"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
+    def test_does_not_ignore_aladin_branch_name(self):
+        score = score_fields(
+            {"merchant": "알라딘 강남점"},
+            {"merchant": "알라딘 중고서점 합정점"},
+        )
+
+        self.assertEqual(score["correct_fields"], 0)
+        self.assertFalse(score["complete_match"])
 
     def test_matches_items_independent_of_order_and_allows_similar_names(self):
         score = score_fields(
@@ -197,6 +236,30 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         score = score_fields(
             {"items": [{"name": "NAIL SALON"}]},
             {"items": [{"name": "미용 서비스"}]},
+        )
+
+        self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_allows_minor_merchant_ocr_typo_and_corporate_notation(self):
+        score = score_fields(
+            {"merchant": "주)바늘이야기-법업스토어"},
+            {"merchant": "(주)바늘이야기-팝업스토어"},
+        )
+
+        self.assertTrue(score["complete_match"])
+
+    def test_matches_item_across_word_order_bilingual_and_descriptor_differences(self):
+        score = score_fields(
+            {"items": [{"name": "알파카 페루 베텔린 스카프(Brushed Alpaca Peru)"}]},
+            {"items": [{"name": "[DIY] 브러쉬드 알파카 페루 베텔린 스카프 (도안)"}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_keeps_different_numeric_product_variants_strict(self):
+        score = score_fields(
+            {"items": [{"name": "케이블 2m"}]},
+            {"items": [{"name": "케이블 3m"}]},
         )
 
         self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])

@@ -58,9 +58,14 @@ function OcrImpact({ impact }) {
 }
 
 function ExcelMiniPreview({ workbook }) {
-  const preview = workbook?.preview;
+  const sheetPreviews = workbook?.sheet_previews || {};
+  const sheetNames = Object.keys(sheetPreviews);
+  const initialSheet = workbook?.active_sheet || sheetNames[0] || '';
+  const [selectedSheet, setSelectedSheet] = useState(initialSheet);
+  useEffect(() => { setSelectedSheet(initialSheet); }, [initialSheet]);
+  const preview = sheetPreviews[selectedSheet] || workbook?.preview;
   if (!preview) return <div className="eval-preview-empty">Excel 미리보기가 없습니다.</div>;
-  return <div className="excel-mini"><div className="excel-mini-title"><strong>{workbook.active_sheet}</strong><span>{workbook.success ? '생성 정상' : '생성 실패'}</span></div><div className="excel-mini-scroll"><table><thead><tr>{(preview.headers || []).map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr></thead><tbody>{(preview.rows || []).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}>{String(cell ?? '')}</td>)}</tr>)}</tbody></table></div></div>;
+  return <div className="excel-mini"><div className="excel-mini-title"><div className="excel-sheet-tabs">{sheetNames.length ? sheetNames.map((sheetName) => <button className={sheetName === selectedSheet ? 'active' : ''} type="button" key={sheetName} onClick={() => setSelectedSheet(sheetName)}>{sheetName}</button>) : <strong>{workbook.active_sheet}</strong>}</div><span>{workbook.success ? '생성 정상' : '생성 실패'}</span></div><div className="excel-mini-scroll"><table><thead><tr>{(preview.headers || []).map((header, index) => <th key={`${header}-${index}`}>{header}</th>)}</tr></thead><tbody>{(preview.rows || []).map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, columnIndex) => <td key={columnIndex}>{String(cell ?? '')}</td>)}</tr>)}</tbody></table></div></div>;
 }
 
 function columnLabel(index) {
@@ -111,20 +116,40 @@ function OcrSheetPreview({ pages, text }) {
   return <div className="ocr-sheet-mini"><table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
+function PipelineLoading({ progress, models, imagePreview }) {
+  return models.map((model) => <article className="model-pipeline-result pipeline-loading-result" key={`loading-${model}`}>
+    <header><div><small>FINAL SERVICE</small><h2>{model}</h2></div><span className="pipeline-stage-label">{progress.stage === 'ocr' ? 'OCR 처리 중' : 'LLM 구조화 및 Excel 생성 중'}</span></header>
+    <div className="pipeline-boxes">
+      <section><h3>1. 입력 이미지</h3><div className="image-mini">{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={progress.document_name} /> : <span className="eval-preview-empty">{progress.document_name}</span>}</div></section>
+      <section><h3>2. OCR Excel형 워크시트</h3>{progress.stage === 'ocr' ? <div className="pipeline-loader"><i /><strong>OCR 결과를 추출하고 있습니다.</strong><span>문자와 표 위치를 분석하는 중입니다.</span></div> : <OcrSheetPreview pages={progress.ocr_pages} text={progress.ocr_text} />}</section>
+      <section><h3>3. LLM 구조화 · Excel 결과</h3><div className="pipeline-loader"><i /><strong>{progress.stage === 'ocr' ? 'OCR 완료 후 LLM을 실행합니다.' : `${model} 응답을 기다리고 있습니다.`}</strong><span>{progress.stage === 'ocr' ? 'OCR 처리 대기' : '품목을 구조화하고 Excel을 생성하는 중입니다.'}</span></div></section>
+    </div>
+  </article>);
+}
+
 function ModelPipelineResult({ run, result, imagePreview }) {
   const [imageOpen, setImageOpen] = useState(false);
   const score = result.system?.score || {};
   const impact = result.system?.ocr_impact;
   const workbook = result.system?.workbook;
   const fieldMatches = flattenedMatches(score);
-  const matched = fieldMatches.filter((field) => field.correct);
+  const matched = fieldMatches
+    .filter((field) => field.correct)
+    .map((field) => ({
+      ...field,
+      actual: `결과 ${String(field.actual ?? '-')} · 정답 ${String(field.expected ?? '-')}`,
+    }));
   const unmatched = fieldMatches.filter((field) => !field.correct);
   return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <img src={imagePreview.url} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="입력 이미지 확대"><button type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><img src={imagePreview.url} alt={run.document_name} onClick={(event) => event.stopPropagation()} /></div>}</article>;
 }
 
 function datasetRows(payload) {
   if (Array.isArray(payload)) return payload;
-  return payload.receipts || payload.data || payload.items || [];
+  const collection = payload?.receipts || payload?.data;
+  if (Array.isArray(collection)) return collection;
+  const truthKeys = ['ground_truth', 'truth', 'label', 'expected', 'merchant', 'transaction_date', 'total_amount', 'payment_method'];
+  if (Array.isArray(payload?.items) && !truthKeys.some((key) => key in payload)) return payload.items;
+  return payload && typeof payload === 'object' ? [payload] : [];
 }
 
 function truthOf(row) {
@@ -146,6 +171,10 @@ function truthOf(row) {
 
 function nameOf(row) {
   return row?.filename || row?.file_name || row?.image || row?.name || row?.id || '';
+}
+
+function imageNameOf(row) {
+  return row?.image || row?.image_name || row?.filename || row?.file_name || row?.document_name || '';
 }
 
 function normalizedFileName(value) {
@@ -191,6 +220,7 @@ export default function FinanceEvaluationPage() {
   const [question, setQuestion] = useState('');
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHistory, setQuestionHistory] = useState([]);
+  const [pipelineProgress, setPipelineProgress] = useState(null);
 
   const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(runs, model) })), [runs, models]);
   const latestRun = runs[runs.length - 1];
@@ -253,9 +283,12 @@ export default function FinanceEvaluationPage() {
   const runEvaluation = async (file) => {
     if (!file || !dataset.length || loading) return;
     const uploadedName = normalizedFileName(file.name);
-    const matches = dataset
-      .map((row, index) => ({ row, index }))
-      .filter(({ row }) => normalizedFileName(row?.image) === uploadedName);
+    const singleRowWithoutImageKey = dataset.length === 1 && !imageNameOf(dataset[0]);
+    const matches = singleRowWithoutImageKey
+      ? [{ row: dataset[0], index: 0 }]
+      : dataset
+        .map((row, index) => ({ row, index }))
+        .filter(({ row }) => normalizedFileName(imageNameOf(row)) === uploadedName);
     if (!matches.length) {
       setStatus(`매핑 실패: 정답 JSON의 image 키에서 ${file.name}을 찾지 못했습니다.`);
       if (imageRef.current) imageRef.current.value = '';
@@ -272,10 +305,17 @@ export default function FinanceEvaluationPage() {
     setImagePreview({ url: imageUrlRef.current, type: file.type, name: file.name });
     setSelectedIndex(matched.index);
     setQuestionHistory([]);
+    setPipelineProgress({ stage: 'ocr', document_name: file.name, ocr_text: '', ocr_pages: [] });
     setLoading(true); setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
     try {
       const form = new FormData(); form.append('file', file);
       const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', form, { timeout: 360000 });
+      setPipelineProgress({
+        stage: 'llm',
+        document_name: ocr.filename || file.name,
+        ocr_text: (ocr.pages || []).map((page) => page.text || '').join('\n'),
+        ocr_pages: ocr.pages || [],
+      });
       const { data: evaluation } = await apiClient.post('/finance-evaluations/run', {
         document_id: ocr.document_id,
         ground_truth: truthOf(matched.row),
@@ -288,7 +328,7 @@ export default function FinanceEvaluationPage() {
       if (matched.index < dataset.length - 1) setSelectedIndex(matched.index + 1);
     } catch (error) {
       setStatus(error.response?.data?.detail || error.message || '평가에 실패했습니다.');
-    } finally { setLoading(false); if (imageRef.current) imageRef.current.value = ''; }
+    } finally { setPipelineProgress(null); setLoading(false); if (imageRef.current) imageRef.current.value = ''; }
   };
 
   const exportResults = () => {
@@ -332,7 +372,7 @@ export default function FinanceEvaluationPage() {
       <p>{status}</p>
     </section>
 
-    <section className="latest-pipeline-results"><header><div><h2>최근 실행 결과</h2><p>모델별로 입력 이미지, 공통 OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{latestRun?.document_name || '평가 대기'}</span></header>{latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 모델별 처리 화면이 여기에 표시됩니다.</p>}</section>
+    <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>모델별로 입력 이미지, 공통 OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 모델별 처리 화면이 여기에 표시됩니다.</p>}</section>
 
     <section className="common-question-panel"><header><div><h2>모델 공통 질문</h2><p>최근 평가 영수증의 동일한 OCR 원문과 질문을 모든 모델에 전달합니다.</p></div><span>{latestRun ? `${latestRun.results?.length || 0}개 모델` : '평가 후 사용 가능'}</span></header><div className="question-compose"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="예: 이 영수증의 결제 금액과 주요 구매 품목을 알려줘." disabled={!latestRun || questionLoading} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askAllModels(); } }} /><button type="button" disabled={!latestRun || !question.trim() || questionLoading} onClick={askAllModels}>{questionLoading ? '모델 답변 생성 중...' : '모든 모델에 질문'}</button></div><div className="question-history">{questionHistory.map((entry, entryIndex) => <article key={`${entry.asked_at}-${entryIndex}`}><h3>Q. {entry.question}</h3><div>{(entry.answers || []).map((answer) => <section className={answer.success ? '' : 'answer-error'} key={answer.model_name}><header><strong>{answer.model_name}</strong><span>{(Number(answer.latency_ms || 0) / 1000).toFixed(1)}초</span></header><p>{answer.success ? answer.answer : answer.error || '답변 생성 실패'}</p></section>)}</div></article>)}{!questionHistory.length && <p className="eval-empty">평가 완료 후 질문하면 모델별 답변이 나란히 표시됩니다.</p>}</div></section>
 

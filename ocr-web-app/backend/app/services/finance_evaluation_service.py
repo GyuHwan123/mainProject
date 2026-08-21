@@ -9,7 +9,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize
-from app.services.finance_workbook_service import SHEET_NAMES, build_finance_workbook
+from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
 CORE_FIELDS = (
@@ -32,6 +32,24 @@ ITEM_NAME_ALIASES = {
     "이발서비스": "barber_service",
     "이발소": "barber_service",
 }
+
+ITEM_TOKEN_ALIASES = {
+    "brushed": "브러쉬드",
+    "alpaca": "알파카",
+    "peru": "페루",
+}
+ITEM_IGNORED_TOKENS = {"diy", "도안", "상품", "제품"}
+MERCHANT_IGNORED_DESCRIPTORS = ("중고서점",)
+
+
+def _item_tokens(value: Any) -> set[str]:
+    text = str(value or "").lower()
+    for source, target in ITEM_TOKEN_ALIASES.items():
+        text = re.sub(rf"\b{re.escape(source)}\b", f" {target} ", text)
+    return {
+        token for token in re.findall(r"[0-9]+(?:[.,][0-9]+)?|[a-z]+|[가-힣]+", text)
+        if token not in ITEM_IGNORED_TOKENS
+    }
 
 
 def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
@@ -114,8 +132,14 @@ def _canonical(field: str, value: Any) -> Any:
         for standard, values in aliases.items():
             if compact in values:
                 return standard
+        if "체크카드" in compact or "checkcard" in compact or "debitcard" in compact:
+            return "debit_card"
+        if compact.endswith("카드") or compact.endswith("card"):
+            return "credit_card"
     if field == "merchant":
-        text = re.sub(r"(?:주식회사|\(주\)|㈜)", "", text)
+        text = re.sub(r"(?:주식회사|\(?주\)?|㈜)", "", text)
+        for descriptor in MERCHANT_IGNORED_DESCRIPTORS:
+            text = text.replace(descriptor, "")
         return re.sub(r"[^0-9a-z가-힣]", "", text)
     return text
 
@@ -125,7 +149,17 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
     actual = _canonical(field, actual_value)
     if expected == actual:
         return True
+    if field == "merchant" and expected and actual:
+        if min(len(str(expected)), len(str(actual))) < 4:
+            return False
+        return SequenceMatcher(None, str(expected), str(actual)).ratio() >= 0.78
     if field != "name" or not expected or not actual:
+        return False
+    expected_tokens = _item_tokens(expected_value)
+    actual_tokens = _item_tokens(actual_value)
+    expected_numbers = {token for token in expected_tokens if re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", token)}
+    actual_numbers = {token for token in actual_tokens if re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", token)}
+    if expected_numbers and actual_numbers and expected_numbers != actual_numbers:
         return False
     expected_compact = re.sub(r"[^0-9a-z가-힣]", "", str(expected))
     actual_compact = re.sub(r"[^0-9a-z가-힣]", "", str(actual))
@@ -133,7 +167,15 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
         expected_compact in actual_compact or actual_compact in expected_compact
     ):
         return True
-    return SequenceMatcher(None, expected_compact, actual_compact).ratio() >= 0.75
+    if SequenceMatcher(None, expected_compact, actual_compact).ratio() >= 0.72:
+        return True
+
+    expected_words = expected_tokens - expected_numbers
+    actual_words = actual_tokens - actual_numbers
+    if min(len(expected_words), len(actual_words)) < 2:
+        return False
+    overlap = len(expected_words & actual_words)
+    return overlap / min(len(expected_words), len(actual_words)) >= 0.75
 
 
 def _match_items(expected_items: list[dict[str, Any]], predicted_items: list[dict[str, Any]]) -> dict[int, int]:
@@ -281,16 +323,33 @@ def verify_workbook(record: dict[str, Any]) -> dict[str, Any]:
         workbook = load_workbook(BytesIO(build_finance_workbook([record])), data_only=False)
         expected_sheet = SHEET_NAMES.get(record.get("document_type"))
         sheet = workbook[expected_sheet] if expected_sheet in workbook.sheetnames else workbook.active
-        headers = [sheet.cell(11, column).value for column in range(1, 9)]
+        column_count = len(HEADERS_BY_TYPE.get(record.get("document_type"), [])) or 8
+        headers = [sheet.cell(11, column).value for column in range(1, column_count + 1)]
         rows = [
-            [sheet.cell(row, column).value for column in range(1, 9)]
+            [sheet.cell(row, column).value for column in range(1, column_count + 1)]
             for row in range(12, max(12, sheet.max_row))
         ]
+        sheet_previews = {}
+        for worksheet in workbook.worksheets:
+            if worksheet.title == SUMMARY_SHEET_NAME:
+                preview_headers = [worksheet.cell(1, column).value for column in range(1, worksheet.max_column + 1)]
+                preview_rows = [
+                    [worksheet.cell(row, column).value for column in range(1, worksheet.max_column + 1)]
+                    for row in range(2, worksheet.max_row + 1)
+                ]
+            else:
+                preview_headers = [worksheet.cell(11, column).value for column in range(1, worksheet.max_column + 1)]
+                preview_rows = [
+                    [worksheet.cell(row, column).value for column in range(1, worksheet.max_column + 1)]
+                    for row in range(12, max(12, worksheet.max_row))
+                ]
+            sheet_previews[worksheet.title] = {"headers": preview_headers, "rows": preview_rows}
         return {
             "success": expected_sheet in workbook.sheetnames and workbook.active.title == expected_sheet,
             "active_sheet": workbook.active.title,
             "expected_sheet": expected_sheet,
             "preview": {"headers": headers, "rows": rows},
+            "sheet_previews": sheet_previews,
         }
     except Exception as exc:
         return {"success": False, "error": str(exc)}

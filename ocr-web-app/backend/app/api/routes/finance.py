@@ -168,6 +168,14 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
         document_type = "PURCHASE_REQUEST"
 
+    stated_item_count = None
+    item_count_match = re.search(
+        r"총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량[^\d]{0,80}(\d{1,3})\s*[/／]\s*\d{1,3}",
+        text,
+    )
+    if item_count_match:
+        stated_item_count = int(item_count_match.group(1))
+
     return {
         "transaction_date": transaction_date,
         "supply_amount": supply,
@@ -175,11 +183,23 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         "total_amount": total,
         "document_type": document_type,
         "expense_category": expense_category,
+        "stated_item_count": stated_item_count,
     }
 
 
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
+    receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
+    stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    # A lone count of 1 is too easy to confuse with nearby quantity/spec text
+    # such as ``1볼/50g``. Only shorten multi-item output when a count of two
+    # or more is supported by the receipt summary.
+    if stated_item_count >= 2 and len(items) > int(stated_item_count):
+        result["items"] = items[:int(stated_item_count)]
+    if stated_item_count:
+        receipt_summary["stated_item_count"] = int(stated_item_count)
+        result["receipt_summary"] = receipt_summary
     allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
     document_type = str(
         hints.get("document_type")
@@ -218,28 +238,36 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
 
 def _receipt_prompt(text: str, filename: str) -> str:
     hints = _receipt_hints(text, filename)
-    return f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
+    return f"""OCR 영수증을 읽고 JSON 객체 하나만 반환하세요. OCR에 없는 값은 추측하지 말고 null로 작성하세요.
 
-문서 유형은 반드시 다음 중 하나입니다.
-- EXPENSE_REPORT: 일반 경비, 회의비, 식비, 소모품, 접대비, 통신비 등
-- TRAVEL_EXPENSE: 출장 교통, 숙박, 출장 식대와 일비
-- PURCHASE_REQUEST: 비품·장비·소프트웨어 등 구매 또는 구매 요청
-- WELFARE_BENEFIT: 도서, 교육, 의료, 건강검진, 경조사 등 복리후생
+doc_type은 다음 중 하나입니다.
+- EXPENSE_REPORT: 일반 경비
+- TRAVEL_EXPENSE: 출장·교통·숙박
+- PURCHASE_REQUEST: 물품·장비·소프트웨어 구매
+- WELFARE_BENEFIT: 도서·교육·의료·복리후생
 
-필수 JSON 키:
-doc_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
-supply_amount, tax_amount, total_amount, payment_method, description,
-route, location, transport_method, service_type, evidence_status, evidence_type, note,
-items(각 항목은 name, quantity, unit_price, supply_amount, tax_amount, total_amount, note)
+반환 키:
+- 기본: doc_type, expense_category, merchant, transaction_date, supply_amount, tax_amount, total_amount, payment_method, description
+- 선택 정보: route, location, transport_method, service_type, evidence_status, evidence_type, note
+- receipt_summary: stated_item_count, stated_total_quantity, stated_total_amount
+- items 배열: name, specification, quantity, unit, unit_price, supply_amount, tax_amount, total_amount, note
 
 규칙:
-- 문서 유형 키는 반드시 doc_type을 사용하고 document_type이나 다른 이름으로 바꾸지 않습니다.
-- doc_type 값은 EXPENSE_REPORT, TRAVEL_EXPENSE, PURCHASE_REQUEST, WELFARE_BENEFIT 중 하나입니다.
-- OCR에 없는 값을 추측하지 말고 null 또는 빈 배열로 작성합니다.
-- 금액은 쉼표와 통화 기호가 없는 숫자로 작성합니다.
-- 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.
-- 결제금액, 공급가액, 부가세는 서로 검산하고 공급가액 + 부가세 = 결제금액인 조합을 우선합니다.
-- 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
+1. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
+2. 실제 결제된 상품 행만 items에 넣습니다. 소계·합계·세금·할인·쿠폰·안내 문구는 제외합니다.
+3. 먼저 OCR의 `총품목/총수량` 요약에서 총품목 수 N을 찾습니다. N이 있으면 반드시 실제 결제 품목을 N개 찾아 items 길이를 N으로 맞춥니다. N은 수량이 아니라 서로 다른 결제 품목 행의 수입니다.
+4. 품목 구간을 위에서 아래로 읽으며 다음 기준으로 품목을 나눕니다.
+   - 서로 다른 상품명 뒤에 각각 수량·단가·금액 중 하나 이상이 붙으면 별도 품목입니다.
+   - 새 상품명과 새 수량/단가/금액이 시작되면 앞 품목의 설명·규격으로 합치지 않습니다.
+   - 한글명과 영문명이 같은 행 또는 바로 이어진 행에 있고 가격 정보가 한 묶음뿐일 때만 같은 품목으로 합칩니다.
+   - `도안`, `DIY`, `구성품`, 괄호 속 영문명이라는 이유만으로 다른 상품 행을 기존 품목의 specification으로 합치지 않습니다. 실제로 별도 수량·단가·금액이 있으면 독립 품목입니다.
+5. 품목 후보가 N보다 많으면 가격 없는 설명·옵션·증정품·소계 행을 제거합니다. N보다 적으면 기존 품목에 잘못 합친 행 중 별도 상품명과 수량/단가/금액이 있는 행을 다시 분리합니다.
+6. items를 만들기 전에 내부적으로 `품목명 | 수량 | 단가 | 금액` 행을 N개 확정한 뒤 JSON을 작성합니다. 이 확인 과정은 출력하지 않습니다.
+   예: 요약이 `총품목/총수량 2/7`이고 품목 구간에 `스카프 ... 수량 1 ... 금액 6,000`과 `알파카 원사 ... 수량 6 ... 단가 12,600`이 있으면, 원사를 스카프의 재료나 규격으로 합치지 말고 items를 정확히 2개로 만듭니다.
+7. receipt_summary는 OCR의 총품목·총수량·총구매금액 표시를 그대로 옮깁니다. 표시가 없으면 null이며 items로 계산하지 않습니다.
+8. 공급가액 + 부가세 = 결제금액을 우선하고, 품목은 수량 × 단가를 확인합니다.
+9. 별도 청구된 배송비·봉투값은 items에 포함할 수 있습니다.
+10. 파일명과 코드 힌트가 OCR보다 명확한 날짜·금액·업무 목적을 제공하면 힌트를 우선합니다.
 
 [파일명]
 {filename}

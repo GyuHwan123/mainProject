@@ -19,6 +19,7 @@ from app.services.docx_service import extract_docx_text, extract_docx_text_and_i
 from app.services.ocr.ocr_parser import build_ocr_page
 from app.services.preprocess_service import preprocess_image, scale_bbox_to_image
 from app.services.receipt_preprocess_service import PreprocessOptions, preprocess_receipt_image
+from app.services.receipt_table_service import detect_receipt_tables
 from app.services.spreadsheet_service import extract_spreadsheet
 
 
@@ -340,6 +341,9 @@ async def process_ocr(
                                 processed_image.shape,
                                 original_image.shape,
                             )
+                if processing_mode == "receipt":
+                    for page in pages:
+                        page.tables = detect_receipt_tables(page.items) or None
 
         # =================================
         # TEXT_AND_IMAGE

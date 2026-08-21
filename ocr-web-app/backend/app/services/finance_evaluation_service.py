@@ -475,6 +475,7 @@ def verify_workbook(record: dict[str, Any]) -> dict[str, Any]:
 
 async def evaluate_models(
     *, text: str, filename: str, truth: dict[str, Any], model_names: list[str],
+    pages: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     truth = normalize_ground_truth(truth)
     results = []
@@ -482,7 +483,7 @@ async def evaluate_models(
         logger.warning("Finance evaluation model start: model=%s filename=%s", model_name, filename)
         started = perf_counter()
         try:
-            pure = await _classify_receipt_with_model(text, filename, model_name)
+            pure = await _classify_receipt_with_model(text, filename, model_name, pages)
             latency_ms = round((perf_counter() - started) * 1000)
             system = _normalize(dict(pure), filename, text)
             system_prediction = {field: system.get(field) for field in CORE_FIELDS}

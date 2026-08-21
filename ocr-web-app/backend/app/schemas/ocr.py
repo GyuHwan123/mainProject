@@ -12,12 +12,19 @@ class OCRItem(BaseModel):
     column: int | None = None
 
 
+class OCRTable(BaseModel):
+    bbox: list[list[float]]
+    confidence: float
+    rows: list[list[str]]
+
+
 class OCRPage(BaseModel):
     page: int
     text: str
     items: list[OCRItem]
     sheet_name: str | None = None
     rows: list[list[str]] | None = None
+    tables: list[OCRTable] | None = None
 
 
 class OCRResponse(BaseModel):

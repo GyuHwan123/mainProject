@@ -66,6 +66,32 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(hints["total_amount"], 81600)
         self.assertEqual(normalized["total_amount"], 81300)
 
+    def test_removes_payment_summary_and_unsupported_zero_amount_items(self):
+        normalized = _normalize(
+            {
+                "total_amount": 60000,
+                "items": [
+                    {"name": "유니클로(과세)", "quantity": 1, "unit_price": 60000, "total_amount": 60000},
+                    {"name": "카드 결제액", "quantity": 1, "unit_price": 0, "total_amount": 0},
+                    {"name": "승인번호", "quantity": 1},
+                ],
+            },
+            "test01.jpg",
+            "유니클로(과세) 1 60,000 카드 결제액 60,000 승인번호 123456",
+        )
+
+        self.assertEqual(len(normalized["structured_data"]["items"]), 1)
+        self.assertEqual(normalized["structured_data"]["items"][0]["name"], "유니클로(과세)")
+
+    def test_keeps_explicitly_free_item(self):
+        normalized = _normalize(
+            {"items": [{"name": "증정 상품", "quantity": 1, "unit_price": 0, "total_amount": 0}]},
+            "receipt.jpg",
+            "증정 상품 1 0",
+        )
+
+        self.assertEqual(len(normalized["structured_data"]["items"]), 1)
+
     def test_normalizes_trained_doc_type_key_for_internal_workbook_schema(self):
         normalized = _normalize(
             {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통비", "total_amount": 96200},
@@ -108,7 +134,83 @@ class FinanceClassificationTests(unittest.TestCase):
         )
 
         self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_item_count"], 2)
+        self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_total_quantity"], 7)
+        self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_total_amount"], 81300)
         self.assertEqual(normalized["structured_data"]["items"], items[:2])
+
+    def test_postprocesses_summary_rows_and_item_number_formats(self):
+        normalized = _normalize(
+            {
+                "items": [
+                    {"name": " 브러쉬드 알파카 ", "quantity": "6", "unit_price": "12.600"},
+                    {"name": "상품 합계 75,600", "total_amount": "75,600"},
+                    {"name": "https://store.example/item"},
+                ],
+            },
+            "receipt.jpg",
+            "브러쉬드 알파카 6 12.600 상품 합계 75,600",
+        )
+
+        self.assertEqual(normalized["structured_data"]["items"], [
+            {"name": "브러쉬드 알파카", "quantity": 6.0, "unit_price": 12600.0},
+        ])
+
+    def test_recovers_tenant_merchant_when_model_misses_or_uses_mall_name(self):
+        ocr = "Starfield 유니클로(과세) 상품명 주차정산QR코드 http://www.starfield.co.kr"
+
+        missing = _normalize({"merchant": None, "items": []}, "receipt.jpg", ocr)
+        mall = _normalize({"merchant": "Starfield", "items": []}, "receipt.jpg", ocr)
+        misspelled_mall = _normalize({"merchant": "Starfiled", "items": []}, "receipt.jpg", ocr)
+        taxed_brand = _normalize({"merchant": "유니클로(과세)", "items": []}, "receipt.jpg", ocr)
+
+        self.assertEqual(missing["merchant"], "유니클로")
+        self.assertEqual(mall["merchant"], "유니클로")
+        self.assertEqual(misspelled_mall["merchant"], "유니클로")
+        self.assertEqual(taxed_brand["merchant"], "유니클로")
+
+    def test_does_not_override_an_unrelated_merchant_with_tenant_alias(self):
+        normalized = _normalize(
+            {"merchant": "다른 판매점", "items": []},
+            "receipt.jpg",
+            "Starfield 유니클로 안내",
+        )
+
+        self.assertEqual(normalized["merchant"], "다른 판매점")
+
+    def test_recovers_uniqlo_single_item_and_card_payment_from_ocr(self):
+        normalized = _normalize(
+            {"merchant": None, "total_amount": 60000, "items": []},
+            "receipt.jpg",
+            "Starfiled 유니클로(과세) 상품명 카드 승인번호 결제금액 60,000원",
+        )
+
+        self.assertEqual(normalized["merchant"], "유니클로")
+        self.assertEqual(normalized["payment_method"], "카드")
+        self.assertEqual(normalized["structured_data"]["items"], [{
+            "name": "유니클로(과세)",
+            "quantity": 1.0,
+            "unit_price": 60000.0,
+            "total_amount": 60000.0,
+            "note": "OCR 근거 기반 단일 품목 복원",
+        }])
+
+    def test_does_not_infer_card_from_approval_number_alone(self):
+        normalized = _normalize(
+            {"payment_method": None, "items": []},
+            "receipt.jpg",
+            "승인번호 123456 공급가액 3,120 부가세 780",
+        )
+
+        self.assertIsNone(normalized["payment_method"])
+
+    def test_does_not_recover_uniqlo_item_when_receipt_states_multiple_items(self):
+        normalized = _normalize(
+            {"total_amount": 60000, "items": []},
+            "receipt.jpg",
+            "유니클로(과세) 총품목/총수량 2/2 60,000",
+        )
+
+        self.assertEqual(normalized["structured_data"]["items"], [])
 
     def test_does_not_treat_nearby_single_quantity_as_item_count(self):
         ocr = "총품목/총수량 총구매금액\n브러쉬드 알파카 퍼루 1볼/50g"

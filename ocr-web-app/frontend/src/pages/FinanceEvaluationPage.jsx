@@ -14,6 +14,7 @@ const DEFAULT_MODELS = ['llama3b-receipt-v3:latest', 'gemma2:2b', 'finance-gemma
 const LABELS = {
   document_type: '문서 유형', expense_category: '카테고리', merchant: '상호', transaction_date: '날짜',
   supply_amount: '공급가액', tax_amount: '부가세', total_amount: '합계금액', payment_method: '결제수단',
+  total_quantity: '총 물품 수량', discount_amount: '할인액', card_number: '카드번호',
   evaluation_status: '평가 상태',
 };
 const IMPACT_LABELS = {
@@ -192,6 +193,10 @@ function summarize(runs, model) {
   const evaluated = scores.reduce((sum, score) => sum + Number(score.evaluated_fields || 0), 0);
   const correct = scores.reduce((sum, score) => sum + Number(score.correct_fields || 0), 0);
   const sheets = [...new Set(rows.map((result) => result.system?.workbook?.active_sheet).filter(Boolean))];
+  const rubrics = scores.map((score) => score.selection_rubric).filter(Boolean);
+  const extractionScore = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.extraction_score || 0), 0) / rubrics.length : 0;
+  const schemaRate = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.schema_rate || 0), 0) / rubrics.length : 0;
+  const totalAmountRate = rubrics.length ? rubrics.filter((rubric) => rubric.total_amount_correct).length / rubrics.length : 0;
   return {
     documents: rows.length,
     success: rows.filter((row) => row.success).length,
@@ -202,11 +207,15 @@ function summarize(runs, model) {
     sheets,
     correct,
     evaluated,
+    extractionScore,
+    schemaRate,
+    totalAmountRate,
   };
 }
 
 export default function FinanceEvaluationPage() {
   const imageRef = useRef(null);
+  const folderRef = useRef(null);
   const imageUrlRef = useRef('');
   const [runs, setRuns] = useState(readFinanceEvaluationRuns);
   const [dataset, setDataset] = useState([]);
@@ -221,8 +230,26 @@ export default function FinanceEvaluationPage() {
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHistory, setQuestionHistory] = useState([]);
   const [pipelineProgress, setPipelineProgress] = useState(null);
+  const [activeBatchId, setActiveBatchId] = useState('');
+  const [batchComplete, setBatchComplete] = useState(false);
 
-  const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(runs, model) })), [runs, models]);
+  const batchRuns = useMemo(() => activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId) : [], [runs, activeBatchId]);
+  const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(batchRuns, model) })), [batchRuns, models]);
+  const scoredSummaries = useMemo(() => {
+    const measured = summaries.filter((summary) => summary.latency > 0);
+    const fastest = measured.length ? Math.min(...measured.map((summary) => summary.latency)) : 0;
+    return summaries.map((summary) => {
+      const speedScore = fastest && summary.latency ? 3 * fastest / summary.latency : 0;
+      const costScore = summary.documents ? 2 : 0;
+      return {
+        ...summary,
+        speedScore,
+        costScore,
+        finalScore: summary.extractionScore + speedScore + costScore,
+        qualityGate: summary.documents > 0 && summary.schemaRate >= 0.98 && summary.totalAmountRate >= 0.95,
+      };
+    });
+  }, [summaries]);
   const latestRun = runs[runs.length - 1];
 
   useEffect(() => () => {
@@ -280,8 +307,7 @@ export default function FinanceEvaluationPage() {
     } catch (error) { setStatus(`정답 JSON 오류: ${error.message}`); }
   };
 
-  const runEvaluation = async (file) => {
-    if (!file || !dataset.length || loading) return;
+  const matchDatasetRow = (file) => {
     const uploadedName = normalizedFileName(file.name);
     const singleRowWithoutImageKey = dataset.length === 1 && !imageNameOf(dataset[0]);
     const matches = singleRowWithoutImageKey
@@ -289,46 +315,74 @@ export default function FinanceEvaluationPage() {
       : dataset
         .map((row, index) => ({ row, index }))
         .filter(({ row }) => normalizedFileName(imageNameOf(row)) === uploadedName);
-    if (!matches.length) {
-      setStatus(`매핑 실패: 정답 JSON의 image 키에서 ${file.name}을 찾지 못했습니다.`);
-      if (imageRef.current) imageRef.current.value = '';
-      return;
-    }
-    if (matches.length > 1) {
-      setStatus(`매핑 실패: 정답 JSON에 image 값이 ${file.name}인 항목이 ${matches.length}개 있습니다.`);
-      if (imageRef.current) imageRef.current.value = '';
-      return;
-    }
-    const matched = matches[0];
+    if (!matches.length) throw new Error(`정답 JSON의 image 키에서 ${file.name}을 찾지 못했습니다.`);
+    if (matches.length > 1) throw new Error(`정답 JSON에 image 값이 ${file.name}인 항목이 ${matches.length}개 있습니다.`);
+    return matches[0];
+  };
+
+  const evaluateFile = async (file, matched, batchId = '') => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
     imageUrlRef.current = URL.createObjectURL(file);
     setImagePreview({ url: imageUrlRef.current, type: file.type, name: file.name });
     setSelectedIndex(matched.index);
     setQuestionHistory([]);
     setPipelineProgress({ stage: 'ocr', document_name: file.name, ocr_text: '', ocr_pages: [] });
-    setLoading(true); setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
+    const form = new FormData(); form.append('file', file);
+    const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', form, { timeout: 360000 });
+    setPipelineProgress({
+      stage: 'llm', document_name: ocr.filename || file.name,
+      ocr_text: (ocr.pages || []).map((page) => page.text || '').join('\n'), ocr_pages: ocr.pages || [],
+    });
+    const { data: evaluation } = await apiClient.post('/finance-evaluations/run', {
+      document_id: ocr.document_id, ground_truth: truthOf(matched.row), model_names: models,
+    }, { timeout: 1200000 });
+    return {
+      ...evaluation, dataset_name: datasetName, dataset_index: matched.index,
+      matched_image: file.name, evaluated_at: new Date().toISOString(), batch_id: batchId || null,
+    };
+  };
+
+  const runEvaluation = async (file) => {
+    if (!file || !dataset.length || loading) return;
+    setActiveBatchId(''); setBatchComplete(false); setLoading(true);
     try {
-      const form = new FormData(); form.append('file', file);
-      const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', form, { timeout: 360000 });
-      setPipelineProgress({
-        stage: 'llm',
-        document_name: ocr.filename || file.name,
-        ocr_text: (ocr.pages || []).map((page) => page.text || '').join('\n'),
-        ocr_pages: ocr.pages || [],
-      });
-      const { data: evaluation } = await apiClient.post('/finance-evaluations/run', {
-        document_id: ocr.document_id,
-        ground_truth: truthOf(matched.row),
-        model_names: models,
-      }, { timeout: 360000 });
-      const entry = { ...evaluation, dataset_name: datasetName, dataset_index: matched.index, matched_image: file.name, evaluated_at: new Date().toISOString() };
-      const next = [...runs, entry];
-      saveRuns(next);
+      const matched = matchDatasetRow(file);
+      setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
+      const entry = await evaluateFile(file, matched);
+      saveRuns([...runs, entry]);
       setStatus(`${file.name} 자동 매핑 및 평가 완료 · ${matched.index + 1}/${dataset.length}`);
       if (matched.index < dataset.length - 1) setSelectedIndex(matched.index + 1);
     } catch (error) {
-      setStatus(error.response?.data?.detail || error.message || '평가에 실패했습니다.');
-    } finally { setPipelineProgress(null); setLoading(false); if (imageRef.current) imageRef.current.value = ''; }
+      setStatus(`평가 실패: ${error.response?.data?.detail || error.message || '알 수 없는 오류'}`);
+    } finally {
+      setPipelineProgress(null); setLoading(false); if (imageRef.current) imageRef.current.value = '';
+    }
+  };
+
+  const runFolderEvaluation = async (fileList) => {
+    if (!fileList?.length || !dataset.length || loading) return;
+    const files = Array.from(fileList).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
+    if (files.length < 2) {
+      setStatus('폴더 일괄 평가는 정답과 매칭되는 이미지가 2장 이상 필요합니다.');
+      if (folderRef.current) folderRef.current.value = '';
+      return;
+    }
+    const batchId = `batch:${Date.now()}`;
+    setActiveBatchId(batchId); setBatchComplete(false); setQuestionHistory([]); setLoading(true);
+    let accumulated = [...runs]; let completed = 0; const errors = [];
+    for (const file of files) {
+      try {
+        const matched = matchDatasetRow(file);
+        setStatus(`폴더 일괄 평가 ${completed + 1}/${files.length} · ${file.name}`);
+        const entry = await evaluateFile(file, matched, batchId);
+        accumulated = [...accumulated, entry]; saveRuns(accumulated); completed += 1;
+      } catch (error) {
+        errors.push(`${file.name}: ${error.response?.data?.detail || error.message || '평가 실패'}`);
+      }
+    }
+    setPipelineProgress(null); setLoading(false); setBatchComplete(completed >= 2);
+    setStatus(`폴더 일괄 평가 완료 · 성공 ${completed}/${files.length}${errors.length ? ` · 실패 ${errors.length}` : ''}`);
+    if (folderRef.current) folderRef.current.value = '';
   };
 
   const exportResults = () => {
@@ -369,8 +423,26 @@ export default function FinanceEvaluationPage() {
       <label><span>현재 정답 항목</span><select disabled={!dataset.length} value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{dataset.map((row, index) => <option value={index} key={`${nameOf(row)}-${index}`}>{index + 1}. {nameOf(row) || `항목 ${index + 1}`}</option>)}</select></label>
       <button className="eval-upload" disabled={!dataset.length || loading || !models.length || models.some((model) => !installedModels.includes(model))} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : `${models.length || 0}개 모델로 평가 시작`}</button>
       <input ref={imageRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" onChange={(event) => runEvaluation(event.target.files?.[0])} />
+      <button className="eval-upload batch-upload" disabled={!dataset.length || loading || !models.length || models.some((model) => !installedModels.includes(model))} onClick={() => folderRef.current?.click()}>{loading ? '일괄 평가 중...' : '프로젝트 폴더 일괄 평가'}</button>
+      <input ref={folderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => runFolderEvaluation(event.target.files)} />
       <p>{status}</p>
     </section>
+
+    {batchComplete && batchRuns.length > 1 && <section className="eval-summary-grid">
+      {scoredSummaries.map((summary) => <article key={summary.model}>
+        <small>TEST01~TEST20 선정 지표</small><h2 title={summary.model}>{summary.model}</h2>
+        <strong>{summary.finalScore.toFixed(1)}점</strong><p>총점 100 · {summary.qualityGate ? '품질 게이트 통과' : '품질 게이트 재검토'}</p>
+        <dl>
+          <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 95</dd></div>
+          <div><dt>핵심·품목·카테고리·스키마·안정성</dt><dd>{summary.documents}건</dd></div>
+          <div><dt>스키마 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
+          <div><dt>총 결제액 정확도</dt><dd>{(summary.totalAmountRate * 100).toFixed(1)}%</dd></div>
+          <div><dt>평균 응답시간</dt><dd>{(summary.latency / 1000).toFixed(1)}초</dd></div>
+          <div><dt>속도점수</dt><dd>{summary.speedScore.toFixed(2)} / 3</dd></div>
+          <div><dt>로컬 비용점수</dt><dd>{summary.costScore.toFixed(1)} / 2</dd></div>
+        </dl>
+      </article>)}
+    </section>}
 
     <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>모델별로 입력 이미지, 공통 OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 모델별 처리 화면이 여기에 표시됩니다.</p>}</section>
 

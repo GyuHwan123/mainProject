@@ -50,6 +50,22 @@ class FinanceClassificationTests(unittest.TestCase):
         self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
         self.assertEqual(normalized["total_amount"], 31400)
 
+    def test_evidenced_final_amount_is_not_overridden_by_arithmetic_hint(self):
+        ocr = """품목1 6,000
+품목2 75,600
+상품합계 81,600
+최종 결제금액 81,300원"""
+
+        hints = _receipt_hints(ocr, "receipt.jpg")
+        normalized = _normalize(
+            {"total_amount": 81300, "items": []},
+            "receipt.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["total_amount"], 81600)
+        self.assertEqual(normalized["total_amount"], 81300)
+
     def test_normalizes_trained_doc_type_key_for_internal_workbook_schema(self):
         normalized = _normalize(
             {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통비", "total_amount": 96200},

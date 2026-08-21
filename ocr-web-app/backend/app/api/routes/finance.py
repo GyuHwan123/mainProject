@@ -211,9 +211,23 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     ).upper()
     if document_type not in allowed:
         document_type = "EXPENSE_REPORT"
-    supply = hints.get("supply_amount") or _clean_number(result.get("supply_amount"))
-    tax = hints.get("tax_amount") or _clean_number(result.get("tax_amount"))
-    total = hints.get("total_amount") or _clean_number(result.get("total_amount")) or supply + tax
+    def prefer_evidenced_model_amount(field: str) -> float:
+        model_value = _clean_number(result.get(field))
+        hint_value = _clean_number(hints.get(field))
+        # Arithmetic hints can accidentally combine item subtotals. Preserve a
+        # plausible model value when that exact amount is present in OCR; use
+        # the hint only to recover missing, implausibly scaled, or absent data.
+        ocr_values = {
+            _receipt_number(token)
+            for token in re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
+        }
+        if model_value >= 100 and any(abs(model_value - value) < 0.01 for value in ocr_values):
+            return model_value
+        return hint_value or model_value
+
+    supply = prefer_evidenced_model_amount("supply_amount")
+    tax = prefer_evidenced_model_amount("tax_amount")
+    total = prefer_evidenced_model_amount("total_amount") or supply + tax
     transaction_date = hints.get("transaction_date") or str(result.get("transaction_date") or "").strip() or None
     if transaction_date:
         try:
@@ -249,7 +263,7 @@ doc_type은 다음 중 하나입니다.
 - WELFARE_BENEFIT: 도서·교육·의료·복리후생
 
 반환 키:
-- 기본: doc_type, expense_category, merchant, transaction_date, supply_amount, tax_amount, total_amount, payment_method, description
+- 기본: image, doc_type, expense_category, merchant, transaction_date, supply_amount, tax_amount, discount_amount, total_amount, payment_method, card_number, description
 - 선택 정보: route, location, transport_method, service_type, evidence_status, evidence_type, note
 - receipt_summary: stated_item_count, stated_total_quantity, stated_total_amount
 - items 배열: name, specification, quantity, unit, unit_price, supply_amount, tax_amount, total_amount, note
@@ -270,11 +284,11 @@ doc_type은 다음 중 하나입니다.
 8. 공급가액 + 부가세 = 결제금액을 우선하고, 품목은 수량 × 단가를 확인합니다.
 9. 별도 청구된 배송비·봉투값은 items에 포함할 수 있습니다.
 10. 파일명과 코드 힌트가 OCR보다 명확한 날짜·금액·업무 목적을 제공하면 힌트를 우선합니다.
-q
+
 [파일명]
 {filename}
 
-[코드로 복원한 힌트]
+[코드로 복원한 힌트 후보 — OCR과 대조 후 사용]
 {json.dumps(hints, ensure_ascii=False)}
 
 [OCR 텍스트]

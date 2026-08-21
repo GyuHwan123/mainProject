@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     SECRET_KEY: str = "change-me"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 720
     # Local development uses the native Ollama service. Docker Compose overrides
     # this with http://ollama:11434 for container-to-container communication.
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"

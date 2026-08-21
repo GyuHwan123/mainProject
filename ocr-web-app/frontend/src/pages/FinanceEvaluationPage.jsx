@@ -386,14 +386,46 @@ export default function FinanceEvaluationPage() {
   };
 
   const exportResults = () => {
-    const latestRuns = runs.length ? [{
-      ...runs[runs.length - 1],
-      results: (runs[runs.length - 1].results || []).map(({ pure: _pure, ...result }) => result),
-    }] : [];
-    const latestSummaries = models.map((model) => ({ model, ...summarize(latestRuns, model) }));
-    const content = JSON.stringify({ exported_at: new Date().toISOString(), models, summaries: latestSummaries, runs: latestRuns }, null, 2);
+    const isBatchExport = batchComplete && batchRuns.length > 1;
+    const selectedRuns = isBatchExport ? batchRuns : (runs.length ? [runs[runs.length - 1]] : []);
+    const sanitizedRuns = selectedRuns.map((run) => ({
+      ...run, results: (run.results || []).map(({ pure: _pure, ...result }) => result),
+    }));
+    const fieldErrorCounts = {}; const errorCases = [];
+    sanitizedRuns.forEach((run) => (run.results || []).forEach((result) => {
+      flattenedMatches(result.system?.score).filter((field) => !field.correct).forEach((field) => {
+        const key = field.label || field.field;
+        fieldErrorCounts[key] = (fieldErrorCounts[key] || 0) + 1;
+        errorCases.push({
+          dataset_index: Number(run.dataset_index) + 1,
+          image: run.matched_image || run.document_name,
+          model: result.model_name,
+          field: key,
+          actual: field.actual ?? null,
+          expected: field.expected ?? null,
+        });
+      });
+    }));
+    const modelStatistics = (isBatchExport ? scoredSummaries : models.map((model) => ({ model, ...summarize(selectedRuns, model) })))
+      .map((summary) => ({
+        model: summary.model, evaluated_documents: summary.documents, successful_documents: summary.success,
+        extraction_score_95: summary.extractionScore, schema_success_rate: summary.schemaRate,
+        total_amount_accuracy: summary.totalAmountRate, average_latency_ms: summary.latency,
+        speed_score_3: summary.speedScore ?? null, local_cost_score_2: summary.costScore ?? null,
+        final_score_100: summary.finalScore ?? null, quality_gate_passed: summary.qualityGate ?? null,
+      }));
+    const payload = {
+      exported_at: new Date().toISOString(), export_type: isBatchExport ? 'BATCH_STATISTICS' : 'SINGLE_RESULT',
+      batch_id: isBatchExport ? activeBatchId : null, dataset_name: datasetName,
+      evaluated_images: selectedRuns.length, models, model_statistics: modelStatistics,
+      field_error_counts: Object.fromEntries(Object.entries(fieldErrorCounts).sort((a, b) => b[1] - a[1])),
+      error_cases: errorCases, runs: sanitizedRuns,
+    };
+    const content = JSON.stringify(payload, null, 2);
     const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }));
-    const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'finance-model-evaluation.json'; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement('a'); anchor.href = url;
+    anchor.download = isBatchExport ? `finance-model-batch-${selectedRuns.length}-statistics.json` : 'finance-model-evaluation.json';
+    anchor.click(); URL.revokeObjectURL(url);
   };
 
   const askAllModels = async () => {
@@ -415,7 +447,7 @@ export default function FinanceEvaluationPage() {
   };
 
   return <div className="app-shell finance-eval-shell"><Sidebar /><main className="finance-eval-page">
-    <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> 결과 JSON</button></header>
+    <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> {batchComplete && batchRuns.length > 1 ? '일괄 통계 JSON' : '결과 JSON'}</button></header>
     <section className="eval-setup">
       <label><span>정답 데이터</span><input type="file" accept=".json,application/json" onChange={(event) => loadDataset(event.target.files?.[0])} /><small>{datasetName || 'receipt_kr.json을 선택하세요'}</small></label>
       {models.map((model, index) => <label className="model-selector" key={`${model}-${index}`}><span>평가 모델 {index + 1}</span><div><select value={model} onChange={(event) => setModel(index, event.target.value)}>{installedModels.map((name) => <option value={name} key={name} disabled={models.includes(name) && name !== model}>{name}</option>)}</select><button type="button" onClick={() => removeModel(index)} aria-label={`${model} 제거`}>×</button></div></label>)}

@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     RAG_CHUNK_TARGET_CHARS: int = 380
     # Docker Compose overrides this with the internal `ocr` service address.
     OCR_BASE_URL: str = "http://127.0.0.1:8001"
+    # Optional HTTP endpoint serving the fine-tuned Qwen2-VL receipt adapter.
+    # The endpoint accepts JSON containing image_base64, mime_type, filename,
+    # and prompt, and returns either {"result": {...}} or the result object.
+    QWEN_VL_API_URL: str = ""
+    QWEN_VL_API_TOKEN: str = ""
+    QWEN_VL_MODEL_NAME: str = "qwen2-vl-receipt-finetuned"
     CORS_ORIGINS: list[str] = ["http://localhost:3000"]
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""

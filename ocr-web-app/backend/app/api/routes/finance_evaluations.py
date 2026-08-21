@@ -18,6 +18,7 @@ from app.services.finance_evaluation_service import (
     verify_workbook,
 )
 from app.services.supabase_service import supabase_service
+from app.services import qwen_vl_service
 
 
 router = APIRouter()
@@ -70,7 +71,15 @@ async def _installed_ollama_models() -> list[str]:
 async def list_installed_ollama_models(
     _user: User = Depends(require_developer),
 ) -> dict[str, list[str]]:
-    return {"models": await _installed_ollama_models()}
+    try:
+        models = await _installed_ollama_models()
+    except HTTPException:
+        if not qwen_vl_service.is_configured():
+            raise
+        models = []
+    if qwen_vl_service.is_configured():
+        models.append(qwen_vl_service.model_name())
+    return {"models": list(dict.fromkeys(models))}
 
 
 @router.post("/record")
@@ -149,7 +158,13 @@ async def ask_evaluated_models(
     async def ask_model(model_name: str) -> dict[str, Any]:
         started = perf_counter()
         try:
-            answer = await generate(prompt, model_name=model_name, num_predict=700)
+            if model_name == qwen_vl_service.model_name() and qwen_vl_service.is_configured():
+                content, mime_type = supabase_service.download_document(document["file_url"])
+                answer = await qwen_vl_service.generate_with_image(content, mime_type, document.get("file_name") or "receipt", prompt)
+                if not isinstance(answer, str):
+                    answer = str(answer)
+            else:
+                answer = await generate(prompt, model_name=model_name, num_predict=700)
             return {"model_name": model_name, "success": True, "answer": answer, "latency_ms": round((perf_counter() - started) * 1000)}
         except Exception as exc:
             return {"model_name": model_name, "success": False, "answer": "", "error": str(exc), "latency_ms": round((perf_counter() - started) * 1000)}
@@ -175,6 +190,8 @@ async def run_finance_evaluation(
         raise HTTPException(status_code=422, detail="평가할 OCR 텍스트가 없습니다.")
     model_names = list(dict.fromkeys(name.strip() for name in payload.model_names if name.strip()))
     installed_models = await _installed_ollama_models()
+    if qwen_vl_service.is_configured():
+        installed_models.append(qwen_vl_service.model_name())
     unavailable = [name for name in model_names if name not in installed_models]
     if unavailable:
         raise HTTPException(
@@ -183,6 +200,9 @@ async def run_finance_evaluation(
         )
     if not model_names:
         raise HTTPException(status_code=422, detail="평가할 Ollama 모델을 하나 이상 선택해 주세요.")
+    qwen_input = None
+    if qwen_vl_service.model_name() in model_names:
+        qwen_input = supabase_service.download_document(document["file_url"])
     return {
         "document_id": payload.document_id,
         "document_name": document.get("file_name") or "receipt",
@@ -195,5 +215,6 @@ async def run_finance_evaluation(
             filename=document.get("file_name") or "receipt",
             truth=payload.ground_truth,
             model_names=model_names,
+            qwen_input=qwen_input,
         ),
     }

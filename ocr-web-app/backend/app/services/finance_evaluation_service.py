@@ -39,6 +39,7 @@ ITEM_TOKEN_ALIASES = {
     "peru": "페루",
 }
 ITEM_IGNORED_TOKENS = {"diy", "도안", "상품", "제품"}
+MERCHANT_IGNORED_DESCRIPTORS = ("중고서점",)
 
 
 def _item_tokens(value: Any) -> set[str]:
@@ -131,8 +132,14 @@ def _canonical(field: str, value: Any) -> Any:
         for standard, values in aliases.items():
             if compact in values:
                 return standard
+        if "체크카드" in compact or "checkcard" in compact or "debitcard" in compact:
+            return "debit_card"
+        if compact.endswith("카드") or compact.endswith("card"):
+            return "credit_card"
     if field == "merchant":
         text = re.sub(r"(?:주식회사|\(?주\)?|㈜)", "", text)
+        for descriptor in MERCHANT_IGNORED_DESCRIPTORS:
+            text = text.replace(descriptor, "")
         return re.sub(r"[^0-9a-z가-힣]", "", text)
     return text
 

@@ -190,22 +190,21 @@ def extract_document_title(pages: list[dict[str, Any]]) -> tuple[str, list[list[
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    urls = list(dict.fromkeys([settings.OLLAMA_BASE_URL.rstrip("/"), "http://127.0.0.1:11434"]))
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
     last_error: Exception | None = None
-    for base_url in urls:
-        for attempt in range(2):
-            try:
-                async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
-                    response = await client.post("/api/embed", json={"model": EMBEDDING_MODEL, "input": texts, "keep_alive": "30m"})
-                    response.raise_for_status()
-                    embeddings = response.json().get("embeddings") or []
-                    if len(embeddings) != len(texts) or any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
-                        raise ValueError("unexpected embedding dimensions")
-                    return embeddings
-            except (httpx.HTTPError, ValueError) as exc:
-                last_error = exc
-                if attempt == 0:
-                    await asyncio.sleep(0.4)
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+                response = await client.post("/api/embed", json={"model": EMBEDDING_MODEL, "input": texts, "keep_alive": "30m"})
+                response.raise_for_status()
+                embeddings = response.json().get("embeddings") or []
+                if len(embeddings) != len(texts) or any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
+                    raise ValueError("unexpected embedding dimensions")
+                return embeddings
+        except (httpx.HTTPError, ValueError) as exc:
+            last_error = exc
+            if attempt == 0:
+                await asyncio.sleep(0.4)
     raise HTTPException(status_code=503, detail=f"Embedding 모델에 연결할 수 없습니다. Ollama에서 {EMBEDDING_MODEL} 모델의 설치 및 실행 상태를 확인해 주세요.") from last_error
 
 

@@ -132,6 +132,42 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 1)
         self.assertTrue(score["complete_match"])
 
+    def test_treats_card_issuer_name_and_card_as_same_payment_method(self):
+        score = score_fields(
+            {"payment_method": "신한카드"},
+            {"payment_method": "카드"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
+    def test_keeps_issuer_check_card_distinct_from_credit_card(self):
+        score = score_fields(
+            {"payment_method": "신한체크카드"},
+            {"payment_method": "카드"},
+        )
+
+        self.assertEqual(score["correct_fields"], 0)
+        self.assertFalse(score["complete_match"])
+
+    def test_treats_aladin_used_bookstore_name_as_same_merchant(self):
+        score = score_fields(
+            {"merchant": "알라딘 합정점"},
+            {"merchant": "알라딘 중고서점 합정점"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
+    def test_does_not_ignore_aladin_branch_name(self):
+        score = score_fields(
+            {"merchant": "알라딘 강남점"},
+            {"merchant": "알라딘 중고서점 합정점"},
+        )
+
+        self.assertEqual(score["correct_fields"], 0)
+        self.assertFalse(score["complete_match"])
+
     def test_matches_items_independent_of_order_and_allows_similar_names(self):
         score = score_fields(
             {"items": [

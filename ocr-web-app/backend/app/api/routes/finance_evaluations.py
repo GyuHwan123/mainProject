@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.chatbot import LOCAL_OLLAMA_URL, generate
+from app.api.routes.chatbot import generate
 from app.core.config import settings
 from app.models.user import User
 from app.services.finance_evaluation_service import (
@@ -49,22 +49,20 @@ def require_developer(user: User = Depends(require_current_user)) -> User:
 
 
 async def _installed_ollama_models() -> list[str]:
-    # The evaluation UI reflects the models installed on this workstation.
-    # Keep the configured URL as a fallback for deployments without local Ollama.
-    urls = list(dict.fromkeys([LOCAL_OLLAMA_URL, settings.OLLAMA_BASE_URL.rstrip("/")]))
-    for base_url in urls:
-        try:
-            async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
-                response = await client.get("/api/tags")
-                response.raise_for_status()
-                names = sorted({
-                    str(model.get("name") or model.get("model") or "").strip()
-                    for model in response.json().get("models", [])
-                    if isinstance(model, dict) and (model.get("name") or model.get("model"))
-                })
-                return names
-        except (httpx.HTTPError, ValueError):
-            continue
+    # Native execution defaults to local Ollama; Docker Compose supplies the
+    # container address. Never mix model lists from different Ollama instances.
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
+            response = await client.get("/api/tags")
+            response.raise_for_status()
+            return sorted({
+                str(model.get("name") or model.get("model") or "").strip()
+                for model in response.json().get("models", [])
+                if isinstance(model, dict) and (model.get("name") or model.get("model"))
+            })
+    except (httpx.HTTPError, ValueError):
+        pass
     raise HTTPException(status_code=503, detail="Ollama에서 설치된 모델 목록을 불러올 수 없습니다.")
 
 

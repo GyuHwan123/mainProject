@@ -5,7 +5,6 @@ import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline }
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
-import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
 import '../style/OCRPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -59,65 +58,6 @@ function financeRecordRows(records) {
       : [];
     if (items.length) return items.map((item, index) => financeRecordCells(record, index + 1, item));
     return [financeRecordCells(record, 1)];
-  });
-}
-
-function captureFinanceEvaluation({ record, documentId, documentName, pages, latencyMs }) {
-  const definition = FINANCE_DOCUMENTS[record.document_type] || FINANCE_DOCUMENTS.EXPENSE_REPORT;
-  const structured = record.structured_data || {};
-  const prediction = {
-    document_type: record.document_type,
-    expense_category: record.expense_category,
-    merchant: record.merchant,
-    transaction_date: record.transaction_date,
-    supply_amount: record.supply_amount,
-    tax_amount: record.tax_amount,
-    total_amount: record.total_amount,
-    payment_method: record.payment_method,
-    items: Array.isArray(structured.items) ? structured.items : [],
-  };
-  appendFinanceEvaluationRun({
-    capture_id: `automatic:${documentId}:${record.id}`,
-    source: 'automatic_documentation',
-    document_id: documentId,
-    document_name: documentName,
-    ocr_text: (pages || []).map((page) => page.text || '').join('\n'),
-    ocr_pages: pages || [],
-    ground_truth: null,
-    normalized_ground_truth: null,
-    results: [{
-      model_name: record.model_name,
-      success: true,
-      latency_ms: Math.round(latencyMs || 0),
-      system: {
-        prediction,
-        score: {
-          correct_fields: 0,
-          evaluated_fields: 0,
-          field_accuracy: 0,
-          complete_match: false,
-          fields: {
-            evaluation_status: {
-              actual: '자동 문서화 결과 수집 완료 · 정답 미입력',
-              expected: null,
-              correct: true,
-            },
-          },
-          evaluation_status: 'UNSCORED',
-        },
-        ocr_impact: null,
-        workbook: {
-          success: true,
-          active_sheet: definition.title,
-          expected_sheet: definition.title,
-          preview: { headers: definition.headers, rows: financeRecordRows([record]) },
-        },
-      },
-    }],
-    dataset_name: '영수증 자동 문서화',
-    dataset_index: null,
-    matched_image: documentName,
-    evaluated_at: new Date().toISOString(),
   });
 }
 
@@ -724,14 +664,6 @@ export default function OCRPage() {
   const loadWithOcr = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    if (processingMode === 'receipt' && groundTruth.trim()) {
-      try {
-        JSON.parse(groundTruth);
-        formData.append('ground_truth_json', groundTruth.trim());
-      } catch {
-        // Plain-text ground truth continues through the existing report evaluator.
-      }
-    }
     const { data } = await apiClient.post(`/ocr/upload?processing_mode=${processingMode}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
@@ -913,17 +845,6 @@ export default function OCRPage() {
   const runExtraction = async () => {
     if (!pendingFile || loading) return;
     setFinanceDuplicateNotice('');
-    const truthForEvaluation = groundTruth.trim();
-    let parsedFinanceTruth = null;
-    if (processingMode === 'receipt' && isDeveloper && truthForEvaluation) {
-      try {
-        parsedFinanceTruth = JSON.parse(truthForEvaluation);
-      } catch {
-        setError('결과 데이터는 올바른 JSON 형식으로 입력해 주세요.');
-        setEvaluationStatus('JSON 형식을 확인한 뒤 다시 실행해 주세요.');
-        return;
-      }
-    }
     const result = await loadFile(pendingFile, pdf);
     if (!result?.success) return;
     setPendingFile(null);
@@ -932,51 +853,12 @@ export default function OCRPage() {
     const shouldCreateFinanceRecord = processingMode === 'receipt' || RECEIPT_TEXT_PATTERN.test(extractedText);
     if (shouldCreateFinanceRecord && result.documentId) {
       setLoading(true);
-      const classificationStartedAt = performance.now();
       try {
         const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 180000 });
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
-        const classificationLatencyMs = performance.now() - classificationStartedAt;
-        if (parsedFinanceTruth) {
-          try {
-            const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
-              document_id: result.documentId,
-              record_id: financeRecord.id,
-              ground_truth: parsedFinanceTruth,
-              latency_ms: Math.round(classificationLatencyMs),
-            });
-            appendFinanceEvaluationRun({
-              ...evaluation,
-              capture_id: `automatic:${result.documentId}:${financeRecord.id}`,
-              source: 'automatic_documentation',
-              dataset_name: '영수증 자동 문서화 · 개발자 정답',
-              dataset_index: null,
-              matched_image: pendingFile.name || fileName,
-              evaluated_at: new Date().toISOString(),
-            });
-            setEvaluationStatus('자동 문서화 결과와 정답 비교가 평가 페이지에 저장되었습니다.');
-          } catch (evaluationError) {
-            captureFinanceEvaluation({
-              record: financeRecord,
-              documentId: result.documentId,
-              documentName: pendingFile.name || fileName,
-              pages: result.pages || [],
-              latencyMs: classificationLatencyMs,
-            });
-            setEvaluationStatus(evaluationError.response?.data?.detail || '문서화는 완료됐지만 정답 비교 결과를 저장하지 못했습니다.');
-          }
-        } else {
-          captureFinanceEvaluation({
-            record: financeRecord,
-            documentId: result.documentId,
-            documentName: pendingFile.name || fileName,
-            pages: result.pages || [],
-            latencyMs: classificationLatencyMs,
-          });
-        }
         setResultTab('text');
       } catch (requestError) {
         setError(requestError.response?.data?.detail || 'OCR은 완료됐지만 재무 양식에 자동 입력하지 못했습니다.');
@@ -1264,13 +1146,6 @@ export default function OCRPage() {
 
         <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
 
-        {processingMode === 'receipt' && isDeveloper && <section className="developer-receipt-truth">
-          <header><div><span>DEVELOPER ONLY</span><strong>평가용 결과 데이터</strong><p>영수증을 업로드하기 전에 정답 JSON을 입력하면 실제 자동 문서화 결과와 비교해 평가 페이지에 저장합니다.</p></div><button type="button" onClick={() => groundTruthFileRef.current?.click()}>JSON 불러오기</button></header>
-          <textarea value={groundTruth} onChange={(event) => { setGroundTruth(event.target.value); setGroundTruthFileName(''); setEvaluationStatus(''); setError(''); }} placeholder={'{\n  "merchant": "상호명",\n  "transaction_date": "2026-08-20",\n  "total_amount": 10000,\n  "payment_method": "현금",\n  "items": [{ "name": "품목명", "quantity": 1, "unit_price": 10000, "total_amount": 10000 }]\n}'} />
-          <footer><span>{groundTruthFileName || (groundTruth.trim() ? '직접 입력한 JSON' : '정답을 입력하지 않으면 결과만 미평가 상태로 저장됩니다.')}</span>{groundTruth.trim() && <button type="button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>초기화</button>}<small className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus}</small></footer>
-          <input ref={groundTruthFileRef} hidden type="file" accept=".json,application/json" onChange={(event) => { loadGroundTruthFile(event.target.files?.[0]); event.target.value = ''; }} />
-        </section>}
-
         <div className="ocr-filebar">
           <div className={`processing-mode auto ${processingMode}`}><span>자동 판별</span><strong>{processingMode === 'receipt' ? '영수증·거래 증빙' : '재무 문서'}</strong></div>
           <div className="file-identity">
@@ -1281,7 +1156,7 @@ export default function OCRPage() {
             <span>개발자 정답 파일</span>
             {groundTruthFileName ? <><strong title={groundTruthFileName}>{groundTruthFileName}</strong><button type="button" className="remove-truth-button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>제거</button></> : <button type="button" className="truth-select-button" onClick={() => groundTruthFileRef.current?.click()}>TXT · JSON 선택</button>}
           </div>}
-          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
+          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : processingMode !== 'receipt' && isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
         </div>
 
         <section className={`ocr-editor ${processingMode === 'receipt' ? 'receipt-workspace' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); prepareFile(e.dataTransfer.files?.[0]); }}>

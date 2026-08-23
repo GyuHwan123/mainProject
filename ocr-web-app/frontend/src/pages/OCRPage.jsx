@@ -5,6 +5,7 @@ import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline }
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
+import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
 import '../style/OCRPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -15,49 +16,89 @@ const RECEIPT_NAME_PATTERN = /(영수증|거래.?증빙|카드.?전표|출장|�
 const RECEIPT_TEXT_PATTERN = /(결제금액|공급가액|부가세액|사업자\s*(?:NO|번호)|승인번호|카드결제|거래종류)/i;
 
 const FINANCE_DOCUMENTS = {
-  EXPENSE_REPORT: { title: '경비지출결의서', headers: ['영수증 ID', '품목 순번', '결제일시', '상호명(가맹점)', '지출용도/품목명', '공급가액', '부가세', '합계금액', '증빙유형'] },
-  TRAVEL_EXPENSE: { title: '출장여비교통비정산서', headers: ['영수증 ID', '품목 순번', '구분', '일자', '출발/도착지', '교통/숙박 수단', '상호(가맹점)', '금액', '증빙여부', '비고'] },
-  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['영수증 ID', '품목 순번', '품목명', '규격/옵션', '수량', '단위', '단가', '공급가액', '부가세', '합계금액', '비고'] },
-  WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['영수증 ID', '품목 순번', '지원 항목(구분)', '결제일자', '내용(품목명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
+  EXPENSE_REPORT: { title: '경비지출결의서', headers: ['No', '결제일시', '상호명(가맹점)', '지출용도(적요)', '공급가액', '부가세', '합계금액', '증빙유형'] },
+  TRAVEL_EXPENSE: { title: '출장여비교통비정산서', headers: ['구분', '일자', '출발/도착지', '교통/숙박 수단', '상호(가맹점)', '금액', '증빙여부', '비고'] },
+  PURCHASE_REQUEST: { title: '구매품의요청서', headers: ['No', '품목명 및 규격', '수량', '예상 단가', '예상 공급가액', '예상 부가세', '예상 합계금액', '구매처/비고'] },
+  WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['No', '지원 항목(구분)', '결제일자', '내용(도서명/병원명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
 };
 
 const financeMoney = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
 
-function financeRecordCells(record, itemNumber, rowItem = null) {
+function financeRecordCells(record, rowNumber) {
   const data = record.structured_data || {};
-  const item = rowItem || {};
-  const itemCount = Array.isArray(data.items) ? data.items.length : 0;
-  const isSingle = itemCount <= 1;
-  const receiptId = record.document_id || record.id || '미확인';
   if (record.document_type === 'TRAVEL_EXPENSE') {
-    return [receiptId, itemNumber, record.expense_category || '확인 필요', record.transaction_date, data.route || data.location, data.transport_method || data.service_type, record.merchant, Number(item.total_amount || (isSingle ? record.total_amount : 0)), data.evidence_status || '첨부', item.name || item.note || data.note || record.description];
+    return [record.expense_category || '확인 필요', record.transaction_date, data.route || data.location, data.transport_method || data.service_type, record.merchant, financeMoney(record.total_amount), data.evidence_status || '첨부', data.note || record.description];
   }
   if (record.document_type === 'WELFARE_BENEFIT') {
-    return [receiptId, itemNumber, record.expense_category, record.transaction_date, item.name || record.description, record.merchant, Number(item.total_amount || (isSingle ? record.total_amount : 0)), data.evidence_type || record.payment_method || '영수증', item.note || data.note];
+    return [rowNumber, record.expense_category, record.transaction_date, record.description, record.merchant, financeMoney(record.total_amount), data.evidence_type || record.payment_method || '영수증', data.note];
   }
   if (record.document_type === 'PURCHASE_REQUEST') {
+    const item = Array.isArray(data.items) && data.items.length ? data.items[0] : {};
     const quantity = Number(item.quantity || 1);
     const unitPrice = Number(item.unit_price || 0);
-    const supply = Number(item.supply_amount || quantity * unitPrice || (isSingle ? record.supply_amount : 0));
-    const tax = Number(item.tax_amount || (isSingle ? record.tax_amount : 0));
-    const total = Number(item.total_amount || supply + tax || (isSingle ? record.total_amount : 0));
-    return [receiptId, itemNumber, item.name || record.description, item.specification || item.option, quantity, item.unit || '개', unitPrice, supply, tax, total, item.note];
+    const supply = Number(item.supply_amount || record.supply_amount || quantity * unitPrice);
+    const tax = Number(item.tax_amount || record.tax_amount || 0);
+    return [rowNumber, item.name || record.description, quantity, financeMoney(unitPrice), financeMoney(supply), financeMoney(tax), financeMoney(item.total_amount || record.total_amount || supply + tax), item.note || record.merchant];
   }
-  const quantity = Number(item.quantity || 1);
-  const unitPrice = Number(item.unit_price || 0);
-  const supply = Number(item.supply_amount || quantity * unitPrice || (isSingle ? record.supply_amount : 0));
-  const tax = Number(item.tax_amount || (isSingle ? record.tax_amount : 0));
-  const total = Number(item.total_amount || supply + tax || (isSingle ? record.total_amount : 0));
-  return [receiptId, itemNumber, record.transaction_date, record.merchant, item.name || record.description || record.expense_category, supply, tax, total, record.payment_method || '영수증'];
+  return [rowNumber, record.transaction_date, record.merchant, record.description || record.expense_category, financeMoney(record.supply_amount), financeMoney(record.tax_amount), financeMoney(record.total_amount), record.payment_method || '영수증'];
 }
 
-function financeRecordRows(records) {
-  return records.flatMap((record) => {
-    const items = Array.isArray(record.structured_data?.items)
-      ? record.structured_data.items
-      : [];
-    if (items.length) return items.map((item, index) => financeRecordCells(record, index + 1, item));
-    return [financeRecordCells(record, 1)];
+function captureFinanceEvaluation({ record, documentId, documentName, pages, latencyMs }) {
+  const definition = FINANCE_DOCUMENTS[record.document_type] || FINANCE_DOCUMENTS.EXPENSE_REPORT;
+  const structured = record.structured_data || {};
+  const prediction = {
+    document_type: record.document_type,
+    expense_category: record.expense_category,
+    merchant: record.merchant,
+    transaction_date: record.transaction_date,
+    supply_amount: record.supply_amount,
+    tax_amount: record.tax_amount,
+    total_amount: record.total_amount,
+    payment_method: record.payment_method,
+    items: Array.isArray(structured.items) ? structured.items : [],
+  };
+  appendFinanceEvaluationRun({
+    capture_id: `automatic:${documentId}:${record.id}`,
+    source: 'automatic_documentation',
+    document_id: documentId,
+    document_name: documentName,
+    ocr_text: (pages || []).map((page) => page.text || '').join('\n'),
+    ocr_pages: pages || [],
+    ground_truth: null,
+    normalized_ground_truth: null,
+    results: [{
+      model_name: record.model_name,
+      success: true,
+      latency_ms: Math.round(latencyMs || 0),
+      system: {
+        prediction,
+        score: {
+          correct_fields: 0,
+          evaluated_fields: 0,
+          field_accuracy: 0,
+          complete_match: false,
+          fields: {
+            evaluation_status: {
+              actual: '자동 문서화 결과 수집 완료 · 정답 미입력',
+              expected: null,
+              correct: true,
+            },
+          },
+          evaluation_status: 'UNSCORED',
+        },
+        ocr_impact: null,
+        workbook: {
+          success: true,
+          active_sheet: definition.title,
+          expected_sheet: definition.title,
+          preview: { headers: definition.headers, rows: [financeRecordCells(record, 1)] },
+        },
+      },
+    }],
+    dataset_name: '영수증 자동 문서화',
+    dataset_index: null,
+    matched_image: documentName,
+    evaluated_at: new Date().toISOString(),
   });
 }
 
@@ -68,7 +109,7 @@ function FinanceReceiptWorksheet({ records, user }) {
   return <div className="receipt-form-sheet">
     <div className="receipt-form-title"><strong>{definition.title}</strong><span>{records.length}건 누적 · {record.status === 'CONFIRMED' ? '확정' : '확인 필요'}</span></div>
     <div className="receipt-form-meta"><span><b>작성자</b>{user?.name || '로그인 사용자'}</span><span><b>이메일</b>{user?.email || '미확인'}</span><span><b>최근 결제일</b>{record.transaction_date || '미확인'}</span><span><b>누적 합계</b>{financeMoney(total)}</span></div>
-    <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{financeRecordRows(records).map((row, rowIndex) => <tr key={`${record.id}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
+    <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{records.map((item, rowIndex) => <tr key={item.id}>{financeRecordCells(item, rowIndex + 1).map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
     <p>새 영수증의 선별값이 현재 작업의 다음 행으로 추가됩니다.</p>
   </div>;
 }
@@ -664,6 +705,14 @@ export default function OCRPage() {
   const loadWithOcr = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
+    if (processingMode === 'receipt' && groundTruth.trim()) {
+      try {
+        JSON.parse(groundTruth);
+        formData.append('ground_truth_json', groundTruth.trim());
+      } catch {
+        // Plain-text ground truth continues through the existing report evaluator.
+      }
+    }
     const { data } = await apiClient.post(`/ocr/upload?processing_mode=${processingMode}`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
@@ -845,6 +894,17 @@ export default function OCRPage() {
   const runExtraction = async () => {
     if (!pendingFile || loading) return;
     setFinanceDuplicateNotice('');
+    const truthForEvaluation = groundTruth.trim();
+    let parsedFinanceTruth = null;
+    if (processingMode === 'receipt' && isDeveloper && truthForEvaluation) {
+      try {
+        parsedFinanceTruth = JSON.parse(truthForEvaluation);
+      } catch {
+        setError('결과 데이터는 올바른 JSON 형식으로 입력해 주세요.');
+        setEvaluationStatus('JSON 형식을 확인한 뒤 다시 실행해 주세요.');
+        return;
+      }
+    }
     const result = await loadFile(pendingFile, pdf);
     if (!result?.success) return;
     setPendingFile(null);
@@ -853,12 +913,51 @@ export default function OCRPage() {
     const shouldCreateFinanceRecord = processingMode === 'receipt' || RECEIPT_TEXT_PATTERN.test(extractedText);
     if (shouldCreateFinanceRecord && result.documentId) {
       setLoading(true);
+      const classificationStartedAt = performance.now();
       try {
         const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 180000 });
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
+        const classificationLatencyMs = performance.now() - classificationStartedAt;
+        if (parsedFinanceTruth) {
+          try {
+            const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
+              document_id: result.documentId,
+              record_id: financeRecord.id,
+              ground_truth: parsedFinanceTruth,
+              latency_ms: Math.round(classificationLatencyMs),
+            });
+            appendFinanceEvaluationRun({
+              ...evaluation,
+              capture_id: `automatic:${result.documentId}:${financeRecord.id}`,
+              source: 'automatic_documentation',
+              dataset_name: '영수증 자동 문서화 · 개발자 정답',
+              dataset_index: null,
+              matched_image: pendingFile.name || fileName,
+              evaluated_at: new Date().toISOString(),
+            });
+            setEvaluationStatus('자동 문서화 결과와 정답 비교가 평가 페이지에 저장되었습니다.');
+          } catch (evaluationError) {
+            captureFinanceEvaluation({
+              record: financeRecord,
+              documentId: result.documentId,
+              documentName: pendingFile.name || fileName,
+              pages: result.pages || [],
+              latencyMs: classificationLatencyMs,
+            });
+            setEvaluationStatus(evaluationError.response?.data?.detail || '문서화는 완료됐지만 정답 비교 결과를 저장하지 못했습니다.');
+          }
+        } else {
+          captureFinanceEvaluation({
+            record: financeRecord,
+            documentId: result.documentId,
+            documentName: pendingFile.name || fileName,
+            pages: result.pages || [],
+            latencyMs: classificationLatencyMs,
+          });
+        }
         setResultTab('text');
       } catch (requestError) {
         setError(requestError.response?.data?.detail || 'OCR은 완료됐지만 재무 양식에 자동 입력하지 못했습니다.');
@@ -1146,6 +1245,13 @@ export default function OCRPage() {
 
         <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
 
+        {processingMode === 'receipt' && isDeveloper && <section className="developer-receipt-truth">
+          <header><div><span>DEVELOPER ONLY</span><strong>평가용 결과 데이터</strong><p>영수증을 업로드하기 전에 정답 JSON을 입력하면 실제 자동 문서화 결과와 비교해 평가 페이지에 저장합니다.</p></div><button type="button" onClick={() => groundTruthFileRef.current?.click()}>JSON 불러오기</button></header>
+          <textarea value={groundTruth} onChange={(event) => { setGroundTruth(event.target.value); setGroundTruthFileName(''); setEvaluationStatus(''); setError(''); }} placeholder={'{\n  "merchant": "상호명",\n  "transaction_date": "2026-08-20",\n  "total_amount": 10000,\n  "payment_method": "현금",\n  "items": [{ "name": "품목명", "quantity": 1, "unit_price": 10000, "total_amount": 10000 }]\n}'} />
+          <footer><span>{groundTruthFileName || (groundTruth.trim() ? '직접 입력한 JSON' : '정답을 입력하지 않으면 결과만 미평가 상태로 저장됩니다.')}</span>{groundTruth.trim() && <button type="button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>초기화</button>}<small className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus}</small></footer>
+          <input ref={groundTruthFileRef} hidden type="file" accept=".json,application/json" onChange={(event) => { loadGroundTruthFile(event.target.files?.[0]); event.target.value = ''; }} />
+        </section>}
+
         <div className="ocr-filebar">
           <div className={`processing-mode auto ${processingMode}`}><span>자동 판별</span><strong>{processingMode === 'receipt' ? '영수증·거래 증빙' : '재무 문서'}</strong></div>
           <div className="file-identity">
@@ -1156,7 +1262,7 @@ export default function OCRPage() {
             <span>개발자 정답 파일</span>
             {groundTruthFileName ? <><strong title={groundTruthFileName}>{groundTruthFileName}</strong><button type="button" className="remove-truth-button" onClick={() => { setGroundTruth(''); setGroundTruthFileName(''); setEvaluationStatus(''); }}>제거</button></> : <button type="button" className="truth-select-button" onClick={() => groundTruthFileRef.current?.click()}>TXT · JSON 선택</button>}
           </div>}
-          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : processingMode !== 'receipt' && isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
+          <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
         </div>
 
         <section className={`ocr-editor ${processingMode === 'receipt' ? 'receipt-workspace' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); prepareFile(e.dataTransfer.files?.[0]); }}>

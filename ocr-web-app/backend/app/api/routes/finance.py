@@ -152,31 +152,6 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     elif won_amounts:
         total = max(won_amounts)
 
-    def labeled_amount(labels: str) -> int | None:
-        match = re.search(
-            rf"(?:{labels})\s*[:：]?\s*(?:금액\s*)?([0-9]{{1,3}}(?:[.,][0-9]{{3}})+|[0-9]{{3,8}})\s*원?",
-            text,
-            re.IGNORECASE,
-        )
-        if not match:
-            return None
-        value = _receipt_number(match.group(1))
-        return value if value >= 100 else None
-
-    labeled_final = labeled_amount(r"최종\s*결제|실\s*결제|받을\s*금액|승인\s*금액|결제\s*금액")
-    labeled_discount = labeled_amount(r"할인(?:\s*금액|\s*액)?|쿠폰(?:\s*할인)?")
-    labeled_gross = labeled_amount(r"정가|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
-    if labeled_final:
-        total = labeled_final
-    amount_relation = None
-    if labeled_discount and labeled_final and labeled_gross and labeled_gross - labeled_discount == labeled_final:
-        amount_relation = {
-            "type": "GROSS_MINUS_DISCOUNT_EQUALS_PAID",
-            "gross_amount": labeled_gross,
-            "discount_amount": labeled_discount,
-            "paid_amount": labeled_final,
-        }
-
     name = filename.lower()
     document_type = None
     expense_category = None
@@ -193,150 +168,18 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
         document_type = "PURCHASE_REQUEST"
 
-    stated_item_count = None
-    stated_total_quantity = None
-    stated_total_amount = None
-    item_count_match = re.search(
-        r"총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량[^\d]{0,80}(\d{1,3})\s*[/／]\s*(\d{1,3})",
-        text,
-    )
-    if item_count_match:
-        stated_item_count = int(item_count_match.group(1))
-        stated_total_quantity = int(item_count_match.group(2))
-
-        # Many receipts print the purchase total immediately after the
-        # ``item count / total quantity`` pair. Treat it as a deterministic
-        # summary value only when a money-shaped token follows nearby.
-        summary_tail = text[item_count_match.end():item_count_match.end() + 80]
-        stated_amount_match = re.search(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", summary_tail)
-        if stated_amount_match:
-            candidate = _receipt_number(stated_amount_match.group(1))
-            if candidate >= 100:
-                stated_total_amount = candidate
-
-    payment_method = None
-    if re.search(r"카드\s*(?:결제|승인)|신용\s*카드|체크\s*카드", text, re.IGNORECASE):
-        payment_method = "카드"
-    elif re.search(r"현금\s*(?:결제|영수증)|현금영수증", text, re.IGNORECASE):
-        payment_method = "현금"
-
     return {
         "transaction_date": transaction_date,
         "supply_amount": supply,
         "tax_amount": tax,
         "total_amount": total,
-        "discount_amount": labeled_discount,
-        "amount_relation": amount_relation,
         "document_type": document_type,
         "expense_category": expense_category,
-        "stated_item_count": stated_item_count,
-        "stated_total_quantity": stated_total_quantity,
-        "stated_total_amount": stated_total_amount,
-        "payment_method": payment_method,
     }
-
-
-def _normalize_merchant(value: Any, text: str) -> str | None:
-    """Correct only high-confidence tenant/facility merchant confusion.
-
-    OCR table flattening can place a mall name or domain next to a tenant
-    brand. Keep normal model judgments intact and apply aliases only when the
-    merchant is missing, is the same brand with a tax suffix, or is a known
-    host-facility name.
-    """
-    merchant = str(value or "").strip()
-    compact_merchant = re.sub(r"[^0-9a-z가-힣]", "", merchant.lower())
-    compact_text = re.sub(r"[^0-9a-z가-힣]", "", text.lower())
-    tenant_aliases = {
-        "유니클로": ("유니클로", "uniqlo"),
-    }
-    host_facilities = {
-        "starfield", "starfiled", "스타필드",
-        "starfieldcoex", "starfiledcoex", "스타필드코엑스",
-    }
-
-    for canonical, aliases in tenant_aliases.items():
-        if not any(alias in compact_text for alias in aliases):
-            continue
-        is_same_tenant = any(alias in compact_merchant for alias in aliases)
-        is_host_facility = any(host in compact_merchant for host in host_facilities)
-        if not merchant or is_same_tenant or is_host_facility:
-            return canonical
-    return merchant[:200] or None
 
 
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
-    receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
-    stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
-    items = result.get("items") if isinstance(result.get("items"), list) else []
-    non_item_labels = {
-        "카드결제액", "카드승인금액", "승인금액", "결제금액", "최종결제금액",
-        "받을금액", "총결제액", "총구매금액", "결제수단", "승인번호", "현금영수증",
-        "상품합계", "소계", "합계", "공급가액", "부가세", "부가세액", "할인금액",
-        "할인액", "쿠폰", "적립금", "거스름돈", "카드번호", "사업자번호",
-    }
-
-    def is_real_item(item: Any) -> bool:
-        if not isinstance(item, dict):
-            return False
-        name = re.sub(r"[^0-9a-z가-힣]", "", str(item.get("name") or "").lower())
-        if not name or any(name == label or name.startswith(label) for label in non_item_labels):
-            return False
-        raw_name = str(item.get("name") or "").strip()
-        if re.fullmatch(r"(?:https?://|www\.)\S+", raw_name, re.IGNORECASE):
-            return False
-        return True
-
-    items = [item for item in items if is_real_item(item)]
-    numeric_item_fields = ("quantity", "unit_price", "supply_amount", "tax_amount", "total_amount")
-    for item in items:
-        item["name"] = str(item.get("name") or "").strip()
-        for field in numeric_item_fields:
-            if item.get(field) is not None:
-                raw_value = str(item[field]).strip()
-                item[field] = (
-                    float(_receipt_number(raw_value))
-                    if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw_value)
-                    else _clean_number(item[field])
-                )
-
-    # Narrow recovery for the known tenant receipt layout. In this layout OCR
-    # exposes ``유니클로(과세/면세)`` beside the product header, while small
-    # models sometimes consume the token only as merchant and return no item.
-    # Recover it only for an empty, single-item-compatible result with a
-    # positive evidenced receipt total; never invent additional item rows.
-    uniqlo_item_match = re.search(r"유니클로\s*\(\s*(과세|면세)\s*\)", text)
-    recovered_total = _clean_number(result.get("total_amount")) or _clean_number(hints.get("total_amount"))
-    if (
-        not items
-        and uniqlo_item_match
-        and (not stated_item_count or int(stated_item_count) == 1)
-        and recovered_total >= 100
-    ):
-        item_name = f"유니클로({uniqlo_item_match.group(1)})"
-        items.append({
-            "name": item_name,
-            "quantity": 1.0,
-            "unit_price": recovered_total,
-            "total_amount": recovered_total,
-            "note": "OCR 근거 기반 단일 품목 복원",
-        })
-    result["items"] = items
-    if hints.get("discount_amount") is not None:
-        result["discount_amount"] = hints["discount_amount"]
-    # A lone count of 1 is too easy to confuse with nearby quantity/spec text
-    # such as ``1볼/50g``. Only shorten multi-item output when a count of two
-    # or more is supported by the receipt summary.
-    if stated_item_count >= 2 and len(items) > int(stated_item_count):
-        result["items"] = items[:int(stated_item_count)]
-    if stated_item_count:
-        receipt_summary.update({
-            "stated_item_count": int(stated_item_count),
-            "stated_total_quantity": hints.get("stated_total_quantity"),
-            "stated_total_amount": hints.get("stated_total_amount"),
-        })
-        result["receipt_summary"] = receipt_summary
     allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
     document_type = str(
         hints.get("document_type")
@@ -346,31 +189,9 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     ).upper()
     if document_type not in allowed:
         document_type = "EXPENSE_REPORT"
-    def prefer_evidenced_model_amount(field: str) -> float:
-        model_value = _clean_number(result.get(field))
-        hint_value = _clean_number(hints.get(field))
-        # Arithmetic hints can accidentally combine item subtotals. Preserve a
-        # plausible model value when that exact amount is present in OCR; use
-        # the hint only to recover missing, implausibly scaled, or absent data.
-        ocr_values = {
-            _receipt_number(token)
-            for token in re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
-        }
-        if model_value >= 100 and any(abs(model_value - value) < 0.01 for value in ocr_values):
-            return model_value
-        return hint_value or model_value
-
-    supply = prefer_evidenced_model_amount("supply_amount")
-    tax = prefer_evidenced_model_amount("tax_amount")
-    total = prefer_evidenced_model_amount("total_amount") or supply + tax
-    relation = hints.get("amount_relation")
-    if isinstance(relation, dict) and relation.get("type") == "GROSS_MINUS_DISCOUNT_EQUALS_PAID":
-        total = _clean_number(relation.get("paid_amount"))
-        discount = _clean_number(relation.get("discount_amount"))
-        if tax == discount and not re.search(r"부가\s*세|세액", text):
-            tax = 0
-        if supply and supply + tax != total and supply == total:
-            tax = 0
+    supply = hints.get("supply_amount") or _clean_number(result.get("supply_amount"))
+    tax = hints.get("tax_amount") or _clean_number(result.get("tax_amount"))
+    total = hints.get("total_amount") or _clean_number(result.get("total_amount")) or supply + tax
     transaction_date = hints.get("transaction_date") or str(result.get("transaction_date") or "").strip() or None
     if transaction_date:
         try:
@@ -382,12 +203,12 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     return {
         "document_type": document_type,
         "expense_category": str(hints.get("expense_category") or result.get("expense_category") or "기타").strip()[:100],
-        "merchant": _normalize_merchant(result.get("merchant"), text),
+        "merchant": str(result.get("merchant") or "").strip()[:200] or None,
         "transaction_date": transaction_date,
         "supply_amount": supply,
         "tax_amount": tax,
         "total_amount": total,
-        "payment_method": str(result.get("payment_method") or hints.get("payment_method") or "").strip()[:100] or None,
+        "payment_method": str(result.get("payment_method") or "").strip()[:100] or None,
         "description": str(result.get("description") or "").strip()[:1000] or None,
         "structured_data": result,
         "model_name": str(result.get("_model_name") or MODEL_NAME),
@@ -395,155 +216,54 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     }
 
 
-def _receipt_table_hint(pages: list[dict[str, Any]] | None) -> str:
-    tables = []
-    for page in pages or []:
-        for table_index, table in enumerate(page.get("tables") or [], start=1):
-            if table.get("rows"):
-                tables.append({
-                    "page": page.get("page"),
-                    "table": table_index,
-                    "confidence": table.get("confidence"),
-                    "rows": table["rows"],
-                })
-    return json.dumps(tables, ensure_ascii=False) if tables else "없음"
-
-
-def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """Create semantic item-row candidates before asking the LLM to classify them."""
-    summary_labels = re.compile(
-        r"(?:합계|소계|결제|승인|공급가액|부가세|할인|쿠폰|적립|거스름|카드번호|사업자번호|총품목|총수량)",
-        re.IGNORECASE,
-    )
-    candidates: list[dict[str, Any]] = []
-    seen: set[str] = set()
-
-    def add_candidate(cells: list[str], page_number: Any, source: str) -> None:
-        cells = [str(cell or "").strip() for cell in cells if str(cell or "").strip()]
-        raw = " | ".join(cells)
-        dedupe_key = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
-        if not raw or dedupe_key in seen or summary_labels.search(raw):
-            return
-        if not re.search(r"[A-Za-z가-힣]", raw):
-            return
-        numbers = re.findall(r"(?<!\d)\d{1,3}(?:[.,]\d{3})+|(?<!\d)\d{1,8}(?!\d)", raw)
-        if len(numbers) < 2:
-            return
-
-        first_number = re.search(r"\d", raw)
-        name = raw[:first_number.start()].strip(" |:-") if first_number else ""
-        parsed = [_receipt_number(value) for value in numbers]
-        candidate: dict[str, Any] = {
-            "page": page_number,
-            "source": source,
-            "raw_cells": cells,
-            "name_candidate": name or None,
-            "amount_candidate": parsed[-1],
-        }
-        if len(parsed) >= 3:
-            candidate["quantity_candidate"] = parsed[-3]
-            candidate["unit_price_candidate"] = parsed[-2]
-        elif parsed[0] <= 100:
-            candidate["quantity_candidate"] = parsed[0]
-        candidates.append(candidate)
-        seen.add(dedupe_key)
-
-    for page in pages or []:
-        page_number = page.get("page")
-        for table in page.get("tables") or []:
-            for row in table.get("rows") or []:
-                add_candidate(row, page_number, "table")
-        # PaddleOCR can recognize an entire product row as one box. Retain a
-        # line-based fallback so those rows are not lost by table detection.
-        for line in str(page.get("text") or "").splitlines():
-            add_candidate([line], page_number, "ocr_line")
-    return candidates[:40]
-
-
-def _receipt_prompt(text: str, filename: str, pages: list[dict[str, Any]] | None = None) -> str:
+def _receipt_prompt(text: str, filename: str) -> str:
     hints = _receipt_hints(text, filename)
-    return f"""OCR 영수증의 요약 정보만 JSON 객체 하나로 반환하세요. items는 추출하지 마세요.
-OCR에 없는 값은 추측하지 말고 null로 작성하세요.
+    return f"""당신은 한국 기업 재무팀의 영수증 분류 담당자입니다. OCR 텍스트만 근거로 JSON을 반환하세요.
 
-doc_type은 다음 중 하나입니다.
-- EXPENSE_REPORT: 일반 경비
-- TRAVEL_EXPENSE: 출장·교통·숙박
-- PURCHASE_REQUEST: 물품·장비·소프트웨어 구매
-- WELFARE_BENEFIT: 도서·교육·의료·복리후생
+문서 유형은 반드시 다음 중 하나입니다.
+- EXPENSE_REPORT: 일반 경비, 회의비, 식비, 소모품, 접대비, 통신비 등
+- TRAVEL_EXPENSE: 출장 교통, 숙박, 출장 식대와 일비
+- PURCHASE_REQUEST: 비품·장비·소프트웨어 등 구매 또는 구매 요청
+- WELFARE_BENEFIT: 도서, 교육, 의료, 건강검진, 경조사 등 복리후생
 
-반환 키: image, doc_type, expense_category, merchant, transaction_date, supply_amount,
-tax_amount, discount_amount, total_amount, payment_method, card_number, description.
+필수 JSON 키:
+doc_type, expense_category, merchant, transaction_date(YYYY-MM-DD 또는 null),
+supply_amount, tax_amount, total_amount, payment_method, description,
+route, location, transport_method, service_type, evidence_status, evidence_type, note,
+items(각 항목은 name, quantity, unit_price, supply_amount, tax_amount, total_amount, note)
 
-판단 규칙:
-1. 날짜는 YYYY-MM-DD, 금액은 숫자로 작성합니다.
-2. merchant는 상품 코드·전화번호·쇼핑몰 안내가 아니라 실제 판매 상호입니다.
-3. 명시된 최종 결제액을 total_amount로 사용합니다.
-4. amount_relation이 있으면 코드가 확인한 관계를 그대로 따르고 할인액을 부가세로 바꾸지 않습니다.
+규칙:
+- 문서 유형 키는 반드시 doc_type을 사용하고 document_type이나 다른 이름으로 바꾸지 않습니다.
+- doc_type 값은 EXPENSE_REPORT, TRAVEL_EXPENSE, PURCHASE_REQUEST, WELFARE_BENEFIT 중 하나입니다.
+- OCR에 없는 값을 추측하지 말고 null 또는 빈 배열로 작성합니다.
+- 금액은 쉼표와 통화 기호가 없는 숫자로 작성합니다.
+- 파일명에 출장·식비·교통·숙박 등 업무 목적이 있으면 영수증 본문보다 우선해 문서 유형과 카테고리를 결정합니다.
+- 결제금액, 공급가액, 부가세는 서로 검산하고 공급가액 + 부가세 = 결제금액인 조합을 우선합니다.
+- 문서 유형 선택 이유는 description에 짧게 포함하지 말고, 영수증 사용 내역만 작성합니다.
 
 [파일명]
 {filename}
 
-[코드 확인값]
+[코드로 복원한 힌트]
 {json.dumps(hints, ensure_ascii=False)}
 
 [OCR 텍스트]
-{text[:6000]}
+{text[:12000]}
 """
 
 
-def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) -> str:
-    candidates = _receipt_item_candidates(pages)
-    stated_count = _receipt_hints(text, "receipt").get("stated_item_count")
-    evidence = json.dumps(candidates, ensure_ascii=False) if candidates else text[:5000]
-    return f"""영수증의 실제 구매 품목만 JSON으로 반환하세요.
-형식: {{"items":[{{"name":...,"specification":...,"quantity":...,"unit":...,"unit_price":...,"supply_amount":...,"tax_amount":...,"total_amount":...,"note":...}}]}}
-
-규칙:
-1. 근거 행 하나는 원칙적으로 품목 하나입니다. 확인되는 품목을 누락하지 마세요.
-2. 합계·소계·공급가액·부가세·할인·결제·승인·안내 행은 품목이 아닙니다.
-3. 후보의 name/quantity/unit_price/amount는 코드 추정값입니다. raw_cells가 다르면 raw_cells를 우선합니다.
-4. 확인할 수 없는 필드는 null로 두고 상품 자체가 확인되면 품목을 삭제하지 마세요.
-5. 영수증에 명시된 품목 수: {stated_count if stated_count is not None else '미확인'}
-
-[품목 근거]
-{evidence}
-"""
-
-
-async def _classify_receipt_with_model(
-    text: str,
-    filename: str,
-    model_name: str,
-    pages: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
-    raw = await generate(_receipt_prompt(text, filename, pages), json_format=True, num_predict=550, model_name=model_name)
+async def _classify_receipt_with_model(text: str, filename: str, model_name: str) -> dict[str, Any]:
+    raw = await generate(_receipt_prompt(text, filename), json_format=True, num_predict=1200, model_name=model_name)
     result = json.loads(raw)
     if not isinstance(result, dict):
         raise ValueError("object expected")
-    result.pop("items", None)
-    try:
-        items_raw = await generate(
-            _receipt_items_prompt(text, pages),
-            json_format=True,
-            num_predict=900,
-            model_name=model_name,
-        )
-        items_result = json.loads(items_raw)
-        result["items"] = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
-    except Exception:
-        # Metadata remains useful when the isolated item pass fails.
-        result["items"] = []
     return result
 
 
-async def _classify_receipt(
-    text: str,
-    filename: str,
-    pages: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
+async def _classify_receipt(text: str, filename: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     try:
-        return await _classify_receipt_with_model(text, filename, MODEL_NAME, pages)
+        return await _classify_receipt_with_model(text, filename, MODEL_NAME)
     except Exception:
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
@@ -575,11 +295,7 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
         if data.get("receipt_fingerprint") == fingerprint or (identity_key and data.get("receipt_identity_key") == identity_key):
             return _mark_duplicate(existing)
 
-    classified = await _classify_receipt(
-        extracted_text,
-        document.get("file_name") or "receipt",
-        document.get("bounding_boxes") or [],
-    )
+    classified = await _classify_receipt(extracted_text, document.get("file_name") or "receipt")
     normalized = _normalize(classified, document.get("file_name") or "receipt", extracted_text)
     normalized["structured_data"]["receipt_fingerprint"] = fingerprint
     normalized["structured_data"]["receipt_identity_key"] = identity_key

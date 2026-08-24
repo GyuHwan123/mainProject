@@ -88,6 +88,8 @@ for pdf_path in sorted(DOCUMENTS_DIR.glob("*.pdf")):
 
     reader = PdfReader(pdf_path)
 
+    document_chunk_index = 0   # ⭐ 문서 전체 기준
+
     for page_number, page in enumerate(reader.pages, start=1):
 
         text = page.extract_text()
@@ -97,11 +99,10 @@ for pdf_path in sorted(DOCUMENTS_DIR.glob("*.pdf")):
 
         page_chunks = split_text(text)
 
-        for chunk_index, chunk_text in enumerate(page_chunks):
+        for chunk_text in page_chunks:
 
             chunk_data = {
                 "text": chunk_text,
-
                 "doc_id": metadata["doc_id"],
                 "title": metadata["title"],
                 "owner": metadata["owner"],
@@ -110,12 +111,15 @@ for pdf_path in sorted(DOCUMENTS_DIR.glob("*.pdf")):
                 "effective_date": metadata["effective_date"],
                 "tags": metadata["tags"],
                 "filename": metadata["filename"],
-
                 "page": page_number,
-                "chunk_index": chunk_index,
+
+                # ⭐ 페이지마다 0으로 초기화하지 않음
+                "chunk_index": document_chunk_index,
             }
 
             all_chunks.append(chunk_data)
+
+            document_chunk_index += 1
 
 
 print("\n==============================")

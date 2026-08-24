@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models."""
+"""Application domain models."""
 
 from app.models.user import User
 

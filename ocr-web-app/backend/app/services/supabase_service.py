@@ -752,6 +752,45 @@ class SupabaseService:
                 row["source"] = document["file_name"]
         return rows
 
+    def get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        response = httpx.get(
+            f"{self.url}/rest/v1/{self.users_table}",
+            params={"select": "*", "email": f"eq.{email.lower()}", "limit": "1"},
+            headers=self._service_headers(),
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "Supabase 사용자 조회 실패")
+        rows = response.json()
+        return rows[0] if rows else None
+
+    def create_user(
+        self,
+        *,
+        name: str,
+        email: str,
+        password_hash: str | None,
+        provider: str = "local",
+        provider_id: str | None = None,
+        role: str = "USER",
+    ) -> dict[str, Any]:
+        response = httpx.post(
+            f"{self.url}/rest/v1/{self.users_table}",
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={
+                "name": name,
+                "email": email.lower(),
+                "password_hash": password_hash,
+                "social_provider": provider.lower(),
+                "social_id": provider_id or email.lower(),
+                "role": role,
+            },
+            timeout=15,
+        )
+        if response.status_code == 409:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="이미 등록된 이메일입니다.")
+        self._raise_for_supabase(response, "Supabase 사용자 생성 실패")
+        return response.json()[0]
+
     def upsert_user(
         self,
         *,
@@ -759,7 +798,8 @@ class SupabaseService:
         provider: str,
         provider_id: str | None = None,
         role: str = "USER",
-    ) -> None:
+        name: str | None = None,
+    ) -> dict[str, Any]:
         """Create or update the public Supabase user row after a successful login."""
         if not self.url or not self.service_role_key:
             raise HTTPException(
@@ -778,10 +818,11 @@ class SupabaseService:
                     "Authorization": f"Bearer {self.service_role_key}",
                     "apikey": self.service_role_key,
                     "Content-Type": "application/json",
-                    "Prefer": "resolution=merge-duplicates,return=minimal",
+                    "Prefer": "resolution=merge-duplicates,return=representation",
                 },
                 json={
                     "email": email,
+                    **({"name": name} if name else {}),
                     "social_provider": provider.lower(),
                     # The Supabase schema requires social_id for every provider.
                     # Local accounts do not have an external ID, so email is stable.
@@ -807,6 +848,13 @@ class SupabaseService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=f"Supabase 사용자 정보 저장에 실패했습니다: {detail}",
             )
+        rows = response.json() if response.content else []
+        if rows:
+            return rows[0]
+        user = self.get_user_by_email(email)
+        if not user:
+            raise HTTPException(status_code=502, detail="Supabase 사용자 저장 결과를 확인할 수 없습니다.")
+        return user
 
     def get_user_from_token(self, access_token: str) -> dict[str, Any]:
         if not self.url or not self.anon_key:

@@ -1,3 +1,4 @@
+import json
 from time import perf_counter
 from typing import Any, Literal
 
@@ -22,7 +23,7 @@ from app.services.supabase_service import supabase_service
 
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
+
 
 
 class FinanceEvaluationRequest(BaseModel):

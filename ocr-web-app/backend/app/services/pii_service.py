@@ -62,6 +62,13 @@ def _direct_pii(text: str) -> bool:
     return bool(ADDRESS.search(text) or any(pattern.search(text) for pattern in PATTERNS))
 
 
+def _redact_plain_text(text: str) -> str:
+    redacted = ADDRESS.sub(MASK, text)
+    for pattern in PATTERNS:
+        redacted = pattern.sub(MASK, redacted)
+    return redacted
+
+
 def _sensitive_indexes(row: list[dict[str, Any]]) -> set[int]:
     indexes = {index for index, item in enumerate(row) if _direct_pii(str(item.get("text", "")))}
     for index, item in enumerate(row):
@@ -101,6 +108,9 @@ def redact_pages(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result = []
     for page in pages:
         items = [{**item} for item in page.get("items", [])]
+        if not items:
+            result.append({**page, "items": [], "text": _redact_plain_text(str(page.get("text", "")))})
+            continue
         for row in _rows(items):
             for index in _sensitive_indexes(row):
                 row[index]["text"] = MASK

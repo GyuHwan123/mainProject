@@ -647,14 +647,21 @@ class SupabaseService:
             raise HTTPException(status_code=404, detail="지식 카드를 찾을 수 없습니다.")
 
     def list_rag_documents(self, user_email: str) -> list[dict[str, Any]]:
-        user_id = self.get_public_user_id(user_email)
         response = httpx.get(
             f"{self.url}/rest/v1/rag_documents",
-            params={"select": "*,ocr_documents(file_name,created_at)", "user_id": f"eq.{user_id}", "order": "updated_at.desc"},
+            params={"select": "*,rag_chunks(count)", "order": "created_at.desc"},
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "RAG 문서 조회 실패")
-        return response.json()
+        rows = response.json()
+        for row in rows:
+            chunk_counts = row.pop("rag_chunks", []) or []
+            row["chunk_count"] = int(chunk_counts[0].get("count", 0)) if chunk_counts else 0
+            # Compatibility aliases consumed by the existing chat page.
+            row["document_id"] = row.get("doc_id")
+            row["file_name"] = row.get("filename") or row.get("title")
+            row["status"] = "RAG_READY" if row["chunk_count"] else "EMPTY"
+        return rows
 
     def replace_rag_index(
         self, *, user_email: str, document: dict[str, Any], chunks: list[dict[str, Any]],

@@ -1,32 +1,31 @@
-from datetime import datetime, timezone
-from uuid import UUID
-
-from sqlalchemy import Boolean, DateTime, String, Uuid, text
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.core.database import Base
+from dataclasses import dataclass
+from typing import Any
 
 
-class User(Base):
-    __tablename__ = "users"
+@dataclass(slots=True)
+class User:
+    """Application user hydrated from the Supabase public.users table."""
 
-    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, index=True, server_default=text("gen_random_uuid()"))
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    provider: Mapped[str] = mapped_column("social_provider", String(30), default="local", nullable=False)
-    provider_id: Mapped[str | None] = mapped_column("social_id", String(255), nullable=True)
-    role: Mapped[str] = mapped_column(String(20), default="USER", nullable=False)
-    subscription_tier: Mapped[str] = mapped_column(String(20), default="PERSONAL", nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-        nullable=False,
-    )
+    id: str
+    name: str
+    email: str
+    password_hash: str | None = None
+    provider: str = "local"
+    provider_id: str | None = None
+    role: str = "USER"
+    subscription_tier: str = "PERSONAL"
+    is_active: bool = True
+
+    @classmethod
+    def from_record(cls, record: dict[str, Any]) -> "User":
+        return cls(
+            id=str(record.get("id") or ""),
+            name=record.get("name") or record.get("email") or "User",
+            email=(record.get("email") or "").lower(),
+            password_hash=record.get("password_hash"),
+            provider=record.get("social_provider") or "local",
+            provider_id=record.get("social_id"),
+            role=record.get("role") or "USER",
+            subscription_tier=record.get("subscription_tier") or "PERSONAL",
+            is_active=record.get("is_active", True),
+        )

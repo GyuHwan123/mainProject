@@ -14,19 +14,19 @@ PicToText는 PDF 텍스트 추출, 문서 기반 AI 질의응답, 사용자 인�
                 │
                 ▼
 FastAPI
-  ├─ 인증/JWT ─ SQLAlchemy ─ Supabase PostgreSQL
+  ├─ 인증/JWT ─ Supabase REST ─ Supabase PostgreSQL
   ├─ Supabase Auth 토큰 검증 및 users 테이블 동기화
   └─ 문서 문맥 전달 ─ Ollama(gemma2:2b)
 ```
 
-주요 기술은 React, Vite, React Router, Axios, PDF.js, FastAPI, SQLAlchemy, JWT, Supabase, PostgreSQL, Ollama입니다.
+주요 기술은 React, Vite, React Router, Axios, PDF.js, FastAPI, JWT, Supabase, PostgreSQL, Ollama입니다.
 
 ## 2. 저장소 구조
 
 ```text
 ocr-web-app/
 ├─ .env.example                 환경 변수 예시
-├─ docker-compose.yml           frontend/backend/db/ollama 통합 실행
+├─ docker-compose.yml           frontend/backend/ocr/ollama 통합 실행
 ├─ docker-compose.override.yml  개발용 소스 마운트와 hot reload
 ├─ developer-guide.md           구조 및 코드 분석(현재 문서)
 ├─ docs/                        최신 Supabase 스키마 및 점검 SQL
@@ -43,7 +43,7 @@ ocr-web-app/
 │  ├─ app/api/router.py         기능별 router 조합
 │  ├─ app/api/routes/           auth, ocr, chatbot, reports, users API
 │  ├─ app/core/                 설정, DB, 암호/JWT
-│  ├─ app/models/user.py        SQLAlchemy 사용자 모델
+│  ├─ app/models/user.py        Supabase 사용자 도메인 모델
 │  ├─ app/schemas/              요청·응답 Pydantic 모델
 │  └─ app/services/             Supabase, Ollama, OCR 연결 계층
 └─ ollama/Dockerfile            gemma2:2b 모델 실행 이미지
@@ -73,7 +73,7 @@ ocr-web-app/
 
 `backend/main.py`가 FastAPI 앱을 생성합니다.
 
-- 시작 시 `init_db()`로 SQLAlchemy 테이블을 생성합니다.
+- 시작 시 별도 로컬 DB를 초기화하지 않으며 Supabase 스키마를 사용합니다.
 - CORS 허용 origin은 환경 설정에서 읽습니다.
 - 기능별 API는 `/api/v1` 아래에 연결됩니다.
 - `GET /health`는 서버 상태 확인용입니다.
@@ -87,7 +87,7 @@ ocr-web-app/
 LoginPage
   → POST /api/v1/auth/signup 또는 /auth/login
   → auth.py가 입력·비밀번호 검증
-  → SQLAlchemy users 조회/저장
+  → Supabase public.users 조회/저장
   → 로그인 성공 시 내부 JWT 발급
   → appSession.js가 토큰·이름·이메일을 localStorage에 저장
 ```
@@ -153,7 +153,7 @@ LoginPage → Supabase OAuth(Google/Apple)
 
 | 데이터 | 저장 위치 | 지속성 |
 |---|---|---|
-| 로컬 사용자 | SQLAlchemy `users` | DB에 유지 |
+| 로컬 사용자 | Supabase public `users` | DB에 유지 |
 | 소셜 인증 사용자 | 로컬 DB + Supabase public `users` | DB에 유지 |
 | 앱 JWT·사용자 표시 정보 | 브라우저 localStorage | 브라우저별 유지 |
 | 대시보드 최근 기록 | 브라우저 localStorage | 브라우저별 유지 |
@@ -179,7 +179,7 @@ docker compose up --build
 - Swagger: `http://localhost:8000/docs`
 - Ollama: `http://localhost:11434`
 
-Docker 구성은 PostgreSQL을 사용합니다. `ollama/Dockerfile` 빌드 과정에서 `gemma2:2b` 모델 준비 시간이 걸릴 수 있습니다.
+Docker 구성은 외부 Supabase 프로젝트를 사용합니다. `ollama/Dockerfile` 빌드 과정에서 `gemma2:2b` 모델 준비 시간이 걸릴 수 있습니다.
 
 ### 프론트엔드와 백엔드 개별 실행
 
@@ -199,7 +199,7 @@ pip install -r requirements.txt
 python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-개별 실행 시에도 `DATABASE_URL`에 PostgreSQL 연결 주소가 반드시 필요합니다. 값이 없거나 PostgreSQL 주소가 아니면 백엔드는 시작되지 않습니다. AI 채팅에는 별도로 실행 중인 Ollama와 `gemma2:2b` 모델이 필요하며, 개별 실행 환경에서는 `OLLAMA_BASE_URL=http://localhost:11434`로 설정해야 합니다.
+개별 실행 시에는 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`가 필요합니다. AI 채팅에는 별도로 실행 중인 Ollama와 `gemma2:2b` 모델이 필요하며, 개별 실행 환경에서는 `OLLAMA_BASE_URL=http://localhost:11434`로 설정해야 합니다.
 
 ## 8. 환경 변수와 보안
 

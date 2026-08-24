@@ -2,17 +2,34 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline } from 'react-icons/io5';
+import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
+import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
+import { queueFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
+import { datasetRows, imageNameOf, normalizedFileName, truthOf } from './FinanceEvaluationPage';
 import '../style/OCRPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
-const EMPTY_FILE_NAME = '문서를 선택해 주세요';
+const EMPTY_FILE_NAME = '영수증을 선택해주세요';
 const EMPTY_ITEMS = [];
-const RECEIPT_NAME_PATTERN = /(영수증|거래.?증빙|카드.?전표|출장|식비|식대|교통|숙박|구매|복리|receipt|invoice)/i;
-const RECEIPT_TEXT_PATTERN = /(결제금액|공급가액|부가세액|사업자\s*(?:NO|번호)|승인번호|카드결제|거래종류)/i;
+const DEFAULT_FINANCE_EVALUATION_MODELS = ['gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
+const RECEIPT_STRONG_PATTERN = /(영수증|매출\s*전표|승인\s*번호|카드\s*번호|사업자\s*(?:NO|번호|등록번호)|결제\s*금액|승인\s*금액|받을\s*금액|현금\s*영수증|공급\s*가액|부가\s*세(?:액)?|총\s*구매\s*금액)/i;
+const RECEIPT_WEAK_PATTERNS = [
+  /(20\d{2})\s*(?:년|[-./])\s*\d{1,2}\s*(?:월|[-./])\s*\d{1,2}\s*일?/,
+  /(합계|총액|소계|결제|승인|거래일시|거래일자)/i,
+  /(단가\s*수량\s*금액|품목|상품명|가맹점|상호명)/i,
+  /(?<!\d)\d{1,3}(?:[,]\d{3})+(?!\d)|\d[\d,]{2,}\s*원/,
+];
+
+function hasReceiptContent(text) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return false;
+  if (RECEIPT_STRONG_PATTERN.test(normalized)) return true;
+  return RECEIPT_WEAK_PATTERNS.filter((pattern) => pattern.test(normalized)).length >= 2;
+}
 
 const FINANCE_DOCUMENTS = {
   EXPENSE_REPORT: { title: '경비지출결의서', headers: ['영수증 ID', '품목 순번', '결제일시', '상호명(가맹점)', '지출용도/품목명', '공급가액', '부가세', '합계금액', '증빙유형'] },
@@ -71,19 +88,6 @@ function FinanceReceiptWorksheet({ records, user }) {
     <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{financeRecordRows(records).map((row, rowIndex) => <tr key={`${record.id}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
     <p>새 영수증의 선별값이 현재 작업의 다음 행으로 추가됩니다.</p>
   </div>;
-}
-
-async function inferProcessingMode(file) {
-  if (RECEIPT_NAME_PATTERN.test(file?.name || '')) return 'receipt';
-  if (!file || !/\.(png|jpe?g|webp|bmp)$/i.test(file.name)) return 'document';
-  try {
-    const bitmap = await createImageBitmap(file);
-    const isReceiptShape = bitmap.height / Math.max(bitmap.width, 1) >= 1.45;
-    bitmap.close();
-    return isReceiptShape ? 'receipt' : 'document';
-  } catch {
-    return 'document';
-  }
 }
 
 function buildReadingOrder(content, viewport) {
@@ -440,6 +444,7 @@ function ExtractionWorksheet({ rows, onChange, onEvidence, selectedIds, onSelect
   </div>;
 }
 export default function OCRPage() {
+  const navigate = useNavigate();
   const [user, setUser] = useState(getAppUser);
   const [pdf, setPdf] = useState(null);
   const [imagePreviewUrl, setImagePreviewUrl] = useState('');
@@ -483,13 +488,90 @@ export default function OCRPage() {
   const [savedFinanceLoading, setSavedFinanceLoading] = useState(false);
   const [savedFinanceSearch, setSavedFinanceSearch] = useState('');
   const [financeDuplicateNotice, setFinanceDuplicateNotice] = useState('');
+  const [evaluationDatasetFile, setEvaluationDatasetFile] = useState(null);
+  const [receiptBatchStatus, setReceiptBatchStatus] = useState('');
+  const [receiptBatchActive, setReceiptBatchActive] = useState(false);
   const inputRef = useRef(null);
   const imagePreviewRef = useRef('');
   const projectTransitionTimerRef = useRef(null);
   const extractionStartedAtRef = useRef(null);
   const evaluationPanelRef = useRef(null);
   const groundTruthFileRef = useRef(null);
+  const evaluationDatasetRef = useRef(null);
+  const evaluationFolderRef = useRef(null);
   const generatedWorkbookUrlRef = useRef('');
+  const receiptBatchRef = useRef({ files: [], index: -1, active: false, recordIds: [] });
+
+  const openReceiptBatchEvaluationLegacy = async (fileList) => {
+    const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
+    if (files.length < 2) {
+      setError('일괄 처리할 영수증 이미지나 PDF를 2개 이상 선택해 주세요.');
+      return;
+    }
+    if (isReceiptEvaluator && !evaluationDatasetFile) {
+      setError('먼저 영수증 정답 JSON 데이터를 선택해 주세요.');
+      return;
+    }
+
+    if (isReceiptEvaluator) {
+      queueFinanceEvaluationInput(evaluationDatasetFile, files);
+      navigate('/reports?view=developer&developerReport=receipt');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    let completed = 0;
+    const failures = [];
+    for (const [index, file] of files.entries()) {
+      setReceiptBatchStatus(`${index + 1}/${files.length} · ${file.name} 처리 중`);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 360000,
+        });
+        await apiClient.post('/finance/records/classify', { document_id: ocr.document_id }, { timeout: 180000 });
+        completed += 1;
+      } catch (requestError) {
+        failures.push(`${file.name}: ${requestError.response?.data?.detail || '처리 실패'}`);
+      }
+    }
+    await loadSavedFinanceRecords();
+    setReceiptBatchStatus(`일괄 처리 완료 · 성공 ${completed}/${files.length}`);
+    if (failures.length) setError(`${failures.length}개 파일을 처리하지 못했습니다. ${failures[0]}`);
+    setLoading(false);
+  };
+
+  const openReceiptBatchEvaluation = async (fileList) => {
+    const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
+    if (files.length < 2) {
+      setError('일괄 처리할 영수증 이미지 또는 PDF를 2개 이상 선택해 주세요.');
+      return;
+    }
+    if (isReceiptEvaluator && evaluationDatasetFile) {
+      queueFinanceEvaluationInput(evaluationDatasetFile, files);
+      navigate('/reports?view=developer&developerReport=receipt');
+      return;
+    }
+    if (files.length > 20) {
+      setError('이미지 일괄 입력은 한 번에 최대 20개까지 처리할 수 있습니다.');
+      return;
+    }
+    if (isReceiptEvaluator && evaluationDatasetFile) {
+      queueFinanceEvaluationInput(evaluationDatasetFile, files);
+      navigate('/reports?view=developer&developerReport=receipt');
+      return;
+    }
+
+    setError('');
+    receiptBatchRef.current = { files, index: 0, active: true, recordIds: [] };
+    setFinanceRecords([]);
+    setFinanceRecord(null);
+    setReceiptBatchActive(true);
+    setReceiptBatchStatus(`1/${files.length} · ${files[0].name} 처리 중`);
+    await runExtraction(files[0]);
+  };
 
   const replaceImagePreview = (file) => {
     if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current);
@@ -549,6 +631,9 @@ export default function OCRPage() {
       setError('');
       setPendingFile(null);
       setFinanceRecords([]);
+      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [] };
+      setReceiptBatchActive(false);
+      setReceiptBatchStatus('');
       if (inputRef.current) inputRef.current.value = '';
       setProjectTransition(false);
       projectTransitionTimerRef.current = null;
@@ -664,7 +749,7 @@ export default function OCRPage() {
   const loadWithOcr = async (file) => {
     const formData = new FormData();
     formData.append('file', file);
-    const { data } = await apiClient.post(`/ocr/upload?processing_mode=${processingMode}`, formData, {
+    const { data } = await apiClient.post('/ocr/upload?processing_mode=receipt', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000,
     });
@@ -813,12 +898,12 @@ export default function OCRPage() {
 
   const prepareFile = async (file) => {
     if (!file) return;
-    const inferredMode = await inferProcessingMode(file);
+    if (!receiptBatchRef.current.active) setReceiptBatchStatus('');
     resetDocumentView({
-      preserveGroundTruth: isDeveloper && inferredMode === 'receipt',
-      preserveFinance: processingMode === 'receipt',
+      preserveGroundTruth: isDeveloper,
+      preserveFinance: true,
     });
-    setProcessingMode(inferredMode);
+    setProcessingMode('receipt');
     setPendingFile(file);
     setFileName(file.name);
     setError('');
@@ -842,25 +927,97 @@ export default function OCRPage() {
     }
   };
 
-  const runExtraction = async () => {
-    if (!pendingFile || loading) return;
+  const evaluateReceiptForReport = async (file, result, financeRecord) => {
+    if (!isReceiptEvaluator || !evaluationDatasetFile || !result.documentId || !financeRecord?.id) return;
+    setEvaluationStatus('영수증 문서화 완료 · 상세 평가 중...');
+    try {
+      const rows = datasetRows(JSON.parse(await evaluationDatasetFile.text()));
+      const uploadedName = normalizedFileName(file.name);
+      const singleWithoutImageName = rows.length === 1 && !imageNameOf(rows[0]);
+      const matches = singleWithoutImageName
+        ? [{ row: rows[0], index: 0 }]
+        : rows.map((row, index) => ({ row, index })).filter(({ row }) => normalizedFileName(imageNameOf(row)) === uploadedName);
+      if (matches.length !== 1) {
+        throw new Error(matches.length ? `${file.name}와 매칭되는 정답이 여러 개입니다.` : `정답 JSON에서 ${file.name}을 찾지 못했습니다.`);
+      }
+      const { data: modelData } = await apiClient.get('/finance-evaluations/models');
+      const available = Array.isArray(modelData?.models) ? modelData.models : [];
+      const preferred = DEFAULT_FINANCE_EVALUATION_MODELS.filter((model) => available.includes(model));
+      const modelNames = preferred.length ? preferred : available.slice(0, 1);
+      if (!modelNames.length) throw new Error('평가할 Ollama 모델이 없습니다.');
+      const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
+        document_id: result.documentId,
+        record_id: financeRecord.id,
+        ground_truth: truthOf(matches[0].row),
+        dataset_name: evaluationDatasetFile.name,
+        dataset_index: matches[0].index,
+        source_file_name: file.name,
+        latency_ms: Math.round(processingTimeMs || 0),
+      }, { timeout: 1200000 });
+      appendFinanceEvaluationRun({
+        ...evaluation,
+        dataset_name: evaluationDatasetFile.name,
+        dataset_index: matches[0].index,
+        matched_image: file.name,
+        evaluated_at: new Date().toISOString(),
+        batch_id: null,
+      });
+      localStorage.setItem('pic_to_text_developer_report', 'receipt');
+      setEvaluationStatus('문서화와 상세 평가가 완료되었습니다. 리포트에서 확인할 수 있습니다.');
+    } catch (evaluationError) {
+      setEvaluationStatus(`문서화는 완료되었지만 평가를 저장하지 못했습니다. ${evaluationError.response?.data?.detail || evaluationError.message}`);
+    }
+  };
+
+  const runExtraction = async (queuedFile = null) => {
+    const sourceFile = queuedFile instanceof File ? queuedFile : pendingFile;
+    if (!sourceFile || loading) return;
     setFinanceDuplicateNotice('');
-    const result = await loadFile(pendingFile, pdf);
-    if (!result?.success) return;
+    const result = await loadFile(sourceFile, queuedFile instanceof File ? null : pdf);
+    if (!result?.success) {
+      if (receiptBatchRef.current.active) {
+        receiptBatchRef.current.active = false;
+        setReceiptBatchActive(false);
+        setReceiptBatchStatus(`일괄 처리가 중단되었습니다 · ${sourceFile.name}`);
+      }
+      return;
+    }
     setPendingFile(null);
 
     const extractedText = (result.texts || []).join('\n');
-    const shouldCreateFinanceRecord = processingMode === 'receipt' || RECEIPT_TEXT_PATTERN.test(extractedText);
-    if (shouldCreateFinanceRecord && result.documentId) {
+    if (!hasReceiptContent(extractedText)) {
+      if (receiptBatchRef.current.active) {
+        receiptBatchRef.current.active = false;
+        setReceiptBatchActive(false);
+        setReceiptBatchStatus(`영수증 내용이 없어 일괄 처리가 중단되었습니다 · ${sourceFile.name}`);
+      }
+      setError('추출된 문서에서 영수증 관련 내용을 찾지 못했습니다. 영수증이 포함된 파일인지 확인해 주세요.');
+      return;
+    }
+
+    if (result.documentId) {
       setLoading(true);
       try {
         const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 180000 });
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
+        if (receiptBatchRef.current.active && !receiptBatchRef.current.recordIds.includes(financeRecord.id)) {
+          receiptBatchRef.current.recordIds.push(financeRecord.id);
+        }
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
         setResultTab('text');
+        await evaluateReceiptForReport(sourceFile, result, financeRecord);
+        if (receiptBatchRef.current.active) {
+          const batch = receiptBatchRef.current;
+          setReceiptBatchStatus(`${batch.index + 1}/${batch.files.length} · 사용자 최종 확인 대기 · ${sourceFile.name}`);
+        }
       } catch (requestError) {
+        if (receiptBatchRef.current.active) {
+          receiptBatchRef.current.active = false;
+          setReceiptBatchActive(false);
+          setReceiptBatchStatus(`문서화 오류로 일괄 처리가 중단되었습니다 · ${sourceFile.name}`);
+        }
         setError(requestError.response?.data?.detail || 'OCR은 완료됐지만 재무 양식에 자동 입력하지 못했습니다.');
       } finally {
         setLoading(false);
@@ -947,8 +1104,17 @@ export default function OCRPage() {
   const pageCount = pdf?.numPages || pageTexts.length;
   const hasResult = pageTexts.length > 0;
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user?.role) || user?.email === 'developer@docunex.com';
+  const isReceiptEvaluator = user?.role === 'DEVELOPER' || user?.email === 'developer@docunex.com';
+  const isEnterprise = user?.subscription_tier === 'ENTERPRISE' || user?.subscriptionTier === 'ENTERPRISE';
   const fileExtension = fileName.includes('.') ? fileName.split('.').pop().toUpperCase() : 'FILE';
   const displayedImageUrl = previewVariant === 'processed' && preprocessedImageUrl ? preprocessedImageUrl : imagePreviewUrl;
+  const handleReceiptFileSelection = (file) => {
+    if (!file) return;
+    if (!receiptBatchRef.current.active) {
+      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [] };
+    }
+    prepareFile(file);
+  };
   const savedFinanceGroups = useMemo(() => {
     const groups = new Map();
     savedFinanceRecords.forEach((record) => {
@@ -1004,12 +1170,18 @@ export default function OCRPage() {
     setExportingRows(true);
     setError('');
     try {
-      const records = financeRecords.filter((item) => item.document_type === financeRecord.document_type);
+      const batchRecordIds = new Set(receiptBatchRef.current.recordIds || []);
+      const records = batchRecordIds.size
+        ? financeRecords.filter((item) => batchRecordIds.has(item.id))
+        : financeRecords;
+      if (!records.length) throw new Error('Excel에 포함할 재무 기록이 없습니다.');
       const response = await apiClient.post('/finance/records/export', { record_ids: records.map((item) => item.id) }, { responseType: 'blob', timeout: 60000 });
       const url = URL.createObjectURL(response.data);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `${FINANCE_DOCUMENTS[financeRecord.document_type]?.title || '재무문서'}_${fileName.replace(/\.[^.]+$/, '')}.xlsx`;
+      anchor.download = batchRecordIds.size > 1
+        ? `일괄_재무문서_${new Date().toISOString().slice(0, 10)}.xlsx`
+        : `${FINANCE_DOCUMENTS[financeRecord.document_type]?.title || '재무문서'}_${fileName.replace(/\.[^.]+$/, '')}.xlsx`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (requestError) {
@@ -1066,6 +1238,7 @@ export default function OCRPage() {
 
   const confirmFinanceRecord = async () => {
     if (!financeRecord || financeRecord.status === 'CONFIRMED') return;
+    let nextBatchFile = null;
     setLoading(true);
     setError('');
     try {
@@ -1084,11 +1257,25 @@ export default function OCRPage() {
       setFinanceRecord(data);
       setFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
       setSavedFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
+      if (receiptBatchRef.current.active) {
+        const batch = receiptBatchRef.current;
+        const nextIndex = batch.index + 1;
+        if (nextIndex >= batch.files.length) {
+          batch.active = false;
+          setReceiptBatchActive(false);
+          setReceiptBatchStatus(`일괄 문서화 완료 · ${batch.files.length}/${batch.files.length}`);
+        } else {
+          batch.index = nextIndex;
+          nextBatchFile = batch.files[nextIndex];
+          setReceiptBatchStatus(`${nextIndex + 1}/${batch.files.length} · ${nextBatchFile.name} 처리 중`);
+        }
+      }
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '재무 기록을 확정하지 못했습니다.');
     } finally {
       setLoading(false);
     }
+    if (nextBatchFile) await runExtraction(nextBatchFile);
   };
 
   const submitFinanceRecord = async () => {
@@ -1139,12 +1326,12 @@ export default function OCRPage() {
           <div className="ocr-header-actions">
             <span className="extract-method"><i /> {processingMode === 'receipt' ? '최종 확정은 사용자가 결정합니다' : '문서 원문과 추출 데이터 대조'}</span>
             {processingMode !== 'receipt' && isDeveloper && <button className="developer-jump-button" type="button" onClick={() => evaluationPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>비교 텍스트 보기</button>}
-            {processingMode !== 'receipt' && isDeveloper && <button className="developer-report-button" type="button" onClick={() => { window.location.href = '/reports'; }}>성능 리포트</button>}
+            {processingMode !== 'receipt' && isDeveloper && <button className="developer-report-button" type="button" onClick={() => navigate('/reports')}>성능 리포트</button>}
             {processingMode !== 'receipt' && <button className="ocr-primary" onClick={() => inputRef.current?.click()}>파일 선택</button>}
           </div>
         </header>
 
-        <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; prepareFile(file); e.target.value = ''; }} />
+        <input ref={inputRef} hidden type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { const file = e.target.files?.[0]; handleReceiptFileSelection(file); e.target.value = ''; }} />
 
         <div className="ocr-filebar">
           <div className={`processing-mode auto ${processingMode}`}><span>자동 판별</span><strong>{processingMode === 'receipt' ? '영수증·거래 증빙' : '재무 문서'}</strong></div>
@@ -1159,7 +1346,7 @@ export default function OCRPage() {
           <div className="filebar-actions">{pendingFile && <button className="extract-start-button" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : processingMode !== 'receipt' && isDeveloper && groundTruth.trim() ? '추출 및 평가 시작' : 'OCR 텍스트 추출'}</button>}{(pendingFile || hasResult) && <button className="ghost-button" onClick={() => inputRef.current?.click()}>파일 변경</button>}</div>
         </div>
 
-        <section className={`ocr-editor ${processingMode === 'receipt' ? 'receipt-workspace' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); prepareFile(e.dataTransfer.files?.[0]); }}>
+        <section className={`ocr-editor ${processingMode === 'receipt' ? 'receipt-workspace' : ''}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); handleReceiptFileSelection(e.dataTransfer.files?.[0]); }}>
           {processingMode !== 'receipt' && <aside className="pages-panel">
             <div className="panel-heading"><span>페이지</span><b>{pageCount}</b></div>
             <div className="thumb-list">
@@ -1192,8 +1379,16 @@ export default function OCRPage() {
               </div>
             </div>
             {processingMode === 'receipt' && <div className="receipt-upload-actions">
-              <div><span className="pdf-badge">{fileExtension}</span><span><strong>{fileName}</strong><small>{hasResult ? 'OCR 추출 완료' : pendingFile ? '추출 준비 완료' : '영수증 이미지 또는 PDF를 선택해주세요'}</small></span></div>
-              <nav>{pendingFile && <button type="button" className="extract" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : 'OCR 텍스트 추출'}</button>}<button type="button" onClick={() => inputRef.current?.click()}>{pendingFile || hasResult ? '파일 변경' : '영수증 선택'}</button></nav>
+              <div><span className="pdf-badge">{fileExtension}</span><span><strong>{fileName}</strong><small>{hasResult ? 'OCR 추출 완료' : pendingFile ? '추출 준비 완료' : (isEnterprise && receiptBatchStatus) || '영수증 이미지 혹은 영수증 내용이 들어간 문서를 선택해주세요'}</small></span></div>
+              <nav>{pendingFile && <button type="button" className="extract" onClick={runExtraction} disabled={loading}>{loading ? '처리 중...' : 'OCR 텍스트 추출'}</button>}{(isReceiptEvaluator || isEnterprise) && <button type="button" className="batch" disabled={loading || (isReceiptEvaluator && !evaluationDatasetFile)} onClick={() => evaluationFolderRef.current?.click()}>영수증 일괄 입력</button>}<button type="button" onClick={() => inputRef.current?.click()}>{pendingFile || hasResult ? '파일 변경' : '영수증 선택'}</button></nav>
+              <nav className="batch-always-nav"><button type="button" className="batch batch-always" disabled={loading || receiptBatchActive} onClick={() => evaluationFolderRef.current?.click()}>영수증 일괄 입력</button></nav>
+              <input ref={evaluationFolderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => { openReceiptBatchEvaluation(event.target.files); event.target.value = ''; }} />
+            </div>}
+            {processingMode === 'receipt' && receiptBatchStatus && <div className="receipt-batch-status"><strong>{receiptBatchActive ? '일괄 문서화 진행 중' : '일괄 문서화'}</strong><span>{receiptBatchStatus}</span></div>}
+            {processingMode === 'receipt' && isReceiptEvaluator && <div className="receipt-evaluation-transfer">
+              <div><strong>평가 페이지에서 상세한 평가가 가능합니다</strong><small>{evaluationStatus || (evaluationDatasetFile ? `정답 데이터: ${evaluationDatasetFile.name} · OCR 추출 후 평가 결과가 자동으로 연결됩니다.` : '정답 JSON을 선택하면 모델별 정확도와 OCR 영향을 상세히 확인할 수 있습니다.')}</small></div>
+              <nav><button type="button" onClick={() => evaluationDatasetRef.current?.click()}>{evaluationDatasetFile ? '다른 정답 데이터 입력' : '정답 데이터 입력'}</button></nav>
+              <input ref={evaluationDatasetRef} hidden type="file" accept=".json,application/json" onChange={(event) => { const file = event.target.files?.[0] || null; setEvaluationDatasetFile(file); setEvaluationStatus(file ? `${file.name} 정답 데이터를 불러왔습니다.` : ''); setError(''); }} />
             </div>}
             {processingMode === 'receipt' && financeDuplicateNotice && <div className="receipt-duplicate-notice"><strong>중복 문서</strong><span>{financeDuplicateNotice}</span></div>}
             <div className="preview-stage">
@@ -1291,7 +1486,7 @@ export default function OCRPage() {
             <div className="developer-extracted-summary"><div><strong>OCR 추출 결과</strong><span>{pageTexts.join('\n\n').length.toLocaleString()}자 · {pageCount}페이지</span></div><pre>{hasResult ? pageTexts.join('\n\n').slice(0, 1800) : '문서를 업로드하고 OCR 추출을 완료하면 결과가 표시됩니다.'}</pre></div>
             <label><div><strong>정답 데이터 (Ground Truth)</strong><span className="ground-truth-tools"><em>TXT · JSON</em><button type="button" disabled={!hasResult} onClick={() => groundTruthFileRef.current?.click()}>파일 불러오기</button></span></div><textarea disabled={!hasResult} value={groundTruth} onChange={(event) => { setGroundTruth(event.target.value); setEvaluationStatus(''); }} placeholder="직접 입력하거나 TXT 또는 JSON 정답 파일을 불러오세요." /><input ref={groundTruthFileRef} hidden type="file" accept=".txt,.json,text/plain,application/json" onChange={(event) => { loadGroundTruthFile(event.target.files?.[0]); event.target.value = ''; }} /></label>
           </div>
-          <footer><span className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus || (hasResult ? '정답 데이터를 입력하면 평가 결과가 개발자 리포트에 저장됩니다.' : '먼저 문서를 업로드해 주세요.')}</span><div><button className="open-report-button" type="button" onClick={() => { window.location.href = '/reports'; }}>리포트 열기</button><button disabled={!hasResult || !groundTruth.trim() || !currentDocumentId || evaluationStatus === '저장 중...'} onClick={saveDeveloperEvaluation}>정답 저장 및 성능 평가</button></div></footer>
+          <footer><span className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus || (hasResult ? '정답 데이터를 입력하면 평가 결과가 개발자 리포트에 저장됩니다.' : '먼저 문서를 업로드해 주세요.')}</span><div><button className="open-report-button" type="button" onClick={() => navigate('/reports')}>리포트 열기</button><button disabled={!hasResult || !groundTruth.trim() || !currentDocumentId || evaluationStatus === '저장 중...'} onClick={saveDeveloperEvaluation}>정답 저장 및 성능 평가</button></div></footer>
         </section>}
       </main>
     </div>

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
+import { useLocation } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
+import FinanceEvaluationPage from './FinanceEvaluationPage';
 import '../style/ReportPage.scss';
 
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
@@ -31,14 +33,26 @@ function BusinessReport({ stats, loading }) {
 }
 
 export default function ReportPage() {
+  const location = useLocation();
   const user = getAppUser();
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user.role) || user.email === 'developer@docunex.com';
+  const requestedDeveloperReport = new URLSearchParams(window.location.search).get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
   const [reportView, setReportView] = useState(isDeveloper ? 'developer' : 'business');
+  const [developerReport, setDeveloperReport] = useState(requestedDeveloperReport === 'receipt' ? 'receipt' : 'rag');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+
+  useEffect(() => {
+    if (location.pathname !== '/reports') return;
+    const params = new URLSearchParams(location.search);
+    const requestedView = params.get('view');
+    const requestedReport = params.get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
+    if (isDeveloper && (requestedView === 'developer' || requestedReport === 'receipt')) setReportView('developer');
+    if (isDeveloper && requestedReport === 'receipt') setDeveloperReport('receipt');
+  }, [isDeveloper, location.pathname, location.search]);
   const [modelConfig, setModelConfig] = useState({ model: '미설정', embedding_model: '미설정', embedding_dimensions: null, rerank_model: null, prompt_version: '미설정', top_k: null, chunk_target_chars: null, ready: false });
 
   const loadEvaluations = useCallback(async () => {
@@ -91,9 +105,9 @@ export default function ReportPage() {
 
   return <div className="app-shell developer-report-shell"><Sidebar />
     <main className="developer-report">
-      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><button className={reportView === 'developer' ? 'active' : ''} onClick={() => setReportView('developer')}>개발자용</button></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={!runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
+      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
-      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : <>
+      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <FinanceEvaluationPage embedded /> : <>
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>

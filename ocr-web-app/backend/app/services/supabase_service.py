@@ -258,6 +258,257 @@ class SupabaseService:
             raise HTTPException(status_code=404, detail="재무 문서를 찾을 수 없습니다.")
         return rows[0]
 
+    def create_finance_evaluation_batch(
+        self,
+        *,
+        user_email: str,
+        batch_name: str,
+        model_name: str,
+        dataset_name: str | None = None,
+        total_items: int = 0,
+        evaluation_mode: str = "SINGLE",
+    ) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.post(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={
+                "user_id": user_id,
+                "batch_name": batch_name[:200],
+                "dataset_name": dataset_name,
+                "model_name": model_name,
+                "evaluation_mode": evaluation_mode,
+                "requested_items": max(int(total_items), 0),
+                # Item triggers become the source of truth once rows are added.
+                "total_items": max(int(total_items), 0),
+            },
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "재무 평가 배치 저장 실패")
+        return response.json()[0]
+
+    def _get_finance_evaluation_batch(self, user_email: str, batch_id: str) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            params={"select": "*", "id": f"eq.{batch_id}", "user_id": f"eq.{user_id}", "limit": "1"},
+            headers=self._service_headers(),
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "재무 평가 배치 조회 실패")
+        rows = response.json()
+        if not rows:
+            raise HTTPException(status_code=404, detail="재무 평가 배치를 찾을 수 없습니다.")
+        return rows[0]
+
+    def save_finance_record_evaluation(
+        self,
+        *,
+        user_email: str,
+        document: dict[str, Any],
+        record: dict[str, Any],
+        ground_truth: dict[str, Any],
+        normalized_ground_truth: dict[str, Any],
+        result: dict[str, Any],
+        dataset_index: int = 0,
+        dataset_name: str | None = None,
+        source_file_name: str | None = None,
+        batch_id: str | None = None,
+    ) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        if batch_id:
+            batch = self._get_finance_evaluation_batch(user_email, batch_id)
+        else:
+            batch = self.create_finance_evaluation_batch(
+                user_email=user_email,
+                batch_name=source_file_name or document.get("file_name") or "receipt evaluation",
+                dataset_name=dataset_name,
+                model_name=str(result.get("model_name") or record.get("model_name") or "unknown"),
+                total_items=1,
+            )
+            batch_id = batch["id"]
+
+        item_response = httpx.post(
+            f"{self.url}/rest/v1/finance_evaluation_items",
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={
+                "batch_id": batch_id,
+                "user_id": user_id,
+                "dataset_index": max(int(dataset_index), 0),
+                "source_file_name": source_file_name or document.get("file_name") or "receipt",
+                "source_storage_path": document.get("file_url"),
+                "document_id": document["id"],
+                "finance_record_id": record["id"],
+                "ground_truth": ground_truth,
+                "normalized_ground_truth": normalized_ground_truth,
+                "status": "EVALUATING",
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            },
+            timeout=20,
+        )
+        self._raise_for_supabase(item_response, "재무 평가 항목 저장 실패")
+        item = item_response.json()[0]
+        system = result.get("system") or {}
+        score = system.get("score") or {}
+        try:
+            evaluation_response = httpx.post(
+                f"{self.url}/rest/v1/finance_record_evaluations",
+                headers={**self._service_headers(), "Prefer": "return=representation"},
+                json={
+                    "batch_id": batch_id,
+                    "item_id": item["id"],
+                    "user_id": user_id,
+                    "document_id": document["id"],
+                    "finance_record_id": record["id"],
+                    "ground_truth": ground_truth,
+                    "normalized_ground_truth": normalized_ground_truth,
+                    "prediction": system.get("prediction") or {},
+                    "field_scores": score.get("fields") or {},
+                    "ocr_impact": system.get("ocr_impact") or {},
+                    "workbook_result": system.get("workbook") or {},
+                    "model_name": str(result.get("model_name") or record.get("model_name") or "unknown"),
+                    "model_version": result.get("model_version"),
+                    "prompt_version": result.get("prompt_version"),
+                    "correct_fields": int(score.get("correct_fields") or 0),
+                    "evaluated_fields": int(score.get("evaluated_fields") or 0),
+                    "field_accuracy": float(score.get("field_accuracy") or 0),
+                    "complete_match": bool(score.get("complete_match")),
+                    "latency_ms": max(int(result.get("latency_ms") or 0), 0),
+                    "status": "COMPLETED" if result.get("success", True) else "FAILED",
+                    "error_message": result.get("error"),
+                },
+                timeout=20,
+            )
+            self._raise_for_supabase(evaluation_response, "재무 평가 결과 저장 실패")
+            evaluation = evaluation_response.json()[0]
+            item_patch = httpx.patch(
+                f"{self.url}/rest/v1/finance_evaluation_items",
+                params={"id": f"eq.{item['id']}"},
+                headers={**self._service_headers(), "Prefer": "return=minimal"},
+                json={
+                    "status": "COMPLETED" if result.get("success", True) else "FAILED",
+                    "evaluation_time_ms": max(int(result.get("latency_ms") or 0), 0),
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "error_stage": None if result.get("success", True) else "EVALUATION",
+                    "error_message": result.get("error"),
+                },
+                timeout=15,
+            )
+            self._raise_for_supabase(item_patch, "재무 평가 항목 완료 처리 실패")
+            self._refresh_finance_evaluation_summary(batch_id)
+            return {"batch": batch, "item": item, "evaluation": evaluation}
+        except Exception as exc:
+            httpx.patch(
+                f"{self.url}/rest/v1/finance_evaluation_items",
+                params={"id": f"eq.{item['id']}"},
+                headers={**self._service_headers(), "Prefer": "return=minimal"},
+                json={"status": "FAILED", "error_stage": "EVALUATION", "error_message": str(exc)[:2000], "completed_at": datetime.now(timezone.utc).isoformat()},
+                timeout=15,
+            )
+            raise
+
+    def _refresh_finance_evaluation_summary(self, batch_id: str, *, finalize: bool = False) -> dict[str, Any]:
+        response = httpx.get(
+            f"{self.url}/rest/v1/finance_record_evaluations",
+            params={
+                "select": "field_accuracy,latency_ms,status,complete_match,field_scores,ocr_impact,workbook_result",
+                "batch_id": f"eq.{batch_id}",
+            },
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(response, "재무 평가 요약 조회 실패")
+        rows = response.json()
+        completed = [row for row in rows if row.get("status") == "COMPLETED"]
+        batch = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            params={"select": "requested_items,evaluation_mode", "id": f"eq.{batch_id}", "limit": "1"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(batch, "재무 평가 배치 집계 조회 실패")
+        batch_rows = batch.json()
+        requested = int((batch_rows[0] if batch_rows else {}).get("requested_items") or len(rows))
+        items_response = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_items",
+            params={"select": "status,error_stage", "batch_id": f"eq.{batch_id}"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(items_response, "재무 평가 항목 집계 조회 실패")
+        items = items_response.json()
+        field_error_counts: dict[str, int] = {}
+        for row in completed:
+            for field, detail in (row.get("field_scores") or {}).items():
+                if not isinstance(detail, dict):
+                    continue
+                if field != "items":
+                    if not detail.get("correct"):
+                        field_error_counts[field] = field_error_counts.get(field, 0) + 1
+                    continue
+                if not detail.get("count_correct"):
+                    field_error_counts["items.count"] = field_error_counts.get("items.count", 0) + 1
+                for item in detail.get("items") or []:
+                    for item_field, item_detail in (item.get("fields") or {}).items():
+                        if isinstance(item_detail, dict) and not item_detail.get("correct"):
+                            key = f"items.{item_field}"
+                            field_error_counts[key] = field_error_counts.get(key, 0) + 1
+        error_stage_counts = {stage: 0 for stage in ("UPLOAD", "OCR", "DOCUMENTATION", "EVALUATION")}
+        for item in items:
+            stage = item.get("error_stage")
+            if stage in error_stage_counts:
+                error_stage_counts[stage] += 1
+        unregistered_count = max(requested - len(items), 0)
+        if unregistered_count:
+            error_stage_counts["UNREGISTERED"] = unregistered_count
+        ocr_rates = [float((row.get("ocr_impact") or {}).get("ocr_evidence_rate")) for row in completed if (row.get("ocr_impact") or {}).get("ocr_evidence_rate") is not None]
+        metrics = {
+            "batch_mode": (batch_rows[0] if batch_rows else {}).get("evaluation_mode") or "SINGLE",
+            "requested_count": requested,
+            "registered_count": len(items),
+            "evaluated_count": len(rows),
+            "successful_count": len(completed),
+            "failed_count": max(requested - len(completed), 0),
+            "unsuccessful_count": max(requested - len(completed), 0),
+            "average_field_accuracy": sum(float(row.get("field_accuracy") or 0) for row in completed) / len(completed) if completed else 0,
+            "complete_match_rate": sum(bool(row.get("complete_match")) for row in completed) / len(completed) if completed else 0,
+            "average_latency_ms": round(sum(int(row.get("latency_ms") or 0) for row in completed) / len(completed)) if completed else 0,
+            "total_processing_time_ms": sum(int(row.get("latency_ms") or 0) for row in rows),
+            "schema_success_rate": sum(bool((row.get("workbook_result") or {}).get("success")) for row in completed) / len(completed) if completed else 0,
+            "total_amount_accuracy": sum(bool(((row.get("field_scores") or {}).get("total_amount") or {}).get("correct")) for row in completed) / len(completed) if completed else 0,
+            "ocr_evidence_rate": sum(ocr_rates) / len(ocr_rates) if ocr_rates else 0,
+            "field_error_counts": field_error_counts,
+            "error_stage_counts": error_stage_counts,
+        }
+        batch_status = None
+        if finalize:
+            batch_status = "COMPLETED" if requested > 0 and len(completed) == requested else "FAILED" if not completed else "PARTIAL"
+        patch = httpx.patch(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            params={"id": f"eq.{batch_id}"},
+            headers={**self._service_headers(), "Prefer": "return=minimal"},
+            json={"summary_metrics": metrics, **({"status": batch_status, "completed_at": datetime.now(timezone.utc).isoformat()} if batch_status else {})}, timeout=15,
+        )
+        self._raise_for_supabase(patch, "재무 평가 요약 저장 실패")
+        return metrics
+
+    def finalize_finance_evaluation_batch(self, user_email: str, batch_id: str) -> dict[str, Any]:
+        self._get_finance_evaluation_batch(user_email, batch_id)
+        metrics = self._refresh_finance_evaluation_summary(batch_id, finalize=True)
+        return {"id": batch_id, "summary_metrics": metrics}
+
+    def list_finance_record_evaluations(self, user_email: str, *, limit: int = 200) -> list[dict[str, Any]]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/finance_record_evaluations",
+            params={
+                "select": "*,finance_evaluation_items(dataset_index,source_file_name),finance_evaluation_batches(dataset_name)",
+                "user_id": f"eq.{user_id}",
+                "order": "evaluated_at.asc",
+                "limit": str(limit),
+            },
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(response, "재무 평가 결과 조회 실패")
+        return response.json()
+
     def create_document_signed_url(self, storage_path: str) -> str:
         encoded_path = quote(storage_path, safe="/")
         response = httpx.post(

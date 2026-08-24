@@ -8,6 +8,7 @@ import {
   readFinanceEvaluationRuns,
   saveFinanceEvaluationRuns,
 } from '../features/financeEvaluationStorage';
+import { clearFinanceEvaluationInput, peekFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
 import '../style/FinanceEvaluationPage.scss';
 
 const DEFAULT_MODELS = ['llama3b-receipt-v3:latest', 'gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
@@ -196,7 +197,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
 }
 
-function datasetRows(payload) {
+export function datasetRows(payload) {
   if (Array.isArray(payload)) return payload;
   const collection = payload?.receipts || payload?.data;
   if (Array.isArray(collection)) return collection;
@@ -205,7 +206,7 @@ function datasetRows(payload) {
   return payload && typeof payload === 'object' ? [payload] : [];
 }
 
-function truthOf(row) {
+export function truthOf(row) {
   const source = row?.ground_truth || row?.truth || row?.label || row?.expected || row || {};
   if (!('가게명' in source || '구매일자' in source || '총 결제액' in source)) return source;
   const items = Array.isArray(source['구매물품']) ? source['구매물품'].map((item) => ({
@@ -226,11 +227,11 @@ function nameOf(row) {
   return row?.filename || row?.file_name || row?.image || row?.name || row?.id || '';
 }
 
-function imageNameOf(row) {
+export function imageNameOf(row) {
   return row?.image || row?.image_name || row?.filename || row?.file_name || row?.document_name || '';
 }
 
-function normalizedFileName(value) {
+export function normalizedFileName(value) {
   return String(value || '').trim().toLocaleLowerCase();
 }
 
@@ -265,7 +266,7 @@ function summarize(runs, model) {
   };
 }
 
-export default function FinanceEvaluationPage() {
+export default function FinanceEvaluationPage({ embedded = false }) {
   const imageRef = useRef(null);
   const folderRef = useRef(null);
   const imageUrlRef = useRef('');
@@ -284,6 +285,7 @@ export default function FinanceEvaluationPage() {
   const [pipelineProgress, setPipelineProgress] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState('');
   const [batchComplete, setBatchComplete] = useState(false);
+  const [queuedBatchFiles, setQueuedBatchFiles] = useState(null);
 
   const batchRuns = useMemo(() => activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId) : [], [runs, activeBatchId]);
   const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(batchRuns, model) })), [batchRuns, models]);
@@ -304,12 +306,35 @@ export default function FinanceEvaluationPage() {
   }, [summaries]);
   const latestRun = runs[runs.length - 1];
 
+  useEffect(() => {
+    if (!latestRun?.document_id || imagePreview?.name === latestRun.document_name) return undefined;
+    let active = true;
+    apiClient.get(`/ocr/documents/${latestRun.document_id}/file`, { responseType: 'blob' }).then(({ data }) => {
+      if (!active) return;
+      if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
+      imageUrlRef.current = URL.createObjectURL(data);
+      setImagePreview({ url: imageUrlRef.current, type: data.type, name: latestRun.document_name });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [latestRun?.document_id, latestRun?.document_name, imagePreview?.name]);
+
   useEffect(() => () => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
   }, []);
 
   useEffect(() => {
     let active = true;
+    apiClient.get('/finance-evaluations/runs').then(({ data }) => {
+      if (!active || !Array.isArray(data)) return;
+      const local = readFinanceEvaluationRuns();
+      const persistedIds = new Set(data.map((run) => run.evaluation_id).filter(Boolean));
+      setRuns(saveFinanceEvaluationRuns([
+        ...local.filter((run) => !run.evaluation_id || !persistedIds.has(run.evaluation_id)),
+        ...data,
+      ]));
+    }).catch(() => {
+      // Keep the local cache available if Supabase is temporarily unavailable.
+    });
     apiClient.get('/finance-evaluations/models').then(({ data }) => {
       if (!active) return;
       const available = Array.isArray(data?.models) ? data.models : [];
@@ -385,12 +410,22 @@ export default function FinanceEvaluationPage() {
       stage: 'llm', document_name: ocr.filename || file.name,
       ocr_text: (ocr.pages || []).map((page) => page.text || '').join('\n'), ocr_pages: ocr.pages || [],
     });
-    const { data: evaluation } = await apiClient.post('/finance-evaluations/run', {
-      document_id: ocr.document_id, ground_truth: truthOf(matched.row), model_names: models,
+    const { data: record } = await apiClient.post('/finance/records/classify', {
+      document_id: ocr.document_id,
+    }, { timeout: 180000 });
+    const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
+      document_id: ocr.document_id,
+      record_id: record.id,
+      ground_truth: truthOf(matched.row),
+      batch_id: batchId || null,
+      dataset_name: datasetName || null,
+      dataset_index: matched.index,
+      source_file_name: file.name,
     }, { timeout: 1200000 });
     return {
       ...evaluation, dataset_name: datasetName, dataset_index: matched.index,
-      matched_image: file.name, evaluated_at: new Date().toISOString(), batch_id: batchId || null,
+      matched_image: file.name, evaluated_at: evaluation.evaluated_at || new Date().toISOString(),
+      batch_id: evaluation.batch_id || batchId || null,
     };
   };
 
@@ -419,7 +454,21 @@ export default function FinanceEvaluationPage() {
       if (folderRef.current) folderRef.current.value = '';
       return;
     }
-    const batchId = `batch:${Date.now()}`;
+    let batchId = '';
+    try {
+      const { data: batch } = await apiClient.post('/finance-evaluations/batches', {
+        batch_name: `${datasetName || 'receipt'} 일괄 평가`,
+        dataset_name: datasetName || null,
+        model_name: models[0],
+        total_items: files.length,
+        evaluation_mode: 'BULK',
+      });
+      batchId = batch.id;
+    } catch (error) {
+      setStatus(`평가 배치를 저장하지 못했습니다: ${error.response?.data?.detail || error.message}`);
+      if (folderRef.current) folderRef.current.value = '';
+      return;
+    }
     setActiveBatchId(batchId); setBatchComplete(false); setQuestionHistory([]); setLoading(true);
     let accumulated = [...runs]; let completed = 0; const errors = [];
     for (const file of files) {
@@ -432,10 +481,44 @@ export default function FinanceEvaluationPage() {
         errors.push(`${file.name}: ${error.response?.data?.detail || error.message || '평가 실패'}`);
       }
     }
+    try {
+      await apiClient.post(`/finance-evaluations/batches/${batchId}/finalize`);
+    } catch (error) {
+      errors.push(`배치 집계 저장: ${error.response?.data?.detail || error.message || '저장 실패'}`);
+    }
     setPipelineProgress(null); setLoading(false); setBatchComplete(completed >= 2);
     setStatus(`폴더 일괄 평가 완료 · 성공 ${completed}/${files.length}${errors.length ? ` · 실패 ${errors.length}` : ''}`);
     if (folderRef.current) folderRef.current.value = '';
   };
+
+  useEffect(() => {
+    const input = peekFinanceEvaluationInput();
+    if (!input?.datasetFile || !input.imageFiles?.length) return;
+    let active = true;
+    input.datasetFile.text().then((text) => {
+      if (!active) return;
+      const rows = datasetRows(JSON.parse(text));
+      if (!rows.length) throw new Error('정답 항목을 찾지 못했습니다.');
+      setDataset(rows);
+      setDatasetName(input.datasetFile.name);
+      setSelectedIndex(0);
+      setQueuedBatchFiles(input.imageFiles);
+      clearFinanceEvaluationInput(input);
+      setStatus(`${rows.length}개 정답과 ${input.imageFiles.length}개 파일을 받았습니다. 평가 모델을 준비하는 중입니다.`);
+    }).catch((error) => {
+      if (active) setStatus(`정답 JSON 오류: ${error.message}`);
+    });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!queuedBatchFiles || !dataset.length || !models.length || loading) return;
+    if (models.some((model) => !installedModels.includes(model))) return;
+    const files = queuedBatchFiles;
+    setQueuedBatchFiles(null);
+    if (files.length === 1) runEvaluation(files[0]);
+    else runFolderEvaluation(files);
+  }, [queuedBatchFiles, dataset.length, models, installedModels, loading]);
 
   const exportResults = () => {
     const isBatchExport = batchComplete && batchRuns.length > 1;
@@ -498,9 +581,9 @@ export default function FinanceEvaluationPage() {
     } finally { setQuestionLoading(false); }
   };
 
-  return <div className="app-shell finance-eval-shell"><Sidebar /><main className="finance-eval-page">
+  return <div className={embedded ? 'finance-eval-embedded-shell' : 'app-shell finance-eval-shell'}>{!embedded && <Sidebar />}<main className={`finance-eval-page ${embedded ? 'embedded' : ''}`}>
     <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> {batchComplete && batchRuns.length > 1 ? '일괄 통계 JSON' : '결과 JSON'}</button></header>
-    <section className="eval-setup">
+    {!embedded && <section className="eval-setup">
       <label><span>정답 데이터</span><input type="file" accept=".json,application/json" onChange={(event) => loadDataset(event.target.files?.[0])} /><small>{datasetName || 'receipt_kr.json을 선택하세요'}</small></label>
       {models.map((model, index) => <label className="model-selector" key={`${model}-${index}`}><span>평가 모델 {index + 1}</span><div><select value={model} onChange={(event) => setModel(index, event.target.value)}>{installedModels.map((name) => <option value={name} key={name} disabled={models.includes(name) && name !== model}>{name}</option>)}</select><button type="button" onClick={() => removeModel(index)} aria-label={`${model} 제거`}>×</button></div></label>)}
       {models.length < Math.min(4, installedModels.length) && <button className="add-model-button" type="button" onClick={addModel}>＋ 모델 추가</button>}
@@ -510,7 +593,7 @@ export default function FinanceEvaluationPage() {
       <button className="eval-upload batch-upload" disabled={!dataset.length || loading || !models.length || models.some((model) => !installedModels.includes(model))} onClick={() => folderRef.current?.click()}>{loading ? '일괄 평가 중...' : '프로젝트 폴더 일괄 평가'}</button>
       <input ref={folderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => runFolderEvaluation(event.target.files)} />
       <p>{status}</p>
-    </section>
+    </section>}
 
     {batchComplete && batchRuns.length > 1 && <section className="eval-summary-grid">
       {scoredSummaries.map((summary) => <article key={summary.model}>

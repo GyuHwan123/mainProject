@@ -19,6 +19,7 @@ from app.services.supabase_service import supabase_service
 
 router = APIRouter()
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
+FINANCE_PROMPT_VERSION = "receipt-v1"
 
 
 class FinanceClassifyRequest(BaseModel):
@@ -56,6 +57,9 @@ class FinanceRecord(BaseModel):
     description: str | None = None
     structured_data: dict[str, Any] = Field(default_factory=dict)
     model_name: str
+    prompt_version: str | None = None
+    duplicate_of_record_id: str | None = None
+    processed_at: datetime | None = None
     status: str
     created_at: datetime
 
@@ -570,10 +574,14 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
     hints = _receipt_hints(extracted_text, document.get("file_name") or "receipt")
     fingerprint = _receipt_fingerprint(extracted_text)
     identity_key = _receipt_identity_key(extracted_text, hints)
+    duplicate_record = None
     for existing in existing_records:
+        if str(existing.get("document_id")) == payload.document_id:
+            continue
         data = existing.get("structured_data") or {}
         if data.get("receipt_fingerprint") == fingerprint or (identity_key and data.get("receipt_identity_key") == identity_key):
-            return _mark_duplicate(existing)
+            duplicate_record = existing
+            break
 
     classified = await _classify_receipt(
         extracted_text,
@@ -585,10 +593,25 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
     normalized["structured_data"]["receipt_identity_key"] = identity_key
     candidate = {**normalized, "structured_data": normalized["structured_data"]}
     candidate_legacy_key = _legacy_receipt_key(candidate)
-    if candidate_legacy_key:
+    if candidate_legacy_key and duplicate_record is None:
         for existing in existing_records:
+            if str(existing.get("document_id")) == payload.document_id:
+                continue
             if _legacy_receipt_key(existing) == candidate_legacy_key:
-                return _mark_duplicate(existing)
+                duplicate_record = existing
+                break
+    if duplicate_record is not None:
+        normalized["duplicate_of_record_id"] = duplicate_record["id"]
+        normalized["structured_data"]["duplicate_detection"] = {
+            "is_duplicate": True,
+            "previous_record_id": duplicate_record["id"],
+            "message": "동일 영수증의 이전 분석 기록이 있으며 현재 모델로 새 기록을 생성했습니다.",
+        }
+    else:
+        normalized["duplicate_of_record_id"] = None
+        normalized["structured_data"].pop("duplicate_detection", None)
+    normalized["prompt_version"] = FINANCE_PROMPT_VERSION
+    normalized["processed_at"] = datetime.now(timezone.utc).isoformat()
     return supabase_service.save_finance_record(
         user_email=user.email,
         document_id=payload.document_id,
@@ -700,9 +723,6 @@ def export_selected_records(payload: FinanceExportRequest, user: User = Depends(
     records = [records_by_id[record_id] for record_id in requested_ids if record_id in records_by_id]
     if len(records) != len(requested_ids):
         raise HTTPException(status_code=404, detail="일부 재무 기록을 찾을 수 없습니다.")
-    document_types = {record.get("document_type") for record in records}
-    if len(document_types) != 1:
-        raise HTTPException(status_code=422, detail="같은 재무 문서 유형의 기록만 한 문서로 만들 수 있습니다.")
     content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
     filename = f"finance-receipts-{date.today().isoformat()}.xlsx"
     return StreamingResponse(

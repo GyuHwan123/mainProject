@@ -15,7 +15,6 @@ const items = [
   { label: 'PDF 추출', icon: <IoDocumentTextOutline />, path: '/ocr' },
   { label: 'AI 채팅', icon: '✦', path: '/chat' },
   { label: '리포트', icon: <GrCatalogOption />, path: '/reports' },
-  { label: '모델 평가', icon: '≋', path: '/finance-evaluations', developerOnly: true },
   { label: '내 정보', icon: <RiUser3Fill />, path: '/mypage' },
 ];
 
@@ -26,9 +25,9 @@ export default function Sidebar() {
   const [loggingOut, setLoggingOut] = useState(false);
   const settingsRef = useRef(null);
   const currentUser = getAppUser();
-  const canViewReports = currentUser.subscriptionTier === 'ENTERPRISE' || ['DEVELOPER', 'ADMIN'].includes(currentUser.role);
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(currentUser.role) || currentUser.email === 'developer@docunex.com';
-  const visibleItems = items.filter((item) => (!item.developerOnly || isDeveloper) && (item.path !== '/reports' || canViewReports));
+  const canViewReports = currentUser.subscriptionTier === 'ENTERPRISE' || ['DEVELOPER', 'ADMIN'].includes(currentUser.role);
+  const visibleItems = items.filter((item) => item.path !== '/reports' || canViewReports);
 
   useEffect(() => {
     if (!settingsOpen) return undefined;
@@ -57,7 +56,11 @@ export default function Sidebar() {
 
   return <aside className="sidebar">
     <div className="brand-wrap"><div className="brand-mark">P</div><div className="brand-name">PicToText</div></div>
-    <nav className="sidebar-nav">{visibleItems.map((item) => <Link key={item.path} to={item.path} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>)}</nav>
+    <nav className="sidebar-nav">{visibleItems.map((item) => {
+      const opensReceiptReport = item.path === '/reports' && location.pathname === '/ocr' && isDeveloper;
+      const destination = opensReceiptReport ? '/reports?view=developer&developerReport=receipt' : item.path;
+      return <Link key={item.path} to={destination} onClick={() => { if (opensReceiptReport) localStorage.setItem('pic_to_text_developer_report', 'receipt'); }} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>;
+    })}</nav>
     <div className="sidebar-settings" ref={settingsRef}>
       {settingsOpen && <div className="settings-menu" role="menu">
         <Link to="/mypage" role="menuitem" onClick={() => setSettingsOpen(false)}><IoPersonOutline /><span><strong>마이페이지</strong><small>내 정보 및 계정 관리</small></span></Link>

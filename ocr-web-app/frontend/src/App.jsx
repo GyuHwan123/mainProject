@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { getAppUser, hasAppSession } from './features/appSession';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
@@ -7,7 +8,6 @@ import MyPage from './pages/MyPage';
 import OCRPage from './pages/OCRPage';
 import ReportPage from './pages/ReportPage';
 import ChatPage from './pages/ChatPage';
-import FinanceEvaluationPage from './pages/FinanceEvaluationPage';
 
 function ProtectedRoute({ children }) {
   if (!hasAppSession()) {
@@ -25,26 +25,40 @@ function EnterpriseRoute({ children }) {
   return children;
 }
 
-function DeveloperRoute({ children }) {
-  if (!hasAppSession()) return <Navigate to="/login" replace />;
-  const user = getAppUser();
-  const canEvaluate = ['DEVELOPER', 'ADMIN'].includes(user.role) || user.email === 'developer@docunex.com';
-  if (!canEvaluate) return <Navigate to="/dashboard" replace />;
-  return children;
-}
-
 export default function App() {
+  const location = useLocation();
+  const isOcrRoute = location.pathname === '/ocr';
+  const isReportRoute = location.pathname === '/reports';
+  const [ocrMounted, setOcrMounted] = useState(isOcrRoute);
+  const [reportMounted, setReportMounted] = useState(isReportRoute);
+
+  useEffect(() => {
+    if (isOcrRoute) setOcrMounted(true);
+    if (isReportRoute) setReportMounted(true);
+  }, [isOcrRoute, isReportRoute]);
+
+  const hasSession = hasAppSession();
+
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-      <Route path="/ocr" element={<ProtectedRoute><OCRPage /></ProtectedRoute>} />
-      <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
-      <Route path="/reports" element={<EnterpriseRoute><ReportPage /></EnterpriseRoute>} />
-      <Route path="/finance-evaluations" element={<DeveloperRoute><FinanceEvaluationPage /></DeveloperRoute>} />
-      <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
-    </Routes>
+    <>
+      {hasSession && (ocrMounted || isOcrRoute) && (
+        <div style={{ display: isOcrRoute ? 'contents' : 'none' }} aria-hidden={!isOcrRoute}><OCRPage /></div>
+      )}
+      {hasSession && (reportMounted || isReportRoute) && (
+        <div style={{ display: isReportRoute ? 'contents' : 'none' }} aria-hidden={!isReportRoute}>
+          <EnterpriseRoute><ReportPage /></EnterpriseRoute>
+        </div>
+      )}
+      <Routes>
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/auth/callback" element={<AuthCallbackPage />} />
+        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+        <Route path="/ocr" element={hasSession ? null : <Navigate to="/login" replace />} />
+        <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
+        <Route path="/reports" element={hasSession ? null : <Navigate to="/login" replace />} />
+        <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
+      </Routes>
+    </>
   );
 }

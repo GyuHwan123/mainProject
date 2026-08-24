@@ -1,6 +1,6 @@
 import json
 from time import perf_counter
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -42,6 +42,18 @@ class FinanceRecordEvaluationRequest(BaseModel):
     record_id: str
     ground_truth: dict[str, Any]
     latency_ms: int = Field(default=0, ge=0)
+    batch_id: str | None = None
+    dataset_name: str | None = None
+    dataset_index: int = Field(default=0, ge=0)
+    source_file_name: str | None = None
+
+
+class FinanceEvaluationBatchRequest(BaseModel):
+    batch_name: str = Field(min_length=1, max_length=200)
+    dataset_name: str | None = None
+    model_name: str = Field(min_length=1, max_length=200)
+    total_items: int = Field(default=0, ge=0, le=10000)
+    evaluation_mode: Literal["SINGLE", "BULK"] = "SINGLE"
 
 
 def require_developer(user: User = Depends(require_current_user)) -> User:
@@ -105,7 +117,7 @@ def evaluate_existing_finance_record(
     prediction = {field: record.get(field) for field in CORE_FIELDS}
     prediction["items"] = (record.get("structured_data") or {}).get("items") or []
     score = score_fields(prediction, truth)
-    return {
+    response = {
         "document_id": payload.document_id,
         "document_name": document.get("file_name") or "receipt",
         "ocr_text": text,
@@ -124,6 +136,88 @@ def evaluate_existing_finance_record(
             },
         }],
     }
+    stored = supabase_service.save_finance_record_evaluation(
+        user_email=user.email,
+        document=document,
+        record=record,
+        ground_truth=payload.ground_truth,
+        normalized_ground_truth=truth,
+        result=response["results"][0],
+        dataset_index=payload.dataset_index,
+        dataset_name=payload.dataset_name,
+        source_file_name=payload.source_file_name or document.get("file_name"),
+        batch_id=payload.batch_id,
+    )
+    response["batch_id"] = stored["batch"]["id"]
+    response["evaluation_id"] = stored["evaluation"]["id"]
+    return response
+
+
+@router.post("/batches")
+def create_finance_evaluation_batch(
+    payload: FinanceEvaluationBatchRequest,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    return supabase_service.create_finance_evaluation_batch(
+        user_email=user.email,
+        batch_name=payload.batch_name,
+        dataset_name=payload.dataset_name,
+        model_name=payload.model_name,
+        total_items=payload.total_items,
+        evaluation_mode=payload.evaluation_mode,
+    )
+
+
+@router.post("/batches/{batch_id}/finalize")
+def finalize_finance_evaluation_batch(
+    batch_id: str,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    return supabase_service.finalize_finance_evaluation_batch(user.email, batch_id)
+
+
+@router.get("/runs")
+def list_saved_finance_evaluations(
+    user: User = Depends(require_developer),
+) -> list[dict[str, Any]]:
+    runs = []
+    for row in supabase_service.list_finance_record_evaluations(user.email):
+        document = supabase_service.get_ocr_document(user.email, row["document_id"])
+        item = row.get("finance_evaluation_items") or {}
+        batch = row.get("finance_evaluation_batches") or {}
+        runs.append({
+            "document_id": row["document_id"],
+            "document_name": document.get("file_name") or "receipt",
+            "ocr_text": document.get("extracted_text") or "",
+            "ocr_pages": document.get("bounding_boxes") or [],
+            "ground_truth": row.get("ground_truth") or {},
+            "normalized_ground_truth": row.get("normalized_ground_truth") or {},
+            "evaluated_at": row.get("evaluated_at"),
+            "batch_id": row.get("batch_id"),
+            "evaluation_id": row.get("id"),
+            "dataset_name": batch.get("dataset_name"),
+            "dataset_index": item.get("dataset_index", 0),
+            "matched_image": item.get("source_file_name") or document.get("file_name"),
+            "results": [{
+                "model_name": row.get("model_name") or "unknown",
+                "success": row.get("status") == "COMPLETED",
+                "latency_ms": row.get("latency_ms") or 0,
+                "error": row.get("error_message"),
+                "system": {
+                    "prediction": row.get("prediction") or {},
+                    "score": {
+                        "fields": row.get("field_scores") or {},
+                        "correct_fields": row.get("correct_fields") or 0,
+                        "evaluated_fields": row.get("evaluated_fields") or 0,
+                        "field_accuracy": row.get("field_accuracy") or 0,
+                        "complete_match": bool(row.get("complete_match")),
+                    },
+                    "ocr_impact": row.get("ocr_impact") or {},
+                    "workbook": row.get("workbook_result") or {},
+                },
+            }],
+        })
+    return runs
 
 
 def _evaluation_question_prompt(

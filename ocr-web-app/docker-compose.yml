@@ -70,7 +70,8 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     environment:
-      OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-gemma2:2b}
+      OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-llama3b-receipt-v3:latest}
+      OLLAMA_RECEIPTS_MODEL: ${RECEIPTS_LLM_MODEL:-}
       OLLAMA_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma}
     networks:
       - ocr-network

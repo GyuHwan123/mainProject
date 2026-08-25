@@ -647,38 +647,54 @@ class SupabaseService:
             raise HTTPException(status_code=404, detail="지식 카드를 찾을 수 없습니다.")
 
     def list_rag_documents(self, user_email: str) -> list[dict[str, Any]]:
-        user_id = self.get_public_user_id(user_email)
         response = httpx.get(
             f"{self.url}/rest/v1/rag_documents",
-            params={"select": "*,ocr_documents(file_name,created_at)", "user_id": f"eq.{user_id}", "order": "updated_at.desc"},
+            params={"select": "*,rag_chunks(count)", "owner": f"eq.{user_email}", "order": "created_at.desc"},
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "RAG 문서 조회 실패")
-        return response.json()
+        rows = response.json()
+        for row in rows:
+            chunk_counts = row.pop("rag_chunks", []) or []
+            row["chunk_count"] = int(chunk_counts[0].get("count", 0)) if chunk_counts else 0
+            # Compatibility aliases consumed by the existing chat page.
+            row["document_id"] = row.get("doc_id")
+            row["file_name"] = row.get("filename") or row.get("title")
+            row["status"] = "RAG_READY" if row["chunk_count"] else "EMPTY"
+        return rows
 
     def replace_rag_index(
         self, *, user_email: str, document: dict[str, Any], chunks: list[dict[str, Any]],
         embeddings: list[list[float]], embedding_model: str,
     ) -> dict[str, Any]:
-        user_id = self.get_public_user_id(user_email)
+        filename = document.get("file_name") or "document"
         upsert = httpx.post(
             f"{self.url}/rest/v1/rag_documents",
-            params={"on_conflict": "user_id,document_id"},
+            params={"on_conflict": "doc_id"},
             headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
-            json={"user_id": user_id, "document_id": document["id"], "status": "INDEXING", "embedding_model": embedding_model, "chunk_count": 0, "error_message": None, "updated_at": datetime.now(timezone.utc).isoformat()},
+            json={
+                "doc_id": document["id"],
+                "title": Path(filename).stem,
+                "owner": user_email,
+                "security": "PRIVATE",
+                "version": "v1.0",
+                "effective_date": datetime.now(timezone.utc).date().isoformat(),
+                "filename": filename,
+                "tags": ["RAG", embedding_model],
+            },
             timeout=15,
         )
         self._raise_for_supabase(upsert, "RAG 문서 연결 실패")
         rag_document = upsert.json()[0]
         delete = httpx.delete(
-            f"{self.url}/rest/v1/rag_chunks", params={"rag_document_id": f"eq.{rag_document['id']}"},
+            f"{self.url}/rest/v1/rag_chunks", params={"document_id": f"eq.{rag_document['id']}"},
             headers=self._service_headers(), timeout=30,
         )
         self._raise_for_supabase(delete, "기존 RAG 청크 삭제 실패")
         rows = [{
-            "rag_document_id": rag_document["id"], "document_id": document["id"], "user_id": user_id,
+            "document_id": rag_document["id"],
             "chunk_index": index, "page_number": chunk["page_number"], "content": chunk["content"],
-            "bbox": chunk["bbox"], "embedding": embedding,
+            "embedding": embedding,
         } for index, (chunk, embedding) in enumerate(zip(chunks, embeddings))]
         for start in range(0, len(rows), 50):
             insert = httpx.post(
@@ -686,44 +702,44 @@ class SupabaseService:
                 json=rows[start:start + 50], timeout=60,
             )
             self._raise_for_supabase(insert, "RAG 청크 저장 실패")
-        update = httpx.patch(
-            f"{self.url}/rest/v1/rag_documents", params={"id": f"eq.{rag_document['id']}"},
-            headers={**self._service_headers(), "Prefer": "return=representation"},
-            json={"status": "RAG_READY", "chunk_count": len(rows), "updated_at": datetime.now(timezone.utc).isoformat()}, timeout=15,
-        )
-        self._raise_for_supabase(update, "RAG 상태 갱신 실패")
-        result = update.json()[0]
-        result["file_name"] = document.get("file_name")
-        return result
+        rag_document["document_id"] = rag_document["doc_id"]
+        rag_document["file_name"] = rag_document["filename"]
+        rag_document["status"] = "RAG_READY" if rows else "EMPTY"
+        rag_document["chunk_count"] = len(rows)
+        return rag_document
 
     def mark_rag_failed(self, user_email: str, document_id: str, message: str) -> None:
-        user_id = self.get_public_user_id(user_email)
-        response = httpx.post(
-            f"{self.url}/rest/v1/rag_documents", params={"on_conflict": "user_id,document_id"},
-            headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=minimal"},
-            json={"user_id": user_id, "document_id": document_id, "status": "FAILED", "chunk_count": 0, "error_message": message[:1000], "updated_at": datetime.now(timezone.utc).isoformat()},
-            timeout=15,
-        )
-        self._raise_for_supabase(response, "RAG 실패 상태 저장 실패")
+        # The current rag_documents schema has no status or error column.
+        # Keep the failure local to the request instead of issuing an invalid DB write.
+        return None
 
     def search_rag_chunks(
         self, user_email: str, embedding: list[float], rag_document_id: str | None, limit: int,
     ) -> list[dict[str, Any]]:
-        user_id = self.get_public_user_id(user_email)
+        documents = self.list_rag_documents(user_email)
+        document_by_id = {row["id"]: row for row in documents}
+        if rag_document_id and rag_document_id not in document_by_id:
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+        if not document_by_id:
+            return []
         response = httpx.post(
             f"{self.url}/rest/v1/rpc/match_rag_chunks", headers=self._service_headers(),
-            json={"query_embedding": embedding, "filter_user_id": user_id, "filter_rag_document_id": rag_document_id, "match_threshold": 0.2, "match_count": limit},
+            json={"query_embedding": embedding, "match_threshold": 0.2, "match_count": 100},
             timeout=30,
         )
         self._raise_for_supabase(response, "RAG 벡터 검색 실패")
-        rows = response.json()
-        document_ids = {row["document_id"] for row in rows}
-        names: dict[str, str] = {}
-        for document_id in document_ids:
-            document = self.get_ocr_document(user_email, document_id)
-            names[document_id] = document["file_name"]
+        rows = [
+            row for row in response.json()
+            if row.get("document_id") in document_by_id
+            and (not rag_document_id or row.get("document_id") == rag_document_id)
+        ][:limit]
         for row in rows:
-            row["source"] = names.get(row["document_id"], "문서")
+            rag_id = row["document_id"]
+            document = document_by_id[rag_id]
+            row["rag_document_id"] = rag_id
+            row["document_id"] = document["doc_id"]
+            row["source"] = document["filename"]
+            row["bbox"] = None
         return rows
 
     def list_rag_chunks(self, user_email: str, rag_document_id: str) -> list[dict[str, Any]]:
@@ -736,8 +752,8 @@ class SupabaseService:
         response = httpx.get(
             f"{self.url}/rest/v1/rag_chunks",
             params={
-                "select": "id,document_id,rag_document_id,chunk_index,page_number,content,bbox",
-                "rag_document_id": f"eq.{rag_document_id}",
+                "select": "id,document_id,chunk_index,page_number,content",
+                "document_id": f"eq.{rag_document_id}",
                 "order": "chunk_index.asc",
                 "limit": "5000",
             },
@@ -746,10 +762,11 @@ class SupabaseService:
         )
         self._raise_for_supabase(response, "RAG 문서 전체 청크 조회 실패")
         rows = response.json()
-        if rows:
-            document = self.get_ocr_document(user_email, rows[0]["document_id"])
-            for row in rows:
-                row["source"] = document["file_name"]
+        for row in rows:
+            row["rag_document_id"] = rag_document_id
+            row["document_id"] = owned_document["doc_id"]
+            row["source"] = owned_document["filename"]
+            row["bbox"] = None
         return rows
 
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:

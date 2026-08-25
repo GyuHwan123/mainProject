@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from difflib import SequenceMatcher
 from io import BytesIO
@@ -12,6 +13,7 @@ from app.api.routes.finance import _classify_receipt_with_model, _normalize
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
+logger = logging.getLogger(__name__)
 CORE_FIELDS = (
     "document_type", "expense_category", "merchant", "transaction_date",
     "supply_amount", "tax_amount", "total_amount", "payment_method",
@@ -478,6 +480,7 @@ async def evaluate_models(
     truth = normalize_ground_truth(truth)
     results = []
     for model_name in model_names:
+        logger.warning("Finance evaluation model start: model=%s filename=%s", model_name, filename)
         started = perf_counter()
         try:
             pure = await _classify_receipt_with_model(text, filename, model_name, pages)

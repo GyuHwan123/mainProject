@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import re
 from datetime import date, datetime, timezone
 from io import BytesIO
@@ -19,6 +20,7 @@ from app.services.finance_workbook_service import build_finance_workbook
 from app.services.supabase_service import supabase_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 FINANCE_PROMPT_VERSION = "receipt-v1"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
@@ -481,10 +483,13 @@ doc_type은 다음 중 하나입니다.
 tax_amount, discount_amount, total_amount, payment_method, card_number, description.
 
 판단 규칙:
-1. 날짜는 YYYY-MM-DD, 금액은 숫자로 작성합니다.
-2. merchant는 상품 코드·전화번호·쇼핑몰 안내가 아니라 실제 판매 상호입니다.
-3. 명시된 최종 결제액을 total_amount로 사용합니다.
-4. amount_relation이 있으면 코드가 확인한 관계를 그대로 따르고 할인액을 부가세로 바꾸지 않습니다.
+1. OCR에 직접 근거가 있는 값만 작성하고, 불명확한 값은 null로 둡니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
+2. 상호는 실제 판매 주체를 선택합니다. 쇼핑몰·건물·지점 안내·URL은 입점 장소일 수 있으므로, 영수증을 발행하고 상품을 판매한 입점 매장명을 우선합니다. 예를 들어 OCR에 `유니클로`와 `Starfield` 또는 `starfield.co.kr`가 함께 있으면 merchant는 쇼핑몰인 Starfield가 아니라 입점 매장인 `유니클로`입니다. 브랜드명 뒤의 `(과세)`·`(면세)`는 세금 구분이므로 상호에서 제거합니다.
+3. 실제 결제된 상품 행만 items로 만듭니다. 먼저 `상품명 | 수량 | 단가 | 금액`의 대응을 확인한 뒤 출력하며, 상품 행이 명확하면 items를 비워 두지 않습니다. `총품목/총수량`의 총품목 수 N은 서로 다른 상품 행의 수이므로, 표시가 명확하면 실제 상품을 N개 찾아야 합니다.
+4. 새 상품명에 별도의 수량·단가·금액이 붙으면 독립 품목입니다. 한글명과 영문명이 이어져도 가격 묶음이 하나일 때만 같은 품목이며, `DIY`, `도안`, 괄호 표기라는 이유만으로 다른 유료 상품을 규격에 합치지 않습니다. 상호와 품목명이 같아도 각각 근거가 있으면 merchant와 items 양쪽에 모두 작성합니다. 예를 들어 상호가 `유니클로`이고 상품 행이 `유니클로(과세) 1 60,000`이면 merchant는 `유니클로`, items에는 `유니클로(과세)` 1개를 작성합니다.
+5. 상품명처럼 보여도 결제·승인·합계·할인·세금·안내 영역의 문구는 품목이 아닙니다. 반대로 별도 청구된 배송비·봉투값은 품목으로 둘 수 있습니다.
+6. total_amount는 `최종 결제금액`, `받을 금액`, `승인금액`, `총구매금액`처럼 최종 지불액을 뜻하는 명시적 라벨을 우선합니다. 상품합계·소계나 공급가액+세금 계산은 검산용이며, 할인·쿠폰 때문에 다르면 명시된 최종 금액을 선택합니다.
+7. 아래 코드 힌트는 후보일 뿐입니다. OCR의 명시적 라벨 및 문맥과 충돌하면 OCR 판단을 우선합니다.
 
 [파일명]
 {filename}
@@ -522,9 +527,10 @@ async def _classify_receipt_with_model(
     model_name: str,
     pages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raw = await generate(_receipt_prompt(text, filename, pages), json_format=True, num_predict=550, model_name=model_name)
+    raw = await generate(_receipt_prompt(text, filename, pages), json_format=True, num_predict=1200, model_name=model_name)
     result = json.loads(raw)
     if not isinstance(result, dict):
+        logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
         raise ValueError("object expected")
     result.pop("items", None)
     try:

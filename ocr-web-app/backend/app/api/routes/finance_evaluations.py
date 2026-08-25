@@ -25,6 +25,7 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 
 
+
 class FinanceEvaluationRequest(BaseModel):
     document_id: str
     ground_truth: dict[str, Any]
@@ -299,6 +300,7 @@ async def run_finance_evaluation(
     if not text:
         raise HTTPException(status_code=422, detail="평가할 OCR 텍스트가 없습니다.")
     model_names = list(dict.fromkeys(name.strip() for name in payload.model_names if name.strip()))
+    logger.warning("Finance evaluation request models: %s", model_names)
     installed_models = await _installed_ollama_models()
     unavailable = [name for name in model_names if name not in installed_models]
     if unavailable:

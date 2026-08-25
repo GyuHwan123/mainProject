@@ -1,3 +1,4 @@
+import logging
 from typing import Any, Literal
 
 import httpx
@@ -12,6 +13,7 @@ from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
 
 router = APIRouter()
 MODEL_NAME = settings.RAG_LLM_MODEL
+logger = logging.getLogger(__name__)
 
 
 class ChatMessage(BaseModel):
@@ -74,8 +76,9 @@ async def generate(
     num_predict: int = 600,
     model_name: str | None = None,
 ) -> str:
+    effective_model = model_name or MODEL_NAME
     payload: dict[str, Any] = {
-        "model": model_name or MODEL_NAME,
+        "model": effective_model,
         "prompt": prompt,
         "stream": False,
         "keep_alive": "30m",
@@ -90,11 +93,13 @@ async def generate(
         payload["format"] = "json"
 
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    logger.warning("Ollama model call: model=%s json_format=%s", effective_model, json_format)
     try:
         async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
             response = await client.post("/api/generate", json=payload)
             response.raise_for_status()
             answer = response.json().get("response", "").strip()
+            logger.warning("Ollama raw response: model=%s response=%s", effective_model, answer)
             if not answer:
                 raise ValueError("empty model response")
             return answer

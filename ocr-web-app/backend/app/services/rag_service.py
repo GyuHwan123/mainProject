@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import re
+from functools import lru_cache
 from typing import Any
 
-import httpx
 from fastapi import HTTPException
 
 from app.core.config import settings
@@ -14,6 +14,15 @@ from app.services.pii_service import redact_pages
 EMBEDDING_MODEL = settings.RAG_EMBEDDING_MODEL
 EMBEDDING_DIMENSIONS = settings.RAG_EMBEDDING_DIMENSIONS
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
+
+
+@lru_cache(maxsize=1)
+def _get_embedding_model() -> Any:
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(EMBEDDING_MODEL)
+
+
 SECTION_TITLES = {
     "인적사항", "기본사항", "학력", "학력사항", "경력", "경력사항", "교육", "교육/연수",
     "교육및연수", "연수사항", "수상", "수상내용", "자격", "자격증", "자격사항",
@@ -190,22 +199,26 @@ def extract_document_title(pages: list[dict[str, Any]]) -> tuple[str, list[list[
 async def embed_texts(texts: list[str]) -> list[list[float]]:
     if not texts:
         return []
-    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
-    last_error: Exception | None = None
-    for attempt in range(2):
-        try:
-            async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
-                response = await client.post("/api/embed", json={"model": EMBEDDING_MODEL, "input": texts, "keep_alive": "30m"})
-                response.raise_for_status()
-                embeddings = response.json().get("embeddings") or []
-                if len(embeddings) != len(texts) or any(len(vector) != EMBEDDING_DIMENSIONS for vector in embeddings):
-                    raise ValueError("unexpected embedding dimensions")
-                return embeddings
-        except (httpx.HTTPError, ValueError) as exc:
-            last_error = exc
-            if attempt == 0:
-                await asyncio.sleep(0.4)
-    raise HTTPException(status_code=503, detail=f"Embedding 모델에 연결할 수 없습니다. Ollama에서 {EMBEDDING_MODEL} 모델의 설치 및 실행 상태를 확인해 주세요.") from last_error
+    try:
+        model = await asyncio.to_thread(_get_embedding_model)
+        encoded = await asyncio.to_thread(
+            model.encode,
+            texts,
+            normalize_embeddings=True,
+            convert_to_numpy=True,
+            show_progress_bar=False,
+        )
+        if encoded.ndim != 2 or encoded.shape != (len(texts), EMBEDDING_DIMENSIONS):
+            raise ValueError(
+                f"unexpected embedding shape: {encoded.shape}; "
+                f"expected ({len(texts)}, {EMBEDDING_DIMENSIONS})"
+            )
+        return encoded.tolist()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Embedding 모델 {EMBEDDING_MODEL}을 로드하거나 실행할 수 없습니다.",
+        ) from exc
 
 
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:

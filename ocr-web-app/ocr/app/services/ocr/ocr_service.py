@@ -322,8 +322,12 @@ async def process_ocr(
                 original_image = cv2.imread(str(temp_path), cv2.IMREAD_COLOR)
                 if receipt_result:
                     for page in pages:
+                        if processing_mode == "receipt":
+                            page.tables = detect_receipt_tables(page.items) or None
                         for item in page.items:
                             item.bbox = receipt_result.bbox_to_original(item.bbox)
+                        for table in page.tables or []:
+                            table.bbox = receipt_result.bbox_to_original(table.bbox)
                     encoded, buffer = cv2.imencode(".jpg", processed_image, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     if encoded:
                         preprocessed_image = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("ascii")
@@ -341,7 +345,7 @@ async def process_ocr(
                                 processed_image.shape,
                                 original_image.shape,
                             )
-                if processing_mode == "receipt":
+                if processing_mode == "receipt" and not receipt_result:
                     for page in pages:
                         page.tables = detect_receipt_tables(page.items) or None
 

@@ -6,7 +6,12 @@ from statistics import median
 from app.schemas.ocr import OCRItem, OCRTable
 
 
-NUMBER_PATTERN = re.compile(r"(?:\d[\d,.]*|[₩￦])")
+NUMBER_PATTERN = re.compile(r"\d[\d,.]*")
+SUMMARY_PATTERN = re.compile(
+    r"(?:합계|소계|결제|승인|공급가액|부가세|할인|쿠폰|적립|"
+    r"거스름|카드\s*번호|사업자\s*번호|총\s*품목|총\s*수량|총\s*구매)", re.IGNORECASE,
+)
+HEADER_PATTERN = re.compile(r"^(?:품명|상품명|수량|단가|금액|합계)(?:\s|$)", re.IGNORECASE)
 
 
 def _box(item: OCRItem) -> tuple[float, float, float, float]:
@@ -18,8 +23,7 @@ def _group_lines(items: list[OCRItem]) -> list[list[OCRItem]]:
     lines: list[list[OCRItem]] = []
     for item in ordered:
         _, y1, _, y2 = _box(item)
-        center = (y1 + y2) / 2
-        height = max(y2 - y1, 1)
+        center, height = (y1 + y2) / 2, max(y2 - y1, 1)
         match = None
         for line in reversed(lines[-3:]):
             centers = [(_box(value)[1] + _box(value)[3]) / 2 for value in line]
@@ -36,13 +40,21 @@ def _group_lines(items: list[OCRItem]) -> list[list[OCRItem]]:
     return lines
 
 
-def detect_receipt_tables(items: list[OCRItem]) -> list[OCRTable]:
-    """Build conservative, borderless table hints from receipt OCR geometry.
+def _anchor_x(item: OCRItem) -> float:
+    x1, _, x2, _ = _box(item)
+    compact = item.text.replace(" ", "")
+    return x2 if NUMBER_PATTERN.fullmatch(compact) else x1
 
-    This is intentionally called only by receipt-mode image OCR. It does not
-    rewrite OCR text; an uncertain layout therefore cannot damage the canonical
-    extraction used by normal image documents.
-    """
+
+def _continuation_text(line: list[OCRItem]) -> str | None:
+    text = " ".join(item.text.strip() for item in line if item.text.strip()).strip()
+    if not text or SUMMARY_PATTERN.search(text) or HEADER_PATTERN.search(text):
+        return None
+    return text if re.search(r"[A-Za-z가-힣]", text) else None
+
+
+def detect_receipt_tables(items: list[OCRItem]) -> list[OCRTable]:
+    """Build borderless item rows without rewriting canonical OCR text."""
     if len(items) < 4:
         return []
 
@@ -55,59 +67,61 @@ def detect_receipt_tables(items: list[OCRItem]) -> list[OCRTable]:
             continue
         left = min(_box(item)[0] for item in line)
         right = max(_box(item)[2] for item in line)
-        if right - left < typical_height * 5:
-            continue
-        candidates.append((index, line))
+        if right - left >= typical_height * 5:
+            candidates.append((index, line))
 
-    groups: list[list[list[OCRItem]]] = []
-    previous_candidate_index: int | None = None
+    groups: list[list[tuple[int, list[OCRItem]]]] = []
     for line_index, line in candidates:
-        if groups and previous_candidate_index is not None:
-            previous = groups[-1][-1]
+        if groups:
+            previous_index, previous = groups[-1][-1]
             previous_bottom = max(_box(item)[3] for item in previous)
             current_top = min(_box(item)[1] for item in line)
-            if line_index - previous_candidate_index <= 2 and current_top - previous_bottom <= typical_height * 3.5:
-                groups[-1].append(line)
-                previous_candidate_index = line_index
+            if line_index - previous_index <= 4 and current_top - previous_bottom <= typical_height * 5.5:
+                groups[-1].append((line_index, line))
                 continue
-        groups.append([line])
-        previous_candidate_index = line_index
+        groups.append([(line_index, line)])
 
     tables: list[OCRTable] = []
     for group in groups:
         if len(group) < 2:
             continue
-
         anchors: list[float] = []
         tolerance = typical_height * 2.2
-        for line in group:
+        for _, line in group:
             for item in line:
-                x1, _, _, _ = _box(item)
-                anchor = next((value for value in anchors if abs(value - x1) <= tolerance), None)
-                if anchor is None:
-                    anchors.append(x1)
+                position = _anchor_x(item)
+                if not any(abs(value - position) <= tolerance for value in anchors):
+                    anchors.append(position)
         anchors.sort()
         if len(anchors) < 2 or len(anchors) > 8:
             continue
 
         rows: list[list[str]] = []
         confidences: list[float] = []
-        for line in group:
+        previous_index = max(-1, group[0][0] - 4)
+        for line_index, line in group:
             row = [""] * len(anchors)
             for item in line:
-                x1, _, _, _ = _box(item)
-                column = min(range(len(anchors)), key=lambda idx: abs(anchors[idx] - x1))
+                position = _anchor_x(item)
+                column = min(range(len(anchors)), key=lambda idx: abs(anchors[idx] - position))
                 row[column] = " ".join(value for value in (row[column], item.text) if value)
                 confidences.append(item.confidence)
+            continuations = [
+                text for preceding in lines[max(previous_index + 1, line_index - 3):line_index]
+                if (text := _continuation_text(preceding))
+            ]
+            if continuations:
+                row[0] = " ".join([*continuations, row[0]]).strip()
             rows.append(row)
+            previous_index = line_index
 
-        x1 = min(_box(item)[0] for line in group for item in line)
-        y1 = min(_box(item)[1] for line in group for item in line)
-        x2 = max(_box(item)[2] for line in group for item in line)
-        y2 = max(_box(item)[3] for line in group for item in line)
+        table_items = [item for _, line in group for item in line]
+        x1 = min(_box(item)[0] for item in table_items)
+        y1 = min(_box(item)[1] for item in table_items)
+        x2 = max(_box(item)[2] for item in table_items)
+        y2 = max(_box(item)[3] for item in table_items)
         tables.append(OCRTable(
             bbox=[[round(x1), round(y1)], [round(x2), round(y2)]],
-            confidence=round(sum(confidences) / len(confidences), 4),
-            rows=rows,
+            confidence=round(sum(confidences) / len(confidences), 4), rows=rows,
         ))
     return tables

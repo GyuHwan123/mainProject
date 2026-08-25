@@ -11,7 +11,7 @@ class PreprocessOptions:
     # PaddleOCR also has document-unwarping support. Applying projective
     # correction in both places makes the returned detection coordinates
     # unreliable, so keep the reversible affine steps as the safe default.
-    perspective_correction: bool = False
+    perspective_correction: bool = True
     crop: bool = True
     deskew: bool = True
     upscale: bool = True

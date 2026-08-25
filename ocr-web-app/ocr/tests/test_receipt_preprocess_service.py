@@ -2,10 +2,13 @@ import unittest
 
 import numpy as np
 
-from app.services.receipt_preprocess_service import ReceiptPreprocessResult
+from app.services.receipt_preprocess_service import PreprocessOptions, ReceiptPreprocessResult
 
 
 class ReceiptBboxTransformTests(unittest.TestCase):
+    def test_enables_perspective_correction_for_receipts_by_default(self):
+        self.assertTrue(PreprocessOptions().perspective_correction)
+
     def test_maps_composed_crop_and_scale_back_to_original(self):
         # original -> crop x-10/y-20 -> 2x scale
         transform = np.asarray([[2, 0, -20], [0, 2, -40], [0, 0, 1]], dtype=float)

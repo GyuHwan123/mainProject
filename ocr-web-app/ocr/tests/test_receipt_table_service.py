@@ -38,6 +38,22 @@ class ReceiptTableServiceTests(unittest.TestCase):
 
         self.assertEqual(detect_receipt_tables(items), [])
 
+    def test_attaches_multiline_product_name_to_its_numeric_row(self):
+        items = [
+            item("[DIY] 브러쉬드 알파카 페루", .96, 20, 70, 250, 90),
+            item("베텔린 스카프 (도안)", .95, 35, 94, 230, 114),
+            item("1", .98, 210, 120, 225, 140), item("6,000", .97, 300, 120, 360, 140),
+            item("브러쉬드 알파카 페루 1볼/50g", .96, 20, 150, 260, 170),
+            item("6", .98, 210, 176, 225, 196), item("12,600", .97, 270, 176, 330, 196),
+            item("75,600", .97, 350, 176, 410, 196),
+        ]
+        tables = detect_receipt_tables(items)
+        self.assertEqual(len(tables), 1)
+        self.assertIn("베텔린 스카프 (도안)", tables[0].rows[0][0])
+        self.assertIn("브러쉬드 알파카 페루 1볼/50g", tables[0].rows[1][0])
+        self.assertIn("12,600", tables[0].rows[1])
+        self.assertIn("75,600", tables[0].rows[1])
+
 
 if __name__ == "__main__":
     unittest.main()

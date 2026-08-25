@@ -12,7 +12,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.chatbot import MODEL_NAME, generate
+from app.api.routes.chatbot import generate
+from app.core.config import settings
 from app.models.user import User
 from app.services.finance_workbook_service import build_finance_workbook
 from app.services.supabase_service import supabase_service
@@ -20,6 +21,7 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 FINANCE_PROMPT_VERSION = "receipt-v1"
+RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 
 class FinanceClassifyRequest(BaseModel):
@@ -394,7 +396,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "payment_method": str(result.get("payment_method") or hints.get("payment_method") or "").strip()[:100] or None,
         "description": str(result.get("description") or "").strip()[:1000] or None,
         "structured_data": result,
-        "model_name": str(result.get("_model_name") or MODEL_NAME),
+        "model_name": str(result.get("_model_name") or RECEIPTS_MODEL_NAME),
         "status": "REVIEW",
     }
 
@@ -547,7 +549,7 @@ async def _classify_receipt(
 ) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     try:
-        return await _classify_receipt_with_model(text, filename, MODEL_NAME, pages)
+        return await _classify_receipt_with_model(text, filename, RECEIPTS_MODEL_NAME, pages)
     except Exception:
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
@@ -566,6 +568,11 @@ async def _classify_receipt(
 
 @router.post("/records/classify", response_model=FinanceRecord)
 async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    if not RECEIPTS_MODEL_NAME.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="영수증 LLM 모델이 설정되지 않았습니다. .env에 RECEIPTS_LLM_MODEL을 설정해 주세요.",
+        )
     document = supabase_service.get_ocr_document(user.email, payload.document_id)
     extracted_text = (document.get("extracted_text") or "").strip()
     if not extracted_text:

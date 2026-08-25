@@ -6,8 +6,15 @@ import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
-import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
+import { appendFinanceEvaluationRun, clearFinanceEvaluationRuns } from '../features/financeEvaluationStorage';
 import { queueFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
+import {
+  markReceiptEvaluated,
+  clearPendingReceipts,
+  readReceiptWorkspace,
+  rememberPendingReceipt,
+  saveReceiptRecords,
+} from '../features/receiptWorkspaceMemory';
 import { datasetRows, imageNameOf, normalizedFileName, truthOf } from './FinanceEvaluationPage';
 import '../style/OCRPage.scss';
 
@@ -15,7 +22,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const EMPTY_FILE_NAME = '영수증을 선택해주세요';
 const EMPTY_ITEMS = [];
-const DEFAULT_FINANCE_EVALUATION_MODELS = ['gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
 const RECEIPT_STRONG_PATTERN = /(영수증|매출\s*전표|승인\s*번호|카드\s*번호|사업자\s*(?:NO|번호|등록번호)|결제\s*금액|승인\s*금액|받을\s*금액|현금\s*영수증|공급\s*가액|부가\s*세(?:액)?|총\s*구매\s*금액)/i;
 const RECEIPT_WEAK_PATTERNS = [
   /(20\d{2})\s*(?:년|[-./])\s*\d{1,2}\s*(?:월|[-./])\s*\d{1,2}\s*일?/,
@@ -479,8 +485,8 @@ export default function OCRPage() {
   const [historySearch, setHistorySearch] = useState('');
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
-  const [financeRecord, setFinanceRecord] = useState(null);
-  const [financeRecords, setFinanceRecords] = useState([]);
+  const [financeRecord, setFinanceRecord] = useState(() => readReceiptWorkspace().financeRecord);
+  const [financeRecords, setFinanceRecords] = useState(() => readReceiptWorkspace().financeRecords);
   const [financeReviewOpen, setFinanceReviewOpen] = useState(false);
   const [financeReviewDraft, setFinanceReviewDraft] = useState(null);
   const [savedFinanceOpen, setSavedFinanceOpen] = useState(false);
@@ -500,48 +506,11 @@ export default function OCRPage() {
   const evaluationDatasetRef = useRef(null);
   const evaluationFolderRef = useRef(null);
   const generatedWorkbookUrlRef = useRef('');
-  const receiptBatchRef = useRef({ files: [], index: -1, active: false, recordIds: [] });
+  const receiptBatchRef = useRef({ files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] });
 
-  const openReceiptBatchEvaluationLegacy = async (fileList) => {
-    const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
-    if (files.length < 2) {
-      setError('일괄 처리할 영수증 이미지나 PDF를 2개 이상 선택해 주세요.');
-      return;
-    }
-    if (isReceiptEvaluator && !evaluationDatasetFile) {
-      setError('먼저 영수증 정답 JSON 데이터를 선택해 주세요.');
-      return;
-    }
-
-    if (isReceiptEvaluator) {
-      queueFinanceEvaluationInput(evaluationDatasetFile, files);
-      navigate('/reports?view=developer&developerReport=receipt');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    let completed = 0;
-    const failures = [];
-    for (const [index, file] of files.entries()) {
-      setReceiptBatchStatus(`${index + 1}/${files.length} · ${file.name} 처리 중`);
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 360000,
-        });
-        await apiClient.post('/finance/records/classify', { document_id: ocr.document_id }, { timeout: 180000 });
-        completed += 1;
-      } catch (requestError) {
-        failures.push(`${file.name}: ${requestError.response?.data?.detail || '처리 실패'}`);
-      }
-    }
-    await loadSavedFinanceRecords();
-    setReceiptBatchStatus(`일괄 처리 완료 · 성공 ${completed}/${files.length}`);
-    if (failures.length) setError(`${failures.length}개 파일을 처리하지 못했습니다. ${failures[0]}`);
-    setLoading(false);
-  };
+  useEffect(() => {
+    saveReceiptRecords(financeRecord, financeRecords);
+  }, [financeRecord, financeRecords]);
 
   const openReceiptBatchEvaluation = async (fileList) => {
     const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
@@ -549,23 +518,21 @@ export default function OCRPage() {
       setError('일괄 처리할 영수증 이미지 또는 PDF를 2개 이상 선택해 주세요.');
       return;
     }
-    if (isReceiptEvaluator && evaluationDatasetFile) {
-      queueFinanceEvaluationInput(evaluationDatasetFile, files);
-      navigate('/reports?view=developer&developerReport=receipt');
-      return;
-    }
     if (files.length > 20) {
       setError('이미지 일괄 입력은 한 번에 최대 20개까지 처리할 수 있습니다.');
       return;
     }
     if (isReceiptEvaluator && evaluationDatasetFile) {
+      clearPendingReceipts();
+      clearFinanceEvaluationRuns();
       queueFinanceEvaluationInput(evaluationDatasetFile, files);
       navigate('/reports?view=developer&developerReport=receipt');
       return;
     }
-
+    clearPendingReceipts();
+    clearFinanceEvaluationRuns();
     setError('');
-    receiptBatchRef.current = { files, index: 0, active: true, recordIds: [] };
+    receiptBatchRef.current = { files, index: 0, active: true, recordIds: [], evaluationEntries: [] };
     setFinanceRecords([]);
     setFinanceRecord(null);
     setReceiptBatchActive(true);
@@ -631,7 +598,7 @@ export default function OCRPage() {
       setError('');
       setPendingFile(null);
       setFinanceRecords([]);
-      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [] };
+      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] };
       setReceiptBatchActive(false);
       setReceiptBatchStatus('');
       if (inputRef.current) inputRef.current.value = '';
@@ -942,9 +909,10 @@ export default function OCRPage() {
       }
       const { data: modelData } = await apiClient.get('/finance-evaluations/models');
       const available = Array.isArray(modelData?.models) ? modelData.models : [];
-      const preferred = DEFAULT_FINANCE_EVALUATION_MODELS.filter((model) => available.includes(model));
-      const modelNames = preferred.length ? preferred : available.slice(0, 1);
-      if (!modelNames.length) throw new Error('평가할 Ollama 모델이 없습니다.');
+      const configuredModel = String(modelData?.default_model || '').trim();
+      if (modelData?.warning) throw new Error(modelData.warning);
+      const modelNames = available.includes(configuredModel) ? [configuredModel] : [];
+      if (!modelNames.length) throw new Error('영수증 LLM 모델이 설정되지 않았습니다.');
       const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
         document_id: result.documentId,
         record_id: financeRecord.id,
@@ -962,6 +930,7 @@ export default function OCRPage() {
         evaluated_at: new Date().toISOString(),
         batch_id: null,
       });
+      markReceiptEvaluated(result.documentId);
       localStorage.setItem('pic_to_text_developer_report', 'receipt');
       setEvaluationStatus('문서화와 상세 평가가 완료되었습니다. 리포트에서 확인할 수 있습니다.');
     } catch (evaluationError) {
@@ -1005,12 +974,20 @@ export default function OCRPage() {
           receiptBatchRef.current.recordIds.push(financeRecord.id);
         }
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
+        rememberPendingReceipt({
+          document_id: result.documentId,
+          document_name: sourceFile.name,
+          model_name: financeRecord.model_name,
+          created_at: new Date().toISOString(),
+        });
         if (financeRecord.structured_data?.duplicate_detection?.is_duplicate) setFinanceDuplicateNotice('이미 문서화된 영수증입니다. OCR 결과만 갱신하고 재무 행은 추가하지 않았습니다.');
         setResultTab('text');
-        await evaluateReceiptForReport(sourceFile, result, financeRecord);
         if (receiptBatchRef.current.active) {
           const batch = receiptBatchRef.current;
+          batch.evaluationEntries.push({ file: sourceFile, result, financeRecord });
           setReceiptBatchStatus(`${batch.index + 1}/${batch.files.length} · 사용자 최종 확인 대기 · ${sourceFile.name}`);
+        } else {
+          await evaluateReceiptForReport(sourceFile, result, financeRecord);
         }
       } catch (requestError) {
         if (receiptBatchRef.current.active) {
@@ -1111,7 +1088,9 @@ export default function OCRPage() {
   const handleReceiptFileSelection = (file) => {
     if (!file) return;
     if (!receiptBatchRef.current.active) {
-      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [] };
+      clearPendingReceipts();
+      clearFinanceEvaluationRuns();
+      receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] };
     }
     prepareFile(file);
   };
@@ -1239,6 +1218,7 @@ export default function OCRPage() {
   const confirmFinanceRecord = async () => {
     if (!financeRecord || financeRecord.status === 'CONFIRMED') return;
     let nextBatchFile = null;
+    let completedEvaluationEntries = null;
     setLoading(true);
     setError('');
     try {
@@ -1262,6 +1242,7 @@ export default function OCRPage() {
         const nextIndex = batch.index + 1;
         if (nextIndex >= batch.files.length) {
           batch.active = false;
+          completedEvaluationEntries = [...batch.evaluationEntries];
           setReceiptBatchActive(false);
           setReceiptBatchStatus(`일괄 문서화 완료 · ${batch.files.length}/${batch.files.length}`);
         } else {
@@ -1276,6 +1257,16 @@ export default function OCRPage() {
       setLoading(false);
     }
     if (nextBatchFile) await runExtraction(nextBatchFile);
+    if (completedEvaluationEntries?.length && evaluationDatasetFile) {
+      setLoading(true);
+      setEvaluationStatus(`일괄 문서화 완료 · ${completedEvaluationEntries.length}건 평가 데이터 생성 중...`);
+      for (const entry of completedEvaluationEntries) {
+        await evaluateReceiptForReport(entry.file, entry.result, entry.financeRecord);
+      }
+      setEvaluationStatus(`일괄 문서화 및 평가 완료 · ${completedEvaluationEntries.length}건이 리포트에 저장되었습니다.`);
+      setReceiptBatchStatus(`일괄 문서화 및 평가 완료 · ${completedEvaluationEntries.length}/${completedEvaluationEntries.length}`);
+      setLoading(false);
+    }
   };
 
   const submitFinanceRecord = async () => {

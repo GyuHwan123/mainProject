@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     RAG_EMBEDDING_MODEL: str = "embeddinggemma"
     RAG_EMBEDDING_DIMENSIONS: int = 768
     RAG_LLM_MODEL: str = "gemma2:2b"
+    RECEIPTS_LLM_MODEL: str = ""
     RAG_RERANK_MODEL: str = ""
     RAG_PROMPT_VERSION: str = "baseline-v1"
     RAG_TOP_K: int = 8

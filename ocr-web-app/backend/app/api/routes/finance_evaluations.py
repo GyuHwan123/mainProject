@@ -83,8 +83,19 @@ async def _installed_ollama_models() -> list[str]:
 @router.get("/models")
 async def list_installed_ollama_models(
     _user: User = Depends(require_developer),
-) -> dict[str, list[str]]:
-    return {"models": await _installed_ollama_models()}
+) -> dict[str, Any]:
+    models = await _installed_ollama_models()
+    configured_model = settings.RECEIPTS_LLM_MODEL.strip()
+    warning = None
+    if not configured_model:
+        warning = "영수증 LLM 모델이 설정되지 않았습니다. .env에 RECEIPTS_LLM_MODEL을 설정해 주세요."
+    elif configured_model not in models:
+        warning = f"설정된 영수증 LLM 모델 '{configured_model}'이 Ollama에 설치되어 있지 않습니다."
+    return {
+        "models": models,
+        "default_model": configured_model or None,
+        "warning": warning,
+    }
 
 
 @router.post("/record")

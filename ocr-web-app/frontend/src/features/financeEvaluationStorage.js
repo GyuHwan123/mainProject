@@ -1,22 +1,21 @@
-export const FINANCE_EVALUATION_STORAGE_KEY = 'pic_to_text_finance_evaluations_v2';
-const LEGACY_STORAGE_KEY = 'pic_to_text_finance_evaluations_v1';
 const MAX_RUNS = 200;
+let evaluationRuns = [];
+
+try {
+  localStorage.removeItem('pic_to_text_finance_evaluations_v1');
+  localStorage.removeItem('pic_to_text_finance_evaluations_v2');
+} catch {
+  // Evaluation history is intentionally memory-only.
+}
 
 export function readFinanceEvaluationRuns() {
-  try {
-    localStorage.removeItem(LEGACY_STORAGE_KEY);
-    const value = JSON.parse(localStorage.getItem(FINANCE_EVALUATION_STORAGE_KEY) || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
+  return evaluationRuns;
 }
 
 export function saveFinanceEvaluationRuns(runs) {
-  const value = (Array.isArray(runs) ? runs : []).slice(-MAX_RUNS);
-  localStorage.setItem(FINANCE_EVALUATION_STORAGE_KEY, JSON.stringify(value));
+  evaluationRuns = (Array.isArray(runs) ? runs : []).slice(-MAX_RUNS);
   window.dispatchEvent(new CustomEvent('finance-evaluations-updated'));
-  return value;
+  return evaluationRuns;
 }
 
 export function appendFinanceEvaluationRun(run) {
@@ -26,4 +25,8 @@ export function appendFinanceEvaluationRun(run) {
     ? [...current.filter((item) => item.capture_id !== captureId), run]
     : [...current, run];
   return saveFinanceEvaluationRuns(next);
+}
+
+export function clearFinanceEvaluationRuns() {
+  return saveFinanceEvaluationRuns([]);
 }

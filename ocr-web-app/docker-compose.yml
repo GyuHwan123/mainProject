@@ -31,7 +31,8 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma}
       RAG_EMBEDDING_DIMENSIONS: ${RAG_EMBEDDING_DIMENSIONS:-768}
-      RAG_LLM_MODEL: ${RAG_LLM_MODEL:-llama3b-receipt-v3:latest}
+      RAG_LLM_MODEL: ${RAG_LLM_MODEL:-gemma2:2b}
+      RECEIPTS_LLM_MODEL: ${RECEIPTS_LLM_MODEL:-}
       RAG_RERANK_MODEL: ${RAG_RERANK_MODEL:-}
       RAG_PROMPT_VERSION: ${RAG_PROMPT_VERSION:-baseline-v1}
       RAG_TOP_K: ${RAG_TOP_K:-8}
@@ -70,6 +71,7 @@ services:
       - ollama_data:/root/.ollama
     environment:
       OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-llama3b-receipt-v3:latest}
+      OLLAMA_RECEIPTS_MODEL: ${RECEIPTS_LLM_MODEL:-}
       OLLAMA_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma}
     networks:
       - ocr-network

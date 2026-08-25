@@ -13,7 +13,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.chatbot import MODEL_NAME, generate
+from app.api.routes.chatbot import generate
+from app.core.config import settings
 from app.models.user import User
 from app.services.finance_workbook_service import build_finance_workbook
 from app.services.supabase_service import supabase_service
@@ -22,6 +23,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 FINANCE_PROMPT_VERSION = "receipt-v1"
+RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 
 class FinanceClassifyRequest(BaseModel):
@@ -396,7 +398,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "payment_method": str(result.get("payment_method") or hints.get("payment_method") or "").strip()[:100] or None,
         "description": str(result.get("description") or "").strip()[:1000] or None,
         "structured_data": result,
-        "model_name": str(result.get("_model_name") or MODEL_NAME),
+        "model_name": str(result.get("_model_name") or RECEIPTS_MODEL_NAME),
         "status": "REVIEW",
     }
 
@@ -500,8 +502,32 @@ tax_amount, discount_amount, total_amount, payment_method, card_number, descript
 """
 
 
-async def _classify_receipt_with_model(text: str, filename: str, model_name: str) -> dict[str, Any]:
-    raw = await generate(_receipt_prompt(text, filename), json_format=True, num_predict=1200, model_name=model_name)
+def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) -> str:
+    candidates = _receipt_item_candidates(pages)
+    stated_count = _receipt_hints(text, "receipt").get("stated_item_count")
+    evidence = json.dumps(candidates, ensure_ascii=False) if candidates else text[:5000]
+    return f"""영수증의 실제 구매 품목만 JSON으로 반환하세요.
+형식: {{"items":[{{"name":...,"specification":...,"quantity":...,"unit":...,"unit_price":...,"supply_amount":...,"tax_amount":...,"total_amount":...,"note":...}}]}}
+
+규칙:
+1. 근거 행 하나는 원칙적으로 품목 하나입니다. 확인되는 품목을 누락하지 마세요.
+2. 합계·소계·공급가액·부가세·할인·결제·승인·안내 행은 품목이 아닙니다.
+3. 후보의 name/quantity/unit_price/amount는 코드 추정값입니다. raw_cells가 다르면 raw_cells를 우선합니다.
+4. 확인할 수 없는 필드는 null로 두고 상품 자체가 확인되면 품목을 삭제하지 마세요.
+5. 영수증에 명시된 품목 수: {stated_count if stated_count is not None else '미확인'}
+
+[품목 근거]
+{evidence}
+"""
+
+
+async def _classify_receipt_with_model(
+    text: str,
+    filename: str,
+    model_name: str,
+    pages: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    raw = await generate(_receipt_prompt(text, filename, pages), json_format=True, num_predict=1200, model_name=model_name)
     result = json.loads(raw)
     if not isinstance(result, dict):
         logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
@@ -529,7 +555,7 @@ async def _classify_receipt(
 ) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     try:
-        return await _classify_receipt_with_model(text, filename, MODEL_NAME)
+        return await _classify_receipt_with_model(text, filename, RECEIPTS_MODEL_NAME, pages)
     except Exception:
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
@@ -548,6 +574,11 @@ async def _classify_receipt(
 
 @router.post("/records/classify", response_model=FinanceRecord)
 async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    if not RECEIPTS_MODEL_NAME.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="영수증 LLM 모델이 설정되지 않았습니다. .env에 RECEIPTS_LLM_MODEL을 설정해 주세요.",
+        )
     document = supabase_service.get_ocr_document(user.email, payload.document_id)
     extracted_text = (document.get("extracted_text") or "").strip()
     if not extracted_text:

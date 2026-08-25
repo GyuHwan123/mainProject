@@ -3,12 +3,9 @@ import { IoDownloadOutline } from 'react-icons/io5';
 
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
-import {
-  FINANCE_EVALUATION_STORAGE_KEY,
-  readFinanceEvaluationRuns,
-  saveFinanceEvaluationRuns,
-} from '../features/financeEvaluationStorage';
+import { clearFinanceEvaluationRuns, readFinanceEvaluationRuns, saveFinanceEvaluationRuns } from '../features/financeEvaluationStorage';
 import { clearFinanceEvaluationInput, peekFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
+import { clearPendingReceipts, readReceiptWorkspace, rememberReceiptRecord } from '../features/receiptWorkspaceMemory';
 import '../style/FinanceEvaluationPage.scss';
 
 const DEFAULT_MODELS = ['llama3b-receipt-v3:latest', 'gemma2:2b', 'finance-gemma2-qlora-v1', 'finance-gemma2-qlora-v2'];
@@ -181,6 +178,27 @@ function PipelineLoading({ progress, models, imagePreview }) {
   </article>);
 }
 
+function PendingReceiptEvaluation({ receipt }) {
+  const [previewUrl, setPreviewUrl] = useState('');
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    apiClient.get(`/ocr/documents/${receipt.document_id}/file`, { responseType: 'blob' }).then(({ data }) => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(data);
+      setPreviewUrl(objectUrl);
+    }).catch(() => {});
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [receipt.document_id]);
+  return <article className="pending-receipt-evaluation">
+    <div>{previewUrl ? <img src={previewUrl} alt={receipt.document_name} /> : <span>이미지를 불러오는 중입니다.</span>}</div>
+    <section><small>분석 대기</small><h3>{receipt.document_name}</h3><p>정답 데이터가 없습니다.</p><em>정답 JSON을 입력하면 정확도, 필드 매칭 및 OCR 영향 분석을 진행할 수 있습니다.</em><strong>{receipt.model_name || '영수증 모델'}</strong></section>
+  </article>;
+}
+
 function ModelPipelineResult({ run, result, imagePreview }) {
   const [imageOpen, setImageOpen] = useState(false);
   const score = result.system?.score || {};
@@ -266,6 +284,14 @@ function summarize(runs, model) {
   };
 }
 
+function rememberedBatchState() {
+  const runs = readFinanceEvaluationRuns();
+  const batchIds = runs.map((run) => run.batch_id).filter(Boolean);
+  const activeBatchId = batchIds[batchIds.length - 1] || '';
+  const batchRunCount = activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId).length : 0;
+  return { activeBatchId, batchComplete: batchRunCount > 1 };
+}
+
 export default function FinanceEvaluationPage({ embedded = false }) {
   const imageRef = useRef(null);
   const folderRef = useRef(null);
@@ -283,9 +309,10 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const [questionLoading, setQuestionLoading] = useState(false);
   const [questionHistory, setQuestionHistory] = useState([]);
   const [pipelineProgress, setPipelineProgress] = useState(null);
-  const [activeBatchId, setActiveBatchId] = useState('');
-  const [batchComplete, setBatchComplete] = useState(false);
+  const [activeBatchId, setActiveBatchId] = useState(() => rememberedBatchState().activeBatchId);
+  const [batchComplete, setBatchComplete] = useState(() => rememberedBatchState().batchComplete);
   const [queuedBatchFiles, setQueuedBatchFiles] = useState(null);
+  const [pendingReceipts, setPendingReceipts] = useState(() => readReceiptWorkspace().pendingEvaluations);
 
   const batchRuns = useMemo(() => activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId) : [], [runs, activeBatchId]);
   const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(batchRuns, model) })), [batchRuns, models]);
@@ -305,18 +332,20 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     });
   }, [summaries]);
   const latestRun = runs[runs.length - 1];
+  const latestPendingReceipt = pendingReceipts[pendingReceipts.length - 1];
+  const latestDocument = latestPendingReceipt || latestRun;
 
   useEffect(() => {
-    if (!latestRun?.document_id || imagePreview?.name === latestRun.document_name) return undefined;
+    if (!latestDocument?.document_id || imagePreview?.name === latestDocument.document_name) return undefined;
     let active = true;
-    apiClient.get(`/ocr/documents/${latestRun.document_id}/file`, { responseType: 'blob' }).then(({ data }) => {
+    apiClient.get(`/ocr/documents/${latestDocument.document_id}/file`, { responseType: 'blob' }).then(({ data }) => {
       if (!active) return;
       if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
       imageUrlRef.current = URL.createObjectURL(data);
-      setImagePreview({ url: imageUrlRef.current, type: data.type, name: latestRun.document_name });
+      setImagePreview({ url: imageUrlRef.current, type: data.type, name: latestDocument.document_name });
     }).catch(() => {});
     return () => { active = false; };
-  }, [latestRun?.document_id, latestRun?.document_name, imagePreview?.name]);
+  }, [latestDocument?.document_id, latestDocument?.document_name, imagePreview?.name]);
 
   useEffect(() => () => {
     if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
@@ -324,27 +353,17 @@ export default function FinanceEvaluationPage({ embedded = false }) {
 
   useEffect(() => {
     let active = true;
-    apiClient.get('/finance-evaluations/runs').then(({ data }) => {
-      if (!active || !Array.isArray(data)) return;
-      const local = readFinanceEvaluationRuns();
-      const persistedIds = new Set(data.map((run) => run.evaluation_id).filter(Boolean));
-      setRuns(saveFinanceEvaluationRuns([
-        ...local.filter((run) => !run.evaluation_id || !persistedIds.has(run.evaluation_id)),
-        ...data,
-      ]));
-    }).catch(() => {
-      // Keep the local cache available if Supabase is temporarily unavailable.
-    });
     apiClient.get('/finance-evaluations/models').then(({ data }) => {
       if (!active) return;
       const available = Array.isArray(data?.models) ? data.models : [];
+      const configuredModel = String(data?.default_model || '').trim();
       setInstalledModels(available);
-      const preferred = DEFAULT_MODELS.filter((model) => available.includes(model));
       setModels((current) => {
         const valid = current.filter((model) => available.includes(model));
-        return valid.length ? valid : (preferred.length ? preferred : available.slice(0, 1));
+        return valid.length ? valid : (available.includes(configuredModel) ? [configuredModel] : []);
       });
-      if (!available.length) setStatus('Ollama에 설치된 모델이 없습니다. 먼저 모델을 설치해 주세요.');
+      if (data?.warning) setStatus(data.warning);
+      else if (!available.length) setStatus('Ollama에 설치된 모델이 없습니다. 먼저 모델을 설치해 주세요.');
     }).catch((error) => {
       if (active) setStatus(error.response?.data?.detail || 'Ollama 모델 목록을 불러오지 못했습니다.');
     });
@@ -352,16 +371,17 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   }, []);
 
   useEffect(() => {
+    const refreshPendingReceipts = () => setPendingReceipts(readReceiptWorkspace().pendingEvaluations);
+    window.addEventListener('receipt-workspace-updated', refreshPendingReceipts);
+    return () => window.removeEventListener('receipt-workspace-updated', refreshPendingReceipts);
+  }, []);
+
+  useEffect(() => {
     const refreshRuns = () => setRuns(readFinanceEvaluationRuns());
-    const refreshFromStorage = (event) => {
-      if (!event.key || event.key === FINANCE_EVALUATION_STORAGE_KEY) refreshRuns();
-    };
     window.addEventListener('finance-evaluations-updated', refreshRuns);
-    window.addEventListener('storage', refreshFromStorage);
     window.addEventListener('focus', refreshRuns);
     return () => {
       window.removeEventListener('finance-evaluations-updated', refreshRuns);
-      window.removeEventListener('storage', refreshFromStorage);
       window.removeEventListener('focus', refreshRuns);
     };
   }, []);
@@ -413,6 +433,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     const { data: record } = await apiClient.post('/finance/records/classify', {
       document_id: ocr.document_id,
     }, { timeout: 180000 });
+    rememberReceiptRecord(record);
     const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
       document_id: ocr.document_id,
       record_id: record.id,
@@ -431,12 +452,16 @@ export default function FinanceEvaluationPage({ embedded = false }) {
 
   const runEvaluation = async (file) => {
     if (!file || !dataset.length || loading) return;
+    clearPendingReceipts();
+    clearFinanceEvaluationRuns();
+    setRuns([]);
+    setPendingReceipts([]);
     setActiveBatchId(''); setBatchComplete(false); setLoading(true);
     try {
       const matched = matchDatasetRow(file);
       setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
       const entry = await evaluateFile(file, matched);
-      saveRuns([...runs, entry]);
+      saveRuns([entry]);
       setStatus(`${file.name} 자동 매핑 및 평가 완료 · ${matched.index + 1}/${dataset.length}`);
       if (matched.index < dataset.length - 1) setSelectedIndex(matched.index + 1);
     } catch (error) {
@@ -454,6 +479,10 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       if (folderRef.current) folderRef.current.value = '';
       return;
     }
+    clearPendingReceipts();
+    clearFinanceEvaluationRuns();
+    setRuns([]);
+    setPendingReceipts([]);
     let batchId = '';
     try {
       const { data: batch } = await apiClient.post('/finance-evaluations/batches', {
@@ -470,7 +499,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       return;
     }
     setActiveBatchId(batchId); setBatchComplete(false); setQuestionHistory([]); setLoading(true);
-    let accumulated = [...runs]; let completed = 0; const errors = [];
+    let accumulated = []; let completed = 0; const errors = [];
     for (const file of files) {
       try {
         const matched = matchDatasetRow(file);
@@ -593,6 +622,11 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       <button className="eval-upload batch-upload" disabled={!dataset.length || loading || !models.length || models.some((model) => !installedModels.includes(model))} onClick={() => folderRef.current?.click()}>{loading ? '일괄 평가 중...' : '프로젝트 폴더 일괄 평가'}</button>
       <input ref={folderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => runFolderEvaluation(event.target.files)} />
       <p>{status}</p>
+    </section>}
+
+    {!!pendingReceipts.length && <section className="pending-receipt-evaluations">
+      <header><div><h2>정답 데이터 없는 영수증</h2><p>자동 문서화에서 전달된 이미지입니다. 새로고침 전까지 이 화면에 유지됩니다.</p></div><span>{pendingReceipts.length}건 · 정답 데이터가 없습니다</span></header>
+      <div>{pendingReceipts.map((receipt) => <PendingReceiptEvaluation key={receipt.document_id} receipt={receipt} />)}</div>
     </section>}
 
     {batchComplete && batchRuns.length > 1 && <section className="eval-summary-grid">

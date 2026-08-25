@@ -25,6 +25,32 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 
 
+def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, Any]:
+    """Expose the same compact OCR evidence that is passed to the receipt LLM."""
+    page_list = pages or []
+    candidates = _receipt_item_candidates(page_list)
+    table_rows = sum(
+        len(table.get("rows") or [])
+        for page in page_list
+        for table in (page.get("tables") or [])
+    )
+    return {
+        "candidates": candidates,
+        "summary": {
+            "pages": len(page_list),
+            "ocr_boxes": sum(len(page.get("items") or []) for page in page_list),
+            "tables": sum(len(page.get("tables") or []) for page in page_list),
+            "table_rows": table_rows,
+            "item_regions": sum(
+                1 for page in page_list for region in (page.get("regions") or [])
+                if region.get("type") == "items"
+            ),
+            "item_candidates": len(candidates),
+            "uncertain_candidates": sum(1 for candidate in candidates if candidate.get("uncertainty")),
+        },
+    }
+
+
 
 class FinanceEvaluationRequest(BaseModel):
     document_id: str
@@ -134,6 +160,7 @@ def evaluate_existing_finance_record(
         "document_name": document.get("file_name") or "receipt",
         "ocr_text": text,
         "ocr_pages": document.get("bounding_boxes") or [],
+        "ocr_diagnostics": _ocr_structure_diagnostics(document.get("bounding_boxes") or []),
         "ground_truth": payload.ground_truth,
         "normalized_ground_truth": truth,
         "results": [{
@@ -202,6 +229,7 @@ def list_saved_finance_evaluations(
             "document_name": document.get("file_name") or "receipt",
             "ocr_text": document.get("extracted_text") or "",
             "ocr_pages": document.get("bounding_boxes") or [],
+            "ocr_diagnostics": _ocr_structure_diagnostics(document.get("bounding_boxes") or []),
             "ground_truth": row.get("ground_truth") or {},
             "normalized_ground_truth": row.get("normalized_ground_truth") or {},
             "evaluated_at": row.get("evaluated_at"),
@@ -315,6 +343,7 @@ async def run_finance_evaluation(
         "document_name": document.get("file_name") or "receipt",
         "ocr_text": text,
         "ocr_pages": document.get("bounding_boxes") or [],
+        "ocr_diagnostics": _ocr_structure_diagnostics(document.get("bounding_boxes") or []),
         "ground_truth": payload.ground_truth,
         "normalized_ground_truth": normalize_ground_truth(payload.ground_truth),
         "results": await evaluate_models(

@@ -2,7 +2,7 @@ from app.schemas.ocr import OCRItem, OCRPage
 from app.services.postprocess_service import normalize_ocr_text
 
 
-def sort_text_lines(texts, scores, boxes):
+def sort_text_lines(texts, scores, boxes, *, receipt_layout=False):
     """
     OCR 결과를
     위쪽 → 아래쪽,
@@ -41,7 +41,10 @@ def sort_text_lines(texts, scores, boxes):
     center_band = page_width * 0.006
     clear_left = [item for item in elements if item["box"][2] < midpoint - center_band]
     clear_right = [item for item in elements if item["box"][0] > midpoint + center_band]
-    has_two_columns = len(clear_left) >= 5 and len(clear_right) >= 5
+    # A receipt's product-name and amount columns can look like a two-column
+    # article. Reading each side top-to-bottom destroys the item-row order, so
+    # receipt mode always keeps geometric top-to-bottom ordering.
+    has_two_columns = not receipt_layout and len(clear_left) >= 5 and len(clear_right) >= 5
 
     if has_two_columns:
         for item in elements:
@@ -111,7 +114,7 @@ def sort_text_lines(texts, scores, boxes):
 
     # Two-column documents are read down the full left column first, then the
     # right column. Center-spanning titles and tables keep their page order.
-    if len(lines) >= 4:
+    if not receipt_layout and len(lines) >= 4:
         min_x = min(item["box"][0] for line in lines for item in line)
         max_x = max(item["box"][2] for line in lines for item in line)
         midpoint = (min_x + max_x) / 2
@@ -132,6 +135,8 @@ def sort_text_lines(texts, scores, boxes):
 def build_ocr_page(
     data: dict,
     page_number: int,
+    *,
+    receipt_layout: bool = False,
 ) -> OCRPage:
 
     texts = data.get("rec_texts", [])
@@ -142,6 +147,7 @@ def build_ocr_page(
         texts,
         scores,
         boxes,
+        receipt_layout=receipt_layout,
     )
 
     items = []

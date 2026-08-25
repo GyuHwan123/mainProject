@@ -28,10 +28,14 @@ NUMBER_FIELDS = {
 # equivalent item names written in different languages. Keys are compacted by
 # removing spaces and punctuation before lookup; values are stable concepts.
 ITEM_NAME_ALIASES = {
+    "haircut": "beauty_service",
+    "haircutservice": "beauty_service",
     "hairsalon": "beauty_service",
     "beautysalon": "beauty_service",
     "hairdressingservice": "beauty_service",
     "미용서비스": "beauty_service",
+    "헤어컷": "beauty_service",
+    "커트": "beauty_service",
     "미용실": "beauty_service",
     "barbershop": "barber_service",
     "barberservice": "barber_service",

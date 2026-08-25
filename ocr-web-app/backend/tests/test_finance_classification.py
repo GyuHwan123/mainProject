@@ -40,19 +40,57 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("요약 정보만", prompt)
         self.assertNotIn("품목 행 후보", prompt)
         self.assertIn("품목 근거", items_prompt)
-        self.assertIn('"raw_cells": ["볼펜", "2", "1,000"]', items_prompt)
+        self.assertIn('"raw_cells":["볼펜","2","1,000"]', items_prompt)
 
-    def test_builds_item_candidates_from_table_and_single_box_ocr_lines(self):
+    def test_prefers_table_and_does_not_rescan_page_metadata(self):
         candidates = _receipt_item_candidates([{
             "page": 1,
             "tables": [{"rows": [["볼펜", "2", "1,000", "2,000"], ["합계", "2,000"]]}],
             "text": "노트 1 3,000 3,000\n부가세 455",
         }])
 
-        self.assertEqual([item["name_candidate"] for item in candidates], ["볼펜", "노트"])
+        self.assertEqual([item["name_candidate"] for item in candidates], ["볼펜"])
         self.assertEqual(candidates[0]["quantity_candidate"], 2)
         self.assertEqual(candidates[0]["unit_price_candidate"], 1000)
         self.assertEqual(candidates[0]["amount_candidate"], 2000)
+
+    def test_resolves_quantity_and_unit_price_without_fixed_column_order(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "tables": [{"rows": [["브러시드 알파카", "12,600", "6", "75,600"]]}],
+            "text": "판매번호 7 6,000 42,000",
+        }])
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["quantity_candidate"], 6)
+        self.assertEqual(candidates[0]["unit_price_candidate"], 12600)
+        self.assertEqual(candidates[0]["column_resolution"], "arithmetic")
+
+    def test_uses_explicit_physical_column_roles(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "tables": [{
+                "columns": ["name", "unit_price", "quantity", "amount"],
+                "rows": [["브러시드 알파카", "12,600", "6", "75,600"]],
+            }],
+        }])
+
+        self.assertEqual(candidates[0]["quantity_candidate"], 6)
+        self.assertEqual(candidates[0]["unit_price_candidate"], 12600)
+        self.assertEqual(candidates[0]["column_resolution"], "header")
+
+    def test_preserves_parenthesized_alternate_price_without_dropping_item(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "tables": [{"rows": [["[DIY] 스카프 도안", "1", "6,000 (5,700)"]]}],
+        }])
+
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["quantity_candidate"], 1)
+        self.assertEqual(candidates[0]["unit_price_candidate"], 6000)
+        self.assertEqual(candidates[0]["amount_candidate"], 6000)
+        self.assertEqual(candidates[0]["alternate_price_candidates"], [5700])
+        self.assertEqual(candidates[0]["candidate_type"], "incomplete_item")
 
     async def test_retries_item_only_extraction_when_first_result_is_incomplete(self):
         pages = [{
@@ -82,6 +120,22 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_recovers_date_when_ocr_joins_date_and_time(self):
         hints = _receipt_hints("판매일자 2025-10-0516:50", "서울출장_식비.jpg")
         self.assertEqual(hints["transaction_date"], "2025-10-05")
+
+    def test_recovers_two_digit_pos_transaction_date(self):
+        hints = _receipt_hints("거래일시:23/08/05 13:07:52", "receipt.jpg")
+
+        self.assertEqual(hints["transaction_date"], "2023-08-05")
+
+    def test_recovers_unit_price_from_item_total_and_quantity(self):
+        normalized = _normalize(
+            {"items": [{"name": "헤어컷", "quantity": 1, "total_amount": 140000}]},
+            "receipt.jpg",
+            "헤어컷 140,000원",
+        )
+
+        item = normalized["structured_data"]["items"][0]
+        self.assertEqual(item["unit_price"], 140000)
+        self.assertIn("단가 복원", item["note"])
 
     def test_deterministic_values_override_broken_llm_numbers(self):
         normalized = _normalize(
@@ -204,6 +258,67 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_total_quantity"], 7)
         self.assertEqual(normalized["structured_data"]["receipt_summary"]["stated_total_amount"], 81300)
         self.assertEqual(normalized["structured_data"]["items"], items[:2])
+
+    def test_reads_korean_item_and_quantity_count_suffixes(self):
+        hints = _receipt_hints("총품목/총수량 총구매금액\n2개/7개 81,600", "receipt.jpg")
+
+        self.assertEqual(hints["stated_item_count"], 2)
+        self.assertEqual(hints["stated_total_quantity"], 7)
+        self.assertEqual(hints["stated_total_amount"], 81600)
+
+    def test_reads_item_count_when_value_precedes_label(self):
+        hints = _receipt_hints("2개/7개\n총품목/총수량\n81,600", "receipt.jpg")
+
+        self.assertEqual(hints["stated_item_count"], 2)
+        self.assertEqual(hints["stated_total_quantity"], 7)
+
+    def test_trims_metadata_preserves_empty_columns_and_recovers_missing_quantity(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "text": "2개/7개\n총품목/총수량",
+            "tables": [{
+                "columns": ["name", "unit_price", "quantity", "amount"],
+                "rows": [
+                    ["판매번호 2850787 포스번호 P007 [DIY] 스카프 도안", "", "6,000", "6,000 (5,700)"],
+                    ["브러시드 알파카 퍼루", "", "12,600", "6 75,600"],
+                ],
+            }],
+        }])
+
+        self.assertEqual(len(candidates), 2)
+        self.assertTrue(candidates[0]["name_candidate"].startswith("[DIY]"))
+        self.assertEqual(candidates[0]["quantity_candidate"], 1)
+        self.assertEqual(candidates[0]["quantity_resolution"], "receipt_total_remainder")
+        self.assertEqual(candidates[0]["unit_price_candidate"], 6000)
+        self.assertEqual(candidates[1]["quantity_candidate"], 6)
+        self.assertEqual(candidates[1]["unit_price_candidate"], 12600)
+
+    def test_merges_two_line_book_items_and_separates_inventory_codes(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "tables": [{
+                "columns": ["name", "unit_price", "quantity", "amount"],
+                "rows": [
+                    ["001 [중고] 미학사전 U102768084", "6,700", "", "6,700"],
+                    ["002 [중고] 바로크와 로코코", "", "", ""],
+                    ["U102384189", "4,900", "1", "4,900"],
+                    ["005 [중고] 여인들의 행복 백화점2", "", "", ""],
+                    ["U602490729", "5,500", "1", "5,500"],
+                    ["수 량", "", "", "9"],
+                    ["총합계", "", "", "56,300"],
+                    ["면세상품 액", "", "", "56,300"],
+                ],
+            }],
+        }])
+
+        self.assertEqual([candidate["name_candidate"] for candidate in candidates], [
+            "[중고] 미학사전", "[중고] 바로크와 로코코", "[중고] 여인들의 행복 백화점2",
+        ])
+        self.assertEqual([candidate["product_code"] for candidate in candidates], [
+            "U102768084", "U102384189", "U602490729",
+        ])
+        self.assertEqual([candidate["quantity_candidate"] for candidate in candidates], [1, 1, 1])
+        self.assertEqual([candidate["unit_price_candidate"] for candidate in candidates], [6700, 4900, 5500])
 
     def test_postprocesses_summary_rows_and_item_number_formats(self):
         normalized = _normalize(

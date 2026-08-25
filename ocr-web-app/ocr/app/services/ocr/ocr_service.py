@@ -19,7 +19,7 @@ from app.services.docx_service import extract_docx_text, extract_docx_text_and_i
 from app.services.ocr.ocr_parser import build_ocr_page
 from app.services.preprocess_service import preprocess_image, scale_bbox_to_image
 from app.services.receipt_preprocess_service import PreprocessOptions, preprocess_receipt_image
-from app.services.receipt_table_service import detect_receipt_tables
+from app.services.receipt_table_service import detect_receipt_regions, detect_receipt_tables
 from app.services.spreadsheet_service import extract_spreadsheet
 
 
@@ -38,6 +38,8 @@ ocr = PaddleOCR(
 
 def run_paddle_ocr(
     source: Path | np.ndarray,
+    *,
+    receipt_layout: bool = False,
 ) -> list[OCRPage]:
     """
     PaddleOCR을 실행하고
@@ -84,6 +86,7 @@ def run_paddle_ocr(
         page = build_ocr_page(
             data,
             page_number,
+            receipt_layout=receipt_layout,
         )
 
         pages.append(page)
@@ -305,7 +308,7 @@ async def process_ocr(
             )
 
             if file_extension == ".pdf":
-                pages = run_paddle_ocr(temp_path)
+                pages = run_paddle_ocr(temp_path, receipt_layout=processing_mode == "receipt")
             elif file_extension == ".docx":
                 pages = extract_docx_text_and_images(
                     temp_path,
@@ -317,17 +320,20 @@ async def process_ocr(
                 processed_image = receipt_result.image if receipt_result else preprocess_image(temp_path)
                 preprocess_ms = (perf_counter() - preprocess_started) * 1000
                 ocr_started = perf_counter()
-                pages = run_paddle_ocr(processed_image)
+                pages = run_paddle_ocr(processed_image, receipt_layout=processing_mode == "receipt")
                 ocr_ms = (perf_counter() - ocr_started) * 1000
                 original_image = cv2.imread(str(temp_path), cv2.IMREAD_COLOR)
                 if receipt_result:
                     for page in pages:
                         if processing_mode == "receipt":
                             page.tables = detect_receipt_tables(page.items) or None
+                            page.regions = detect_receipt_regions(page.items) or None
                         for item in page.items:
                             item.bbox = receipt_result.bbox_to_original(item.bbox)
                         for table in page.tables or []:
                             table.bbox = receipt_result.bbox_to_original(table.bbox)
+                        for region in page.regions or []:
+                            region.bbox = receipt_result.bbox_to_original(region.bbox)
                     encoded, buffer = cv2.imencode(".jpg", processed_image, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     if encoded:
                         preprocessed_image = "data:image/jpeg;base64," + base64.b64encode(buffer).decode("ascii")
@@ -348,6 +354,7 @@ async def process_ocr(
                 if processing_mode == "receipt" and not receipt_result:
                     for page in pages:
                         page.tables = detect_receipt_tables(page.items) or None
+                        page.regions = detect_receipt_regions(page.items) or None
 
         # =================================
         # TEXT_AND_IMAGE

@@ -13,6 +13,7 @@ from app.services.pii_service import redact_pages
 
 EMBEDDING_MODEL = settings.RAG_EMBEDDING_MODEL
 EMBEDDING_DIMENSIONS = settings.RAG_EMBEDDING_DIMENSIONS
+RERANK_MODEL = settings.RAG_RERANK_MODEL
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
 
 
@@ -21,6 +22,14 @@ def _get_embedding_model() -> Any:
     from sentence_transformers import SentenceTransformer
 
     return SentenceTransformer(EMBEDDING_MODEL)
+
+
+@lru_cache(maxsize=1)
+def _get_reranker() -> Any:
+    import torch
+    from FlagEmbedding import FlagReranker
+
+    return FlagReranker(RERANK_MODEL, use_fp16=torch.cuda.is_available())
 
 
 SECTION_TITLES = {
@@ -221,6 +230,30 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         ) from exc
 
 
+async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not candidates or not RERANK_MODEL:
+        return candidates
+    try:
+        reranker = await asyncio.to_thread(_get_reranker)
+        pairs = [[query, str(candidate.get("content") or "")] for candidate in candidates]
+        scores = await asyncio.to_thread(reranker.compute_score, pairs, normalize=True)
+        if hasattr(scores, "tolist"):
+            scores = scores.tolist()
+        if not isinstance(scores, (list, tuple)):
+            scores = [scores]
+        if len(scores) != len(candidates):
+            raise ValueError(f"unexpected reranker score count: {len(scores)}")
+        for candidate, score in zip(candidates, scores):
+            candidate["rerank_score"] = float(score)
+            candidate["similarity"] = float(score)
+        return sorted(candidates, key=lambda candidate: candidate["rerank_score"], reverse=True)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Reranker 모델 {RERANK_MODEL}을 로드하거나 실행할 수 없습니다.",
+        ) from exc
+
+
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
     document = supabase_service.get_ocr_document(user_email, document_id)
     try:
@@ -243,7 +276,7 @@ async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
 async def search(user_email: str, query: str, rag_document_id: str | None, limit: int) -> list[dict[str, Any]]:
     embedding = (await embed_texts([query]))[0]
     candidates = supabase_service.search_rag_chunks(
-        user_email, embedding, rag_document_id, min(20, max(limit * 3, limit)),
+        user_email, embedding, rag_document_id, 10,
     )
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]
@@ -259,6 +292,7 @@ async def search(user_email: str, query: str, rag_document_id: str | None, limit
         row["vector_similarity"] = float(row.get("similarity") or 0)
         row["similarity"] = min(1.0, row["vector_similarity"] + lexical_boost)
     candidates.sort(key=lambda row: float(row.get("similarity") or 0), reverse=True)
+    candidates = await rerank_candidates(query, candidates)
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
         all_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)

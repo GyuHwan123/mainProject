@@ -16,6 +16,13 @@ class OCRTable(BaseModel):
     bbox: list[list[float]]
     confidence: float
     rows: list[list[str]]
+    columns: list[str] | None = None
+
+
+class OCRRegion(BaseModel):
+    type: str
+    bbox: list[list[float]]
+    confidence: float
 
 
 class OCRPage(BaseModel):
@@ -25,6 +32,7 @@ class OCRPage(BaseModel):
     sheet_name: str | None = None
     rows: list[list[str]] | None = None
     tables: list[OCRTable] | None = None
+    regions: list[OCRRegion] | None = None
 
 
 class OCRResponse(BaseModel):

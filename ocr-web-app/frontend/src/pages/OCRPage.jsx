@@ -89,10 +89,10 @@ function FinanceReceiptWorksheet({ records, user }) {
   const definition = FINANCE_DOCUMENTS[record.document_type] || FINANCE_DOCUMENTS.EXPENSE_REPORT;
   const total = records.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   return <div className="receipt-form-sheet">
-    <div className="receipt-form-title"><strong>{definition.title}</strong><span>{records.length}건 누적 · {record.status === 'CONFIRMED' ? '확정' : '확인 필요'}</span></div>
-    <div className="receipt-form-meta"><span><b>작성자</b>{user?.name || '로그인 사용자'}</span><span><b>이메일</b>{user?.email || '미확인'}</span><span><b>최근 결제일</b>{record.transaction_date || '미확인'}</span><span><b>누적 합계</b>{financeMoney(total)}</span></div>
+    <div className="receipt-form-title"><strong>{definition.title}</strong><span>현재 기록 · {record.status === 'CONFIRMED' ? '확정' : '확인 필요'}</span></div>
+    <div className="receipt-form-meta"><span><b>작성자</b>{user?.name || '로그인 사용자'}</span><span><b>이메일</b>{user?.email || '미확인'}</span><span><b>결제일</b>{record.transaction_date || '미확인'}</span><span><b>합계</b>{financeMoney(total)}</span></div>
     <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{financeRecordRows(records).map((row, rowIndex) => <tr key={`${record.id}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
-    <p>새 영수증의 선별값이 현재 작업의 다음 행으로 추가됩니다.</p>
+    <p>현재 영수증에서 선별한 값만 표시됩니다.</p>
   </div>;
 }
 
@@ -1075,9 +1075,7 @@ export default function OCRPage() {
   const currentText = pageTexts[pageNumber - 1] || '';
   const currentItems = pageItems[pageNumber - 1] || EMPTY_ITEMS;
   const currentRows = pageRows[pageNumber - 1];
-  const currentFinanceRecords = financeRecord
-    ? financeRecords.filter((item) => item.document_type === financeRecord.document_type)
-    : [];
+  const currentFinanceRecords = financeRecord ? [financeRecord] : [];
   const pageCount = pdf?.numPages || pageTexts.length;
   const hasResult = pageTexts.length > 0;
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user?.role) || user?.email === 'developer@docunex.com';
@@ -1152,7 +1150,7 @@ export default function OCRPage() {
       const batchRecordIds = new Set(receiptBatchRef.current.recordIds || []);
       const records = batchRecordIds.size
         ? financeRecords.filter((item) => batchRecordIds.has(item.id))
-        : financeRecords;
+        : [financeRecord];
       if (!records.length) throw new Error('Excel에 포함할 재무 기록이 없습니다.');
       const response = await apiClient.post('/finance/records/export', { record_ids: records.map((item) => item.id) }, { responseType: 'blob', timeout: 60000 });
       const url = URL.createObjectURL(response.data);
@@ -1423,7 +1421,7 @@ export default function OCRPage() {
               </div>
             </section>}
             <div className="text-header">
-              <div><span>{resultTab === 'text' ? (financeRecord ? FINANCE_DOCUMENTS[financeRecord.document_type]?.title : processingMode === 'receipt' ? '재무 양식 작성 영역' : 'Excel형 문서 추출 워크시트') : 'OCR 원문 데이터'}</span><small>{financeRecord ? `선별값 ${currentFinanceRecords.length}행 누적` : processingMode === 'receipt' ? '영수증 분석 대기' : hasResult ? `${pageNumber} 페이지 · ${validationRows.length}행` : '대기 중'}</small></div>
+              <div><span>{resultTab === 'text' ? (financeRecord ? FINANCE_DOCUMENTS[financeRecord.document_type]?.title : processingMode === 'receipt' ? '재무 양식 작성 영역' : 'Excel형 문서 추출 워크시트') : 'OCR 원문 데이터'}</span><small>{financeRecord ? `현재 영수증 · ${financeRecordRows(currentFinanceRecords).length}개 품목 행` : processingMode === 'receipt' ? '영수증 분석 대기' : hasResult ? `${pageNumber} 페이지 · ${validationRows.length}행` : '대기 중'}</small></div>
               {resultTab === 'text' ? (financeRecord ? <div className="worksheet-actions"><span>재무 기록 저장 완료</span><button className="create-document-button" disabled={exportingRows} onClick={downloadFinanceDocument}>{exportingRows ? '문서 생성 중...' : '재무 양식 Excel 받기'}</button></div> : processingMode !== 'receipt' ? <div className="worksheet-actions"><span>{selectedRowIds.length}행 선택</span><button className="create-document-button" disabled={!selectedRowIds.length || exportingRows} onClick={createExcelDocument}>{exportingRows ? '문서 생성 중...' : '새 Excel 문서 만들기'}</button></div> : null) : <button disabled={!hasResult} onClick={downloadText} title="텍스트 다운로드">⇩</button>}
             </div>
             <div className="text-meta"><span>{currentText.length.toLocaleString()}자</span><span>{resultTab === 'text' ? (financeRecord ? 'OCR 선별값' : '드래그 행 선택') : '텍스트 레이어'}</span></div>

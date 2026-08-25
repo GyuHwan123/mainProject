@@ -143,6 +143,20 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
             transaction_date = date(int(date_match.group(1)), int(date_match.group(2)), int(date_match.group(3))).isoformat()
         except ValueError:
             pass
+    if transaction_date is None:
+        short_date_match = re.search(
+            r"(?<!\d)(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?!\d)",
+            text,
+        )
+        if short_date_match:
+            try:
+                transaction_date = date(
+                    2000 + int(short_date_match.group(1)),
+                    int(short_date_match.group(2)),
+                    int(short_date_match.group(3)),
+                ).isoformat()
+            except ValueError:
+                pass
 
     amount_tokens = re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
     amounts = sorted({amount for token in amount_tokens if 100 <= (amount := _receipt_number(token)) <= 100_000_000})
@@ -205,9 +219,16 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     stated_total_quantity = None
     stated_total_amount = None
     item_count_match = re.search(
-        r"총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량[^\d]{0,80}(\d{1,3})\s*[/／]\s*(\d{1,3})",
+        r"총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량[^\d]{0,80}(\d{1,3})\s*개?\s*[/／]\s*(\d{1,3})\s*개?",
         text,
     )
+    count_value_first = False
+    if not item_count_match:
+        item_count_match = re.search(
+            r"(\d{1,3})\s*개?\s*[/／]\s*(\d{1,3})\s*개?[^\d]{0,80}총\s*품목(?:\s*수)?\s*[/／]\s*총\s*수량",
+            text,
+        )
+        count_value_first = item_count_match is not None
     if item_count_match:
         stated_item_count = int(item_count_match.group(1))
         stated_total_quantity = int(item_count_match.group(2))
@@ -215,7 +236,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         # Many receipts print the purchase total immediately after the
         # ``item count / total quantity`` pair. Treat it as a deterministic
         # summary value only when a money-shaped token follows nearby.
-        summary_tail = text[item_count_match.end():item_count_match.end() + 80]
+        summary_tail = text[item_count_match.end():item_count_match.end() + 80] if not count_value_first else text[item_count_match.start():item_count_match.start() + 120]
         stated_amount_match = re.search(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", summary_tail)
         if stated_amount_match:
             candidate = _receipt_number(stated_amount_match.group(1))
@@ -308,6 +329,11 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
                     if re.fullmatch(r"\d{1,3}(?:[.,]\d{3})+", raw_value)
                     else _clean_number(item[field])
                 )
+        quantity = _clean_number(item.get("quantity"))
+        item_total = _clean_number(item.get("total_amount"))
+        if not _clean_number(item.get("unit_price")) and quantity > 0 and item_total > 0:
+            item["unit_price"] = item_total / quantity
+            item["note"] = " · ".join(filter(None, [str(item.get("note") or "").strip(), "품목금액÷수량으로 단가 복원"]))
 
     # Narrow recovery for the known tenant receipt layout. In this layout OCR
     # exposes ``유니클로(과세/면세)`` beside the product header, while small
@@ -418,54 +444,214 @@ def _receipt_table_hint(pages: list[dict[str, Any]] | None) -> str:
 
 
 def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
-    """Create semantic item-row candidates before asking the LLM to classify them."""
+    """Create compact item candidates without assuming physical column order."""
     summary_labels = re.compile(
-        r"(?:합계|소계|결제|승인|공급가액|부가세|할인|쿠폰|적립|거스름|카드번호|사업자번호|총품목|총수량)",
+        r"(?:합계|소계|결제|승인|공급가액|부가세|할인|쿠폰|적립|거스름|카드번호|사업자번호|판매번호|거래번호|주문번호|영수증번호|총품목|총수량)",
         re.IGNORECASE,
     )
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    def add_candidate(cells: list[str], page_number: Any, source: str) -> None:
-        cells = [str(cell or "").strip() for cell in cells if str(cell or "").strip()]
-        raw = " | ".join(cells)
+    def add_candidate(cells: list[str], page_number: Any, source: str, columns: list[str] | None = None) -> None:
+        # Keep empty cells until column roles are resolved. Removing them shifts
+        # every value after a missed cell into the wrong semantic column.
+        aligned_cells = [str(cell or "").strip() for cell in cells]
+        if aligned_cells:
+            aligned_cells[0] = re.sub(
+                r"^(?:(?:판매번호|포스번호|거래번호|주문번호|영수증번호)\s*[:#]?\s*[0-9A-Za-z-]+\s*)+",
+                "",
+                aligned_cells[0],
+                flags=re.IGNORECASE,
+            ).strip()
+            # Receipt line numbers and U-prefixed inventory identifiers are
+            # metadata, not product names. Preserve the code separately.
+            aligned_cells[0] = re.sub(r"^\s*\d{1,3}\s+(?=\D)", "", aligned_cells[0]).strip()
+        product_code = None
+        if aligned_cells:
+            code_match = re.search(r"(?<![0-9A-Za-z])(U\d{6,})(?!\d)", aligned_cells[0], re.IGNORECASE)
+            if code_match:
+                product_code = code_match.group(1).upper()
+                aligned_cells[0] = " ".join(
+                    value for value in (aligned_cells[0][:code_match.start()].strip(), aligned_cells[0][code_match.end():].strip())
+                    if value
+                )
+        display_cells = [cell for cell in aligned_cells if cell]
+        raw = " | ".join(display_cells)
         dedupe_key = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
         if not raw or dedupe_key in seen or summary_labels.search(raw):
             return
         if not re.search(r"[A-Za-z가-힣]", raw):
             return
-        numbers = re.findall(r"(?<!\d)\d{1,3}(?:[.,]\d{3})+|(?<!\d)\d{1,8}(?!\d)", raw)
+        numeric_raw = " | ".join(aligned_cells[1:]) if len(aligned_cells) > 1 else raw
+        numbers = re.findall(r"(?<!\d)\d{1,3}(?:[.,]\d{3})+|(?<!\d)\d{1,8}(?!\d)", numeric_raw)
         if len(numbers) < 2:
             return
 
         first_number = re.search(r"\d", raw)
-        name = raw[:first_number.start()].strip(" |:-") if first_number else ""
+        if len(aligned_cells) > 1 and aligned_cells[0] and re.search(r"[A-Za-z가-힣]", aligned_cells[0]):
+            name = aligned_cells[0]
+        else:
+            name = raw[:first_number.start()].strip(" |:-") if first_number else ""
         parsed = [_receipt_number(value) for value in numbers]
+        parenthesized = [
+            _receipt_number(value)
+            for value in re.findall(r"[\(（]\s*(\d{1,3}(?:[.,]\d{3})+|\d{3,8})\s*[\)）]", numeric_raw)
+        ]
+        primary_parsed = list(parsed)
+        for alternate in parenthesized:
+            try:
+                primary_parsed.remove(alternate)
+            except ValueError:
+                pass
         candidate: dict[str, Any] = {
             "page": page_number,
             "source": source,
-            "raw_cells": cells,
+            "raw_cells": display_cells,
             "name_candidate": name or None,
-            "amount_candidate": parsed[-1],
+            "amount_candidate": primary_parsed[-1] if primary_parsed else parsed[-1],
         }
-        if len(parsed) >= 3:
-            candidate["quantity_candidate"] = parsed[-3]
-            candidate["unit_price_candidate"] = parsed[-2]
-        elif parsed[0] <= 100:
-            candidate["quantity_candidate"] = parsed[0]
+        if product_code:
+            candidate["product_code"] = product_code
+        if parenthesized:
+            candidate["alternate_price_candidates"] = parenthesized
+            candidate["candidate_type"] = "incomplete_item"
+            candidate["uncertainty"] = ["parenthesized_price_role"]
+        resolved_by_header = False
+        if columns and len(columns) == len(aligned_cells):
+            values_by_role = {role: aligned_cells[index] for index, role in enumerate(columns) if aligned_cells[index]}
+            for role, target in (("quantity", "quantity_candidate"), ("unit_price", "unit_price_candidate"), ("amount", "amount_candidate")):
+                value = values_by_role.get(role)
+                if value and re.search(r"\d", value):
+                    value_numbers = re.findall(r"\d{1,3}(?:[.,]\d{3})+|\d{1,8}", value)
+                    if value_numbers:
+                        amount_index = 0 if parenthesized else -1
+                        numeric_value = _receipt_number(value_numbers[amount_index] if role == "amount" else value_numbers[0])
+                        # A money-sized value in the quantity column is evidence
+                        # of a missed/shifted cell, not a quantity of thousands.
+                        if role != "quantity" or 0 < numeric_value <= 999:
+                            candidate[target] = numeric_value
+            resolved_by_header = all(candidate.get(field) is not None for field in (
+                "quantity_candidate", "unit_price_candidate", "amount_candidate",
+            ))
+        if len(primary_parsed) >= 3 and not resolved_by_header:
+            first, second, amount = primary_parsed[-3], primary_parsed[-2], primary_parsed[-1]
+            # Compare both possible quantity/unit-price assignments. Arithmetic
+            # plus a receipt-sized quantity is stronger than physical order.
+            options = [(first, second), (second, first)]
+            valid = [(quantity, price) for quantity, price in options if 0 < quantity <= 999 and price >= 1 and quantity * price == amount]
+            if valid:
+                quantity, price = min(valid, key=lambda pair: pair[0])
+                candidate.update(quantity_candidate=quantity, unit_price_candidate=price, column_resolution="arithmetic")
+            else:
+                plausible = [(quantity, price) for quantity, price in options if 0 < quantity <= 100 and price >= 100]
+                if plausible:
+                    quantity, price = min(plausible, key=lambda pair: pair[0])
+                    candidate.update(quantity_candidate=quantity, unit_price_candidate=price, column_resolution="plausibility")
+                else:
+                    candidate["unresolved_numeric_cells"] = primary_parsed[-3:]
+        elif len(primary_parsed) >= 2 and primary_parsed[0] <= 100:
+            quantity, price = primary_parsed[0], primary_parsed[1]
+            candidate.update(
+                quantity_candidate=quantity,
+                unit_price_candidate=price,
+                amount_candidate=quantity * price,
+                column_resolution="item_block",
+            )
+        elif primary_parsed and primary_parsed[0] <= 100:
+            candidate["quantity_candidate"] = primary_parsed[0]
+        if resolved_by_header:
+            candidate["column_resolution"] = "header"
+        if (
+            not candidate.get("quantity_candidate")
+            and candidate.get("unit_price_candidate")
+            and candidate.get("amount_candidate")
+            and candidate["unit_price_candidate"] == candidate["amount_candidate"]
+        ):
+            candidate["quantity_candidate"] = 1
+            candidate["quantity_resolution"] = "unit_price_equals_amount"
         candidates.append(candidate)
         seen.add(dedupe_key)
 
     for page in pages or []:
         page_number = page.get("page")
-        for table in page.get("tables") or []:
+        tables = page.get("tables") or []
+        for table in tables:
+            pending_title: str | None = None
             for row in table.get("rows") or []:
-                add_candidate(row, page_number, "table")
-        # PaddleOCR can recognize an entire product row as one box. Retain a
-        # line-based fallback so those rows are not lost by table detection.
-        for line in str(page.get("text") or "").splitlines():
-            add_candidate([line], page_number, "ocr_line")
-    return candidates[:40]
+                aligned_row = [str(cell or "").strip() for cell in row]
+                first_cell = aligned_row[0] if aligned_row else ""
+                compact_first = re.sub(r"\s+", "", first_cell)
+                if re.search(r"^(?:수량|총수량|계|합계|총합계|면세상품|과세상품|부가세|결제금액)", compact_first):
+                    break
+                other_cells = [cell for cell in aligned_row[1:] if cell]
+                title_text = re.sub(r"^\s*\d{1,3}\s+(?=\D)", "", first_cell).strip()
+                is_code_row = re.fullmatch(r"U\d{6,}", first_cell, re.IGNORECASE) is not None
+                is_title_only = bool(re.search(r"[A-Za-z가-힣]", title_text)) and not other_cells and not is_code_row
+                if is_title_only:
+                    pending_title = title_text
+                    continue
+                if pending_title and is_code_row:
+                    aligned_row[0] = f"{pending_title} {first_cell}"
+                    pending_title = None
+                elif pending_title:
+                    # Do not silently discard an unresolved title when the
+                    # next row is not the expected code/price continuation.
+                    add_candidate([pending_title], page_number, "unresolved_title", None)
+                    pending_title = None
+                add_candidate(aligned_row, page_number, "table", table.get("columns"))
+            if pending_title:
+                add_candidate([pending_title], page_number, "unresolved_title", None)
+        # A valid table is authoritative. Rescanning page.text would re-add
+        # payment, approval, and receipt-number lines as fake products.
+        if not tables:
+            item_regions = [region for region in page.get("regions") or [] if region.get("type") == "items"]
+            page_items = page.get("items") or []
+            if item_regions and page_items:
+                for region in item_regions:
+                    (rx1, ry1), (rx2, ry2) = region.get("bbox") or [[0, 0], [0, 0]]
+                    selected = []
+                    for item in page_items:
+                        (x1, y1), (x2, y2) = item.get("bbox") or [[0, 0], [0, 0]]
+                        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+                        if rx1 <= center_x <= rx2 and ry1 <= center_y <= ry2:
+                            selected.append(item)
+                    selected.sort(key=lambda item: ((item["bbox"][0][1] + item["bbox"][1][1]) / 2, item["bbox"][0][0]))
+                    heights = [max(item["bbox"][1][1] - item["bbox"][0][1], 1) for item in selected]
+                    tolerance = (sorted(heights)[len(heights) // 2] if heights else 10) * .6
+                    lines: list[list[dict[str, Any]]] = []
+                    for item in selected:
+                        center_y = (item["bbox"][0][1] + item["bbox"][1][1]) / 2
+                        line = next((line for line in reversed(lines[-3:]) if abs(center_y - sum((entry["bbox"][0][1] + entry["bbox"][1][1]) / 2 for entry in line) / len(line)) <= tolerance), None)
+                        if line is None:
+                            lines.append([item])
+                        else:
+                            line.append(item)
+                    for line in lines:
+                        line.sort(key=lambda item: item["bbox"][0][0])
+                        add_candidate([item.get("text", "") for item in line], page_number, "item_region")
+            elif not item_regions:
+                for line in str(page.get("text") or "").splitlines():
+                    add_candidate([line], page_number, "ocr_line_unscoped")
+    candidates = candidates[:40]
+    combined_text = "\n".join(str(page.get("text") or "") for page in pages or [])
+    summary = _receipt_hints(combined_text, "receipt")
+    stated_count = summary.get("stated_item_count")
+    stated_quantity = summary.get("stated_total_quantity")
+    if stated_count and stated_quantity and len(candidates) == int(stated_count):
+        known = [candidate.get("quantity_candidate") for candidate in candidates]
+        missing = [index for index, value in enumerate(known) if not value or not 0 < float(value) <= 999]
+        if len(missing) == 1:
+            remainder = int(stated_quantity) - sum(int(value) for value in known if value and 0 < float(value) <= 999)
+            if 0 < remainder <= 999:
+                candidate = candidates[missing[0]]
+                candidate["quantity_candidate"] = remainder
+                candidate["quantity_resolution"] = "receipt_total_remainder"
+                candidate.setdefault("uncertainty", []).append("quantity_recovered_from_total")
+                amount = candidate.get("amount_candidate")
+                if not candidate.get("unit_price_candidate") and amount and int(amount) % remainder == 0:
+                    candidate["unit_price_candidate"] = int(amount) // remainder
+                    candidate["unit_price_resolution"] = "amount_divided_by_quantity"
+    return candidates
 
 
 def _receipt_prompt(text: str, filename: str, pages: list[dict[str, Any]] | None = None) -> str:
@@ -504,8 +690,12 @@ tax_amount, discount_amount, total_amount, payment_method, card_number, descript
 
 def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) -> str:
     candidates = _receipt_item_candidates(pages)
-    stated_count = _receipt_hints(text, "receipt").get("stated_item_count")
-    evidence = json.dumps(candidates, ensure_ascii=False) if candidates else text[:5000]
+    summary = _receipt_hints(text, "receipt")
+    stated_count = summary.get("stated_item_count")
+    stated_quantity = summary.get("stated_total_quantity")
+    # raw_cells already preserve the evidence, so do not duplicate the full
+    # table and OCR text in this item-only prompt.
+    evidence = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")) if candidates else text[:3500]
     return f"""영수증의 실제 구매 품목만 JSON으로 반환하세요.
 형식: {{"items":[{{"name":...,"specification":...,"quantity":...,"unit":...,"unit_price":...,"supply_amount":...,"tax_amount":...,"total_amount":...,"note":...}}]}}
 
@@ -515,6 +705,12 @@ def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) 
 3. 후보의 name/quantity/unit_price/amount는 코드 추정값입니다. raw_cells가 다르면 raw_cells를 우선합니다.
 4. 확인할 수 없는 필드는 null로 두고 상품 자체가 확인되면 품목을 삭제하지 마세요.
 5. 영수증에 명시된 품목 수: {stated_count if stated_count is not None else '미확인'}
+6. 열 순서는 영수증마다 다릅니다. raw_cells의 순서를 수량-단가로 고정하지 말고 column_resolution과 산술 관계를 확인하세요.
+7. 판매번호·거래번호·주문번호·승인번호·사업자번호는 품목명이 아닙니다.
+8. candidate_type이 incomplete_item이어도 상품명과 주가격이 있으면 품목을 삭제하지 말고 불명확한 필드만 null로 두세요.
+9. alternate_price_candidates는 괄호로 표시된 회원가·할인가·참고가격 후보입니다. 명확한 라벨이 없으면 주가격을 대체하지 마세요.
+10. 영수증에 명시된 총수량: {stated_quantity if stated_quantity is not None else '미확인'}. quantity_resolution이 receipt_total_remainder이면 다른 품목 수량과 총수량으로 복원한 값입니다.
+11. product_code는 재고·상품 식별 코드이며 품목명이 아닙니다. name_candidate를 품목명으로 사용하고 코드는 specification 또는 note에만 보존하세요.
 
 [품목 근거]
 {evidence}

@@ -19,6 +19,7 @@ const IMPACT_LABELS = {
   SUCCESS: '정상 추출', LIKELY_OCR_ERROR: 'OCR 영향 가능',
   LIKELY_LLM_ERROR: 'LLM 해석 오류 가능', LLM_RECOVERY: 'LLM 보정 가능',
 };
+const OCR_PREVIEW_CONTEXT = new WeakMap();
 
 function impactLabel(field) {
   const itemMatch = /^items\[(\d+)]\.(.+)$/.exec(field);
@@ -109,10 +110,55 @@ function buildOcrGrid(pages, fallbackText) {
   });
 }
 
-function OcrSheetPreview({ pages, text }) {
+function receiptTableRows(pages) {
+  return (Array.isArray(pages) ? pages : []).flatMap((page) => (page?.tables || []).flatMap((table, tableIndex) =>
+    (table?.rows || []).map((row, rowIndex) => ({
+      page: page.page || 1, table: tableIndex + 1, row: rowIndex + 1,
+      cells: (row || []).map((cell) => String(cell ?? '').trim()),
+    }))));
+}
+
+function normalizedEvidence(value) {
+  return String(value || '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+}
+
+function OcrSheetPreview({ pages, text, diagnostics, prediction, truth }) {
+  const previewContext = Array.isArray(pages) ? OCR_PREVIEW_CONTEXT.get(pages) : null;
+  diagnostics ||= previewContext?.diagnostics;
+  prediction ||= previewContext?.prediction;
+  truth ||= previewContext?.truth;
+  const [selectedView, setSelectedView] = useState('raw');
   const rows = useMemo(() => buildOcrGrid(pages, text), [pages, text]);
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  return <div className="ocr-sheet-mini"><table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
+  const candidates = diagnostics?.candidates || [];
+  const tableRows = useMemo(() => receiptTableRows(pages), [pages]);
+  const candidateEvidence = useMemo(() => candidates.map((candidate) => normalizedEvidence((candidate.raw_cells || []).join(' '))), [candidates]);
+  const reviewedRows = tableRows.map((entry) => {
+    const raw = entry.cells.filter(Boolean).join(' | ');
+    const key = normalizedEvidence(raw);
+    const accepted = key && candidateEvidence.some((evidence) => evidence.includes(key) || key.includes(evidence));
+    const isSummary = /(합계|소계|결제|부가세|공급가|할인|카드번호|승인번호|총수량|총품목)/.test(raw);
+    const isHeader = /(품명|상품명|수량|단가|금액)/.test(raw) && !/\d/.test(raw);
+    return { ...entry, raw, accepted, reason: accepted ? '품목 후보에 사용' : isSummary ? '합계·결제 영역' : isHeader ? '표 머리글' : '품목 후보 조건 미충족 또는 다른 행과 결합' };
+  });
+  const excludedRows = reviewedRows.filter((entry) => !entry.accepted);
+  const predictedItems = Array.isArray(prediction?.items) ? prediction.items : [];
+  const truthItems = Array.isArray(truth?.items) ? truth.items : [];
+  const tabs = [
+    ['raw', '원문 배치'], ['items', `품목 후보 ${candidates.length}`],
+    ['excluded', `제외·결합 ${excludedRows.length}`], ['compare', '최종 비교'],
+  ];
+  const value = (item, field) => item?.[field] ?? '-';
+  return <div className="ocr-sheet-mini ocr-structure-preview">
+    <div className="ocr-view-tabs">{tabs.map(([key, label]) => <button className={selectedView === key ? 'active' : ''} type="button" key={key} onClick={() => setSelectedView(key)}>{label}</button>)}</div>
+    {diagnostics?.summary && <div className="ocr-diagnostic-summary"><span>박스 {diagnostics.summary.ocr_boxes || 0}</span><span>표 {diagnostics.summary.tables || 0}</span><span>표 행 {diagnostics.summary.table_rows || 0}</span><span>품목 후보 {diagnostics.summary.item_candidates || 0}</span><span className={diagnostics.summary.uncertain_candidates ? 'warning' : ''}>불확실 {diagnostics.summary.uncertain_candidates || 0}</span></div>}
+    <div className="ocr-view-scroll">
+      {selectedView === 'raw' && <table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex} title={row[columnIndex] || ''}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table>}
+      {selectedView === 'items' && (candidates.length ? <table className="diagnostic-table"><thead><tr><th>#</th><th>품목명 후보</th><th>상품코드</th><th>수량</th><th>단가</th><th>금액</th><th>판단 근거</th></tr></thead><tbody>{candidates.map((item, index) => <tr key={index}><th>{index + 1}</th><td title={item.name_candidate || ''}>{item.name_candidate || '-'}</td><td>{item.product_code || '-'}</td><td>{value(item, 'quantity_candidate')}</td><td>{value(item, 'unit_price_candidate')}</td><td>{value(item, 'amount_candidate')}</td><td title={(item.uncertainty || []).join(', ')}>{item.uncertainty?.length ? `불확실: ${item.uncertainty.join(', ')}` : item.column_resolution || item.source || '-'}</td></tr>)}</tbody></table> : <div className="eval-preview-empty">LLM에 전달된 품목 후보가 없습니다.</div>)}
+      {selectedView === 'excluded' && (excludedRows.length ? <table className="diagnostic-table"><thead><tr><th>위치</th><th>OCR 표 행</th><th>판정</th></tr></thead><tbody>{excludedRows.map((entry) => <tr key={`${entry.page}-${entry.table}-${entry.row}`}><th>P{entry.page} T{entry.table} R{entry.row}</th><td title={entry.raw}>{entry.raw || '(빈 행)'}</td><td>{entry.reason}</td></tr>)}</tbody></table> : <div className="eval-preview-empty">제외된 표 행이 없거나 표 구조 정보가 없습니다.</div>)}
+      {selectedView === 'compare' && <table className="diagnostic-table comparison-table"><thead><tr><th>#</th><th>단계</th><th>품목명</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>{Array.from({ length: Math.max(candidates.length, predictedItems.length, truthItems.length, 1) }, (_, index) => [['OCR 후보', candidates[index] && { name: candidates[index].name_candidate, quantity: candidates[index].quantity_candidate, unit_price: candidates[index].unit_price_candidate, total_amount: candidates[index].amount_candidate }], ['최종 구조화', predictedItems[index]], ['정답', truthItems[index]]].map(([stage, item], stageIndex) => <tr key={`${index}-${stage}`}>{stageIndex === 0 && <th rowSpan="3">{index + 1}</th>}<td>{stage}</td><td title={value(item, 'name')}>{value(item, 'name')}</td><td>{value(item, 'quantity')}</td><td>{value(item, 'unit_price')}</td><td>{value(item, 'total_amount')}</td></tr>))}</tbody></table>}
+    </div>
+  </div>;
 }
 
 function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
@@ -204,6 +250,11 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   const score = result.system?.score || {};
   const impact = result.system?.ocr_impact;
   const workbook = result.system?.workbook;
+  if (Array.isArray(run.ocr_pages)) OCR_PREVIEW_CONTEXT.set(run.ocr_pages, {
+    diagnostics: run.ocr_diagnostics,
+    prediction: result.system?.prediction,
+    truth: run.normalized_ground_truth || run.ground_truth,
+  });
   const fieldMatches = flattenedMatches(score);
   const matched = fieldMatches
     .filter((field) => field.correct)

@@ -8,6 +8,14 @@ from app.services.finance_evaluation_service import estimate_ocr_impact, normali
 
 
 class FinanceEvaluationServiceTests(unittest.TestCase):
+    def test_treats_haircut_and_beauty_service_as_same_item(self):
+        score = score_fields(
+            {"items": [{"name": "헤어컷", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},
+            {"items": [{"name": "미용 서비스", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
     def test_estimates_ocr_and_llm_error_causes_per_field(self):
         truth = {"merchant": "테스트 상점", "total_amount": 81300, "payment_method": "현금"}
         score = score_fields(

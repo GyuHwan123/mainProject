@@ -4,6 +4,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoBookmarkOutline, IoCloseOutline, IoCloudUploadOutline, IoTrashOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
+import { getAppUser } from '../features/appSession';
 import '../style/ChatPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -207,6 +208,8 @@ function EvidencePreview({ source, onUpload, uploading }) {
 }
 
 function ChatPageContent() {
+  const appUser = getAppUser();
+  const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(appUser.role) || appUser.email === 'developer@docunex.com';
   const [documents, setDocuments] = useState([]);
   const [indexingId, setIndexingId] = useState(null);
   const [ragError, setRagError] = useState('');
@@ -224,10 +227,17 @@ function ChatPageContent() {
   const [scrapError, setScrapError] = useState('');
   const [evidenceFlash, setEvidenceFlash] = useState(false);
   const [modelConfig, setModelConfig] = useState({ model: 'Baseline LLM', embedding_model: 'Baseline Embedding', ready: false });
+  const [evaluationDataset, setEvaluationDataset] = useState(null);
+  const [evaluationResult, setEvaluationResult] = useState(null);
+  const [evaluationStatus, setEvaluationStatus] = useState('대기');
+  const [evaluationRunning, setEvaluationRunning] = useState(false);
+  const [evaluationError, setEvaluationError] = useState('');
   const [scrapbook, setScrapbook] = useState(() => {
     try { return JSON.parse(localStorage.getItem(SCRAPBOOK_KEY) || '[]'); } catch { return []; }
   });
   const fileRef = useRef(null);
+  const evaluationFileRef = useRef(null);
+  const evaluationRunningRef = useRef(false);
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const previewSource = selectedSource || (activeDoc ? {
@@ -446,6 +456,48 @@ function ChatPageContent() {
     setScrapbook((items) => items.filter((saved) => saved.id !== id));
   };
 
+  const loadEvaluationDataset = async (file) => {
+    if (evaluationRunningRef.current) return;
+    setEvaluationError(''); setEvaluationResult(null);
+    try {
+      if (!file || !/\.json$/i.test(file.name)) throw new Error('JSON 파일만 업로드할 수 있습니다.');
+      const parsed = JSON.parse(await file.text());
+      if (!Array.isArray(parsed.cases)) throw new Error('cases 배열이 필요합니다.');
+      if (!parsed.cases.length) throw new Error('평가 문항이 없습니다.');
+      parsed.cases.forEach((item, index) => {
+        const label = item?.question_id || `${index + 1}번 문항`;
+        if (typeof item?.question !== 'string' || !item.question.trim()) throw new Error(`${label}: question이 필요합니다.`);
+        if (!Array.isArray(item.expected_documents)) throw new Error(`${label}: expected_documents 배열이 필요합니다.`);
+        if (!Object.prototype.hasOwnProperty.call(item, 'expected_answer') || typeof item.expected_answer !== 'string') throw new Error(`${label}: expected_answer가 필요합니다.`);
+        if (typeof item.answerable !== 'boolean') throw new Error(`${label}: answerable은 boolean이어야 합니다.`);
+      });
+      if (Number(parsed.question_count) !== parsed.cases.length) throw new Error('question_count와 cases 개수가 일치하지 않습니다.');
+      setEvaluationDataset(parsed); setEvaluationStatus('대기');
+    } catch (error) {
+      setEvaluationDataset(null); setEvaluationStatus('대기');
+      setEvaluationError(error.message || '정답 JSON을 읽을 수 없습니다.');
+    }
+  };
+
+  const runRagEvaluation = async () => {
+    if (!evaluationDataset || evaluationRunningRef.current) return;
+    evaluationRunningRef.current = true;
+    setEvaluationRunning(true);
+    setEvaluationError(''); setEvaluationResult(null);
+    setEvaluationStatus('평가 중...');
+    try {
+      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 3600000 });
+      setEvaluationResult(data); setEvaluationStatus('완료');
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      setEvaluationError(typeof detail === 'string' ? detail : JSON.stringify(detail || error.message));
+      setEvaluationStatus('실패');
+    } finally {
+      evaluationRunningRef.current = false;
+      setEvaluationRunning(false);
+    }
+  };
+
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
   const scrapbookHtml = () => `<html><head><meta charset="utf-8"><title>내 지식 바구니</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#172033}h1{color:#173f8f}.card{margin:18px 0;padding:18px;border:1px solid #dce3ee;border-radius:10px}.meta{color:#718096;font-size:12px}.answer{white-space:pre-wrap;line-height:1.7}</style></head><body><h1>내 지식 바구니</h1>${scrapbook.map((item) => `<section class="card"><h2>${escapeHtml(item.title)}</h2><p class="meta">${escapeHtml(item.documentName)} · ${new Date(item.createdAt).toLocaleString('ko-KR')}</p><div class="answer">${escapeHtml(item.answer)}</div></section>`).join('')}</body></html>`;
   const exportWord = () => {
@@ -464,6 +516,7 @@ function ChatPageContent() {
     <main className="chat-workspace">
       <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
       <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
+      {isDeveloper && <input ref={evaluationFileRef} hidden disabled={evaluationRunning} type="file" accept=".json,application/json" onChange={(event) => { loadEvaluationDataset(event.target.files?.[0]); event.target.value = ''; }} />}
 
       <section className="rag-grid">
         <aside className="history-panel">
@@ -488,7 +541,18 @@ function ChatPageContent() {
         </section>
       </section>
 
-      <button className="knowledge-pocket" type="button" onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><span><small>[ POCKET ]</small> 지식 바구니</span><b>{scrapbook.length}개</b></button>
+      {isDeveloper && <section className="rag-evaluation-panel">
+        <header><div><small>DEVELOPER ONLY</small><h2>RAG 성능 평가</h2><p>현재 BGE-M3 · Vector Search · Reranker · gemma2:2b 전체 파이프라인을 평가합니다.</p></div><span className={`evaluation-state ${evaluationStatus === '완료' ? 'complete' : ''}`}>{evaluationStatus}</span></header>
+        <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 JSON 업로드</button><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
+        {evaluationError && <p className="evaluation-error">{evaluationError}</p>}
+        <div className="evaluation-metrics">{[
+          ['Hit@K', 'hit_at_k'], ['Recall@K', 'recall_at_k'], ['MRR', 'mrr'], ['NDCG@K', 'ndcg_at_k'],
+          ['Answer Accuracy', 'answer_accuracy'], ['Citation / Source', 'citation_accuracy'], ['Unanswerable Rejection', 'unanswerable_rejection_rate'],
+        ].map(([label, key]) => <article key={key}><span>{label}</span><strong>{evaluationResult ? `${(Number(evaluationResult.summary?.[key] || 0) * 100).toFixed(1)}%` : '—'}</strong></article>)}</div>
+        {evaluationResult && <footer>총 {evaluationResult.summary.total}문항 · Top-K {evaluationResult.summary.top_k} · 답변 유사도 기준 {(evaluationResult.summary.answer_threshold * 100).toFixed(0)}%</footer>}
+      </section>}
+
+      <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
       {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}
     </main>
   </div>;

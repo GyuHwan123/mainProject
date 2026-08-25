@@ -12,6 +12,15 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 
 
+COMPANY_RAG_DOCUMENT_IDS = (
+    "HR-001", "HR-002", "HR-003", "HR-004", "HR-005",
+    "GA-001", "GA-002", "GA-003", "GA-004",
+    "IS-001", "IS-002",
+    "SH-001", "SH-002", "SH-003", "SH-004",
+    "ER-001", "ER-002", "ER-003",
+)
+
+
 class SupabaseService:
     def __init__(self) -> None:
         self.url = settings.SUPABASE_URL.rstrip("/")
@@ -717,6 +726,16 @@ class SupabaseService:
         self, user_email: str, embedding: list[float], rag_document_id: str | None, limit: int,
     ) -> list[dict[str, Any]]:
         documents = self.list_rag_documents(user_email)
+        company_response = httpx.get(
+            f"{self.url}/rest/v1/rag_documents",
+            params={
+                "select": "id,doc_id,title,owner,filename",
+                "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
+            },
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(company_response, "RAG company documents lookup failed")
+        documents.extend(company_response.json())
         document_by_id = {row["id"]: row for row in documents}
         if rag_document_id and rag_document_id not in document_by_id:
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
@@ -741,6 +760,15 @@ class SupabaseService:
             row["source"] = document["filename"]
             row["bbox"] = None
         return rows
+
+    def list_rag_document_catalog(self) -> list[dict[str, Any]]:
+        response = httpx.get(
+            f"{self.url}/rest/v1/rag_documents",
+            params={"select": "doc_id,title,filename", "order": "created_at.asc"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(response, "RAG 문서 카탈로그 조회 실패")
+        return response.json()
 
     def list_rag_chunks(self, user_email: str, rag_document_id: str) -> list[dict[str, Any]]:
         owned_document = next(

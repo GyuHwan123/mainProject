@@ -8,6 +8,96 @@ import FinanceEvaluationPage from './FinanceEvaluationPage';
 import '../style/ReportPage.scss';
 
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
+const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
+
+function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) {
+  const metrics = useMemo(() => {
+    if (!evaluation) return null;
+    const cases = Array.isArray(evaluation.cases) ? evaluation.cases : [];
+    const summary = evaluation.summary || {};
+    const retrievalCases = cases.filter((item) => Array.isArray(item.expected_documents) && item.expected_documents.length);
+    const hitAt = (k) => retrievalCases.length
+      ? retrievalCases.filter((item) => {
+        const expected = new Set(item.expected_documents || []);
+        return (item.retrieved_documents || []).slice(0, k).some((docId) => expected.has(docId));
+      }).length / retrievalCases.length
+      : null;
+    return {
+      total: Number(summary.total || cases.length),
+      hitAt1: summary.hit_at_1 ?? hitAt(1),
+      hitAt3: summary.hit_at_3 ?? hitAt(3),
+      hitAt5: summary.hit_at_5 ?? hitAt(5),
+      recall: summary.recall_at_k,
+      mrr: summary.mrr,
+      contextPrecision: summary.context_precision ?? summary.citation_accuracy,
+      answerAccuracy: summary.answer_accuracy,
+      faithfulness: summary.faithfulness,
+      hallucinationRate: summary.hallucination_rate,
+      faithfulnessMethod: summary.faithfulness_method,
+    };
+  }, [evaluation]);
+  const metricValue = (value) => value == null ? '—' : percent(value);
+  const retrievalMetrics = [
+    ['Hit@1', metrics?.hitAt1], ['Hit@3', metrics?.hitAt3], ['Hit@5', metrics?.hitAt5],
+    ['Recall@K', metrics?.recall], ['MRR', metrics?.mrr], ['Context Precision', metrics?.contextPrecision],
+  ];
+  const answerMetrics = [
+    ['Answer Accuracy', metrics?.answerAccuracy], ['Faithfulness', metrics?.faithfulness],
+    ['Hallucination Rate', metrics?.hallucinationRate],
+  ];
+  const questionTypeMetrics = useMemo(() => {
+    if (!evaluation || !Array.isArray(evaluation.cases)) return [];
+    const labels = {
+      single_document_fact: '단일 문서 사실 검색',
+      paraphrase_semantic: '의미 변형 질문',
+      confusable_reranker: 'Reranker 혼동 질문',
+      multi_document: '다중 문서 질문',
+      unanswerable: '답변 불가 질문',
+    };
+    const order = Object.keys(labels);
+    const grouped = evaluation.cases.reduce((result, item) => {
+      const type = item.question_type || 'unspecified';
+      if (!result[type]) result[type] = [];
+      result[type].push(item);
+      return result;
+    }, {});
+    return Object.entries(grouped)
+      .sort(([left], [right]) => {
+        const leftIndex = order.indexOf(left); const rightIndex = order.indexOf(right);
+        return (leftIndex < 0 ? order.length : leftIndex) - (rightIndex < 0 ? order.length : rightIndex);
+      })
+      .map(([type, cases]) => {
+        const correctness = cases.map((item) => typeof item.answer_correct === 'boolean'
+          ? Number(item.answer_correct)
+          : (item.answerable === false && typeof item.rejected === 'boolean' ? Number(item.rejected) : null))
+          .filter((value) => value != null);
+        const hitValues = cases.map((item) => typeof item.hit === 'boolean' ? Number(item.hit) : null).filter((value) => value != null);
+        const mrrValues = cases.map((item) => Number(item.reciprocal_rank)).filter(Number.isFinite);
+        const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+        return { type, label: labels[type] || type, count: cases.length, accuracy: average(correctness), hit: average(hitValues), mrr: average(mrrValues) };
+      });
+  }, [evaluation]);
+  return <section className="rag-performance-report">
+    <article className="report-card rag-model-card"><header><div><h2>RAG 운영 설정</h2><p>Backend 상태 API가 반환한 현재 실제 구성</p></div><span>{modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</span></header><div className="rag-model-grid">
+      <div><span>Embedding Model</span><strong>{modelConfig.embedding_model || '—'}</strong><small>{modelConfig.embedding_dimensions ? `${modelConfig.embedding_dimensions} dimensions` : '차원 미설정'}</small></div>
+      <div><span>Reranker</span><strong>{modelConfig.rerank_model || '미사용'}</strong><small>Vector 후보 재정렬</small></div>
+      <div><span>LLM</span><strong>{modelConfig.model || '—'}</strong><small>최종 답변 생성</small></div>
+      <div><span>Query Rewriting</span><strong>{modelConfig.query_rewriting ? '사용' : '미사용'}</strong><small>현재 검색 경로 기준</small></div>
+      <div><span>Top-K</span><strong>{modelConfig.top_k ?? '—'}</strong><small>최종 Context 청크 수</small></div>
+    </div></article>
+
+    <section className="rag-metric-columns">
+      <article className="report-card rag-metric-card"><header><div><h2>검색 성능</h2><p>정답 문서 ID 기준 document-level 평가</p></div><span>{metrics ? `${metrics.total} CASES` : 'NO DATA'}</span></header><div>{retrievalMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong></section>)}</div></article>
+      <article className="report-card rag-metric-card answer"><header><div><h2>답변 성능</h2><p>정답 유사도와 검색 Context 근거성 기준</p></div><span>{metrics ? 'ACTUAL' : 'NO DATA'}</span></header><div>{answerMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong></section>)}</div>{metrics?.faithfulnessMethod && <footer>Faithfulness: {metrics.faithfulnessMethod}</footer>}</article>
+    </section>
+
+    <section className="rag-insight-columns">
+      <article className="report-card rag-umap-card"><header><div><h2>BGE-M3 Embedding UMAP</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /><p>기업문서 {umapData.document_count}개 · {umapData.chunk_count} chunks · {umapData.input_shape?.join(' × ')} → {umapData.output_shape?.join(' × ')}</p></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
+      <article className="report-card rag-type-card"><header><div><h2>문항 유형별 성능</h2><p>각 문항 유형별 최종 답변 정확도</p></div><span>{questionTypeMetrics.length ? `${questionTypeMetrics.length} TYPES` : 'NO DATA'}</span></header>{questionTypeMetrics.length ? <div className="rag-type-bars">{questionTypeMetrics.map((item) => <section key={item.type} title={`${item.label} · ${item.count}문항 · Hit@K ${metricValue(item.hit)} · MRR ${metricValue(item.mrr)}`}><div><strong>{item.label}</strong><span>{item.count}문항</span></div><i><b style={{ width: item.accuracy == null ? '0%' : `${Math.max(0, Math.min(100, item.accuracy * 100))}%` }} /></i><em>{metricValue(item.accuracy)}</em><small>Hit@K {metricValue(item.hit)} · MRR {metricValue(item.mrr)}</small></section>)}</div> : <div className="model-evaluation-empty"><strong>평가 결과 없음</strong><p>문항별 question_type 평가 결과가 필요합니다.</p></div>}</article>
+    </section>
+    {!evaluation && <p className="rag-report-empty">ChatPage에서 RAG 평가를 완료하면 실제 결과가 이 영역에 표시됩니다.</p>}
+  </section>;
+}
 
 function BusinessReport({ stats, loading }) {
   const estimatedMinutes = stats.documentCount * 12;
@@ -44,6 +134,11 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [ragEvaluation, setRagEvaluation] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(RAG_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
+  });
+  const [umapData, setUmapData] = useState(null);
+  const [umapError, setUmapError] = useState('');
 
   useEffect(() => {
     if (location.pathname !== '/reports') return;
@@ -74,11 +169,40 @@ export default function ReportPage() {
     setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5) });
   }, []);
 
+  const loadRagReport = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/rag/evaluate/latest');
+      setRagEvaluation(data);
+      localStorage.setItem(RAG_EVALUATION_STORAGE_KEY, JSON.stringify(data));
+    } catch (requestError) {
+      if (requestError.response?.status !== 404) setError(requestError.response?.data?.detail || 'RAG 평가 결과를 불러오지 못했습니다.');
+    }
+  }, []);
+
   useEffect(() => {
     loadBusinessStats();
     apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {});
     if (isDeveloper) loadEvaluations(); else setLoading(false);
   }, [isDeveloper, loadBusinessStats, loadEvaluations]);
+
+  useEffect(() => {
+    if (isDeveloper && developerReport === 'rag') loadRagReport();
+  }, [developerReport, isDeveloper, loadRagReport]);
+
+  useEffect(() => {
+    if (!isDeveloper || developerReport !== 'rag') return undefined;
+    let active = true;
+    setUmapError('');
+    apiClient.get('/rag/evaluation/umap').then(({ data }) => {
+      if (!active) return;
+      setUmapData(data);
+    }).catch((requestError) => {
+      if (!active) return;
+      setUmapData(null);
+      setUmapError(requestError.response?.data?.detail || '현재 corpus UMAP을 생성할 수 없습니다.');
+    });
+    return () => { active = false; };
+  }, [developerReport, isDeveloper]);
 
   const summary = useMemo(() => {
     if (!runs.length) return { accuracy: 0, time: null };
@@ -108,6 +232,7 @@ export default function ReportPage() {
       <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
       {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <FinanceEvaluationPage embedded /> : <>
+      <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>

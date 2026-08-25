@@ -192,6 +192,7 @@ async def chatbot_status() -> dict[str, Any]:
         "embedding_model": settings.RAG_EMBEDDING_MODEL,
         "embedding_dimensions": settings.RAG_EMBEDDING_DIMENSIONS,
         "rerank_model": settings.RAG_RERANK_MODEL or None,
+        "query_rewriting": False,
         "prompt_version": settings.RAG_PROMPT_VERSION,
         "top_k": settings.RAG_TOP_K,
         "chunk_target_chars": settings.RAG_CHUNK_TARGET_CHARS,

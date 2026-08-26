@@ -47,7 +47,8 @@ class StoredChatSession(BaseModel):
 
 class StoredChatMessage(BaseModel):
     model_config = ConfigDict(extra="allow")
-    id: str
+
+    id: int
     session_id: str
     role: str
     content: str

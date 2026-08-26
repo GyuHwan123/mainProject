@@ -5,6 +5,8 @@ const EMAIL_KEY = 'pic_to_text_email';
 const NAME_KEY = 'pic_to_text_name';
 const ROLE_KEY = 'pic_to_text_role';
 const SUBSCRIPTION_TIER_KEY = 'pic_to_text_subscription_tier';
+const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
+const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
 let pendingExchange = null;
 
 export function hasAppSession() {
@@ -20,6 +22,9 @@ export function saveAppSession(session) {
 }
 
 export function clearAppSession() {
+  const email = localStorage.getItem(EMAIL_KEY) || '';
+  localStorage.removeItem(`${CHAT_STATE_KEY_PREFIX}${email || 'anonymous'}`);
+  localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(EMAIL_KEY);
   localStorage.removeItem(NAME_KEY);

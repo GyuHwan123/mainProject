@@ -15,6 +15,9 @@ EMBEDDING_MODEL = settings.RAG_EMBEDDING_MODEL
 EMBEDDING_DIMENSIONS = settings.RAG_EMBEDDING_DIMENSIONS
 RERANK_MODEL = settings.RAG_RERANK_MODEL
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
+TEXT_CHUNK_MAX_CHARS = settings.RAG_TEXT_CHUNK_MAX_CHARS
+TEXT_CHUNK_OVERLAP_CHARS = settings.RAG_TEXT_CHUNK_OVERLAP_CHARS
+ANSWERABILITY_THRESHOLD = settings.RAG_ANSWERABILITY_THRESHOLD
 
 
 @lru_cache(maxsize=1)
@@ -212,8 +215,45 @@ def _append_line_chunks(chunks: list[dict[str, Any]], page_number: int, lines: l
     flush()
 
 
+def _split_long_text(text: str) -> list[str]:
+    if len(text) <= TEXT_CHUNK_MAX_CHARS:
+        return [text.strip()]
+    chunks: list[str] = []
+    start = 0
+    while start < len(text):
+        end = start + TEXT_CHUNK_MAX_CHARS
+        content = text[start:end].strip()
+        if content:
+            chunks.append(content)
+        if end >= len(text):
+            break
+        start = end - TEXT_CHUNK_OVERLAP_CHARS
+    return chunks
+
+
+def _append_article_chunks(chunks: list[dict[str, Any]], pages: list[dict[str, Any]]) -> None:
+    document_parts = [
+        f"\n[[PAGE:{int(page.get('page') or 1)}]]\n{str(page.get('text') or '').strip()}"
+        for page in pages
+        if str(page.get("text") or "").strip()
+    ]
+    full_text = "\n".join(document_parts).replace("\r\n", "\n").replace("\r", "\n")
+    parts = re.compile(r"(?=제\s*\d+\s*조\s*(?:\([^)]*\))?)").split(full_text)
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        for section in _split_long_text(part):
+            page_match = re.search(r"\[\[PAGE:(\d+)\]\]", section)
+            page_number = int(page_match.group(1)) if page_match else 1
+            content = re.sub(r"\[\[PAGE:\d+\]\]", "", section).strip()
+            if content:
+                chunks.append({"page_number": page_number, "content": content, "bbox": None})
+
+
 def build_chunks(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     chunks: list[dict[str, Any]] = []
+    text_only_pages: list[dict[str, Any]] = []
     for page in pages:
         page_number = int(page.get("page") or 1)
         items = [item for item in page.get("items", []) if str(item.get("text", "")).strip()]
@@ -234,11 +274,8 @@ def build_chunks(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             else:
                 _append_line_chunks(chunks, page_number, _group_items_into_lines(items))
         else:
-            text = str(page.get("text", "")).strip()
-            for start in range(0, len(text), CHUNK_TARGET_CHARS - 40):
-                content = text[start:start + CHUNK_TARGET_CHARS].strip()
-                if content:
-                    chunks.append({"page_number": page_number, "content": content, "bbox": None})
+            text_only_pages.append(page)
+    _append_article_chunks(chunks, text_only_pages)
     return chunks
 
 
@@ -329,6 +366,12 @@ async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> lis
         ) from exc
 
 
+def _has_sufficient_evidence(candidates: list[dict[str, Any]]) -> bool:
+    if not candidates:
+        return False
+    return float(candidates[0].get("similarity") or 0.0) >= ANSWERABILITY_THRESHOLD
+
+
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
     document = supabase_service.get_ocr_document(user_email, document_id)
     try:
@@ -415,7 +458,8 @@ async def search(user_email: str, query: str, rag_document_id: str | None, limit
                     "content": f"[문서 제목] {title}", "bbox": bbox, "similarity": 1.0,
                     "vector_similarity": 1.0, "source": document["file_name"],
                 })
-    return candidates[:limit]
+    candidates = candidates[:limit]
+    return candidates if _has_sufficient_evidence(candidates) else []
 
 
 rag_service = type("RagService", (), {"index_document": staticmethod(index_document), "search": staticmethod(search)})()

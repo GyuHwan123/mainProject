@@ -1,4 +1,7 @@
 import logging
+import os
+from datetime import datetime, timezone
+from itertools import count
 from typing import Any, Literal
 
 import httpx
@@ -13,7 +16,9 @@ from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
 
 router = APIRouter()
 MODEL_NAME = settings.RAG_LLM_MODEL
+GROUNDED_REJECTION_RESPONSE = "제공된 문서에서는 질문에 대한 충분한 근거를 확인할 수 없습니다."
 logger = logging.getLogger(__name__)
+_ollama_call_sequence = count(1)
 
 
 class ChatMessage(BaseModel):
@@ -76,6 +81,7 @@ async def generate(
     json_format: bool = False,
     num_predict: int = 600,
     model_name: str | None = None,
+    question: str | None = None,
 ) -> str:
     effective_model = model_name or MODEL_NAME
     payload: dict[str, Any] = {
@@ -94,9 +100,22 @@ async def generate(
         payload["format"] = "json"
 
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")
-    logger.warning("Ollama model call: model=%s json_format=%s", effective_model, json_format)
     try:
         async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+            # Diagnostic block: remove after runtime duplicate-call verification.
+            sequence = next(_ollama_call_sequence)
+            question_preview = " ".join((question or "").split())[:40]
+            if sequence == 1:
+                root_logger = logging.getLogger()
+                logger.warning(
+                    "[OLLAMA_LOGGING] pid=%s module_handlers=%s root_handlers=%s propagate=%s",
+                    os.getpid(), len(logger.handlers), len(root_logger.handlers), logger.propagate,
+                )
+            logger.warning(
+                '[OLLAMA_CALL] time=%s pid=%s seq=%s question="%s" model=%s',
+                datetime.now(timezone.utc).isoformat(), os.getpid(), sequence,
+                question_preview.replace('"', "'"), effective_model,
+            )
             response = await client.post("/api/generate", json=payload)
             response.raise_for_status()
             answer = response.json().get("response", "").strip()
@@ -116,7 +135,9 @@ async def generate(
 async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_current_user)) -> ChatReply:
     if is_sensitive_query(payload.message):
         return ChatReply(reply=PRIVACY_RESPONSE, model="privacy-policy")
-    context = (payload.context or "문서 근거가 제공되지 않았습니다.")[:6000]
+    if not payload.context or not payload.context.strip():
+        return ChatReply(reply=GROUNDED_REJECTION_RESPONSE, model="grounded-rejection")
+    context = payload.context[:6000]
     history = "\n".join(
         f"{'사용자' if item.get('role') == 'user' else 'AI'}: {str(item.get('content', ''))[:800]}"
         for item in payload.history[-8:]
@@ -127,6 +148,8 @@ async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_curren
 - 저자, 사람, 기관, 날짜, 수치가 근거에 있으면 생략하지 말고 원문 그대로 쓰세요.
 - 대화 기록은 대명사와 후속 질문을 이해하는 용도로만 사용하세요.
 - 문서 근거에 없는 내용은 추측하지 마세요.
+- 근거에 없는 사실을 반대 사실로 추론하지 마세요. 지원 근거가 없다고 해서 지원하지 않는다고 답할 수는 없습니다.
+- 질문에 대한 직접적인 근거가 없으면 "제공된 문서에서는 질문에 대한 충분한 근거를 확인할 수 없습니다."라고만 답하고 근거를 인용하지 마세요.
 - [민감정보 보호]로 표시된 값은 절대 유추하거나 복원하지 말고, 개인정보 보호로 제공할 수 없다고 답하세요.
 - 답변에 사용한 근거 번호를 문장 끝에 [근거 1] 형식으로 표시하세요.
 
@@ -140,7 +163,7 @@ async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_curren
 {payload.message}
 
 [답변]"""
-    return ChatReply(reply=await generate(prompt))
+    return ChatReply(reply=await generate(prompt, question=payload.message))
 
 
 @router.get("/sessions", response_model=list[StoredChatSession])
@@ -196,6 +219,7 @@ async def chatbot_status() -> dict[str, Any]:
         "query_rewriting": False,
         "prompt_version": settings.RAG_PROMPT_VERSION,
         "top_k": settings.RAG_TOP_K,
+        "answerability_threshold": settings.RAG_ANSWERABILITY_THRESHOLD,
         "chunk_target_chars": settings.RAG_CHUNK_TARGET_CHARS,
     }
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")

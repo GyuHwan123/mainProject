@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
@@ -32,13 +32,35 @@ function BusinessReport({ stats, loading }) {
   </>;
 }
 
+function ReceiptMonitoringDashboard() {
+  const metrics = ['필드 정확도 (Field Accuracy)', '금액 정확도 (Amount Accuracy)', '완전 성공률 (Perfect Receipt)', '처리 성공률 (Processing Success)', '평균 처리시간 (Avg Latency)', 'OCR 성공률'];
+  const panels = ['기간별 성능 추세', '오류 유형 분포', '필드별 정확도', '시스템 성능'];
+
+  return <section className="receipt-monitoring">
+    <div className="receipt-monitoring-heading">
+      <div><p>FINANCE MODEL LAB</p><h2>영수증 서비스 성능 모니터링 대시보드</h2><span>서비스 운영 데이터를 기반으로 모델/파이프라인의 성능을 모니터링합니다.</span></div>
+      <div className="receipt-monitoring-filters" aria-label="영수증 성능 필터">
+        <button type="button">2025-05-24 <span>~</span> 2025-05-31</button>
+        <button type="button">최근 7일 <span>⌄</span></button>
+        <button type="button">모델: gemma3-4b-trained <span>⌄</span></button>
+      </div>
+    </div>
+    <div className="receipt-monitoring-kpis">{metrics.map((metric) => <article key={metric}><h3>{metric}</h3><strong>—</strong><div className="empty-sparkline" /></article>)}</div>
+    <div className="receipt-monitoring-panels">{panels.map((panel) => <article key={panel}><header><h3>{panel}</h3><span>최근 7일</span></header><div className="empty-monitoring-box"><span>—</span></div></article>)}</div>
+    <div className="receipt-monitoring-bottom"><article><header><h3>알림 / 이상 탐지</h3></header><div className="empty-monitoring-row">—</div></article><article><header><h3>최근 실행 이력</h3></header><div className="empty-monitoring-row">—</div></article></div>
+  </section>;
+}
+
 export default function ReportPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const user = getAppUser();
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user.role) || user.email === 'developer@docunex.com';
   const requestedDeveloperReport = new URLSearchParams(window.location.search).get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
+  const requestedReceiptTab = new URLSearchParams(window.location.search).get('receiptTab') || localStorage.getItem('pic_to_text_receipt_report_tab');
   const [reportView, setReportView] = useState(isDeveloper ? 'developer' : 'business');
   const [developerReport, setDeveloperReport] = useState(requestedDeveloperReport === 'receipt' ? 'receipt' : 'rag');
+  const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
   const [loading, setLoading] = useState(true);
@@ -50,8 +72,10 @@ export default function ReportPage() {
     const params = new URLSearchParams(location.search);
     const requestedView = params.get('view');
     const requestedReport = params.get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
+    const requestedTab = params.get('receiptTab') || localStorage.getItem('pic_to_text_receipt_report_tab');
     if (isDeveloper && (requestedView === 'developer' || requestedReport === 'receipt')) setReportView('developer');
     if (isDeveloper && requestedReport === 'receipt') setDeveloperReport('receipt');
+    if (isDeveloper && requestedReport === 'receipt') setReceiptTab(requestedTab === 'experiment' ? 'experiment' : 'monitoring');
   }, [isDeveloper, location.pathname, location.search]);
   const [modelConfig, setModelConfig] = useState({ model: '미설정', embedding_model: '미설정', embedding_dimensions: null, rerank_model: null, prompt_version: '미설정', top_k: null, chunk_target_chars: null, ready: false });
 
@@ -107,7 +131,13 @@ export default function ReportPage() {
     <main className="developer-report">
       <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
-      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <FinanceEvaluationPage embedded /> : <>
+      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
+        <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
+          <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
+          <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>
+        </div>
+        {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard />}
+      </> : <>
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>

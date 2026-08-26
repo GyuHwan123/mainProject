@@ -234,7 +234,14 @@ function ChatPageContent() {
   const [evidenceFlash, setEvidenceFlash] = useState(false);
   const [modelConfig, setModelConfig] = useState({ model: 'Baseline LLM', embedding_model: 'Baseline Embedding', ready: false });
   const [evaluationDataset, setEvaluationDataset] = useState(null);
-  const [evaluationResult, setEvaluationResult] = useState(null);
+  const [evaluationResult, setEvaluationResult] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pic_to_text_rag_evaluation_latest');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [evaluationStatus, setEvaluationStatus] = useState('대기');
   const [evaluationRunning, setEvaluationRunning] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');

@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     RAG_PROMPT_VERSION: str = "baseline-v1"
     RAG_TOP_K: int = 4
     RAG_CHUNK_TARGET_CHARS: int = 380
+    RAG_TEXT_CHUNK_MAX_CHARS: int = 900
+    RAG_TEXT_CHUNK_OVERLAP_CHARS: int = 120
     RAG_EVALUATION_ANSWER_THRESHOLD: float = 0.75
     # Docker Compose overrides this with the internal `ocr` service address.
     OCR_BASE_URL: str = "http://127.0.0.1:8001"

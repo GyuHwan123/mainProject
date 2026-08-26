@@ -735,7 +735,9 @@ class SupabaseService:
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(company_response, "RAG company documents lookup failed")
-        documents.extend(company_response.json())
+        company_documents = company_response.json()
+        company_document_ids = {row["id"] for row in company_documents}
+        documents.extend(company_documents)
         document_by_id = {row["id"]: row for row in documents}
         if rag_document_id and rag_document_id not in document_by_id:
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
@@ -750,7 +752,11 @@ class SupabaseService:
         rows = [
             row for row in response.json()
             if row.get("document_id") in document_by_id
-            and (not rag_document_id or row.get("document_id") == rag_document_id)
+            and (
+                row.get("document_id") in company_document_ids
+                or not rag_document_id
+                or row.get("document_id") == rag_document_id
+            )
         ][:limit]
         for row in rows:
             rag_id = row["document_id"]

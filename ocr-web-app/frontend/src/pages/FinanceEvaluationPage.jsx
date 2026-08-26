@@ -355,9 +355,6 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('정답 JSON을 불러온 뒤 해당 영수증 이미지를 선택하세요.');
   const [imagePreview, setImagePreview] = useState(null);
-  const [question, setQuestion] = useState('');
-  const [questionLoading, setQuestionLoading] = useState(false);
-  const [questionHistory, setQuestionHistory] = useState([]);
   const [pipelineProgress, setPipelineProgress] = useState(null);
   const [activeBatchId, setActiveBatchId] = useState(() => rememberedBatchState().activeBatchId);
   const [batchComplete, setBatchComplete] = useState(() => rememberedBatchState().batchComplete);
@@ -450,7 +447,6 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     imageUrlRef.current = URL.createObjectURL(file);
     setImagePreview({ url: imageUrlRef.current, type: file.type, name: file.name });
     setSelectedIndex(matched.index);
-    setQuestionHistory([]);
     setPipelineProgress({ stage: 'ocr', document_name: file.name, ocr_text: '', ocr_pages: [] });
     const form = new FormData(); form.append('file', file);
     const { data: ocr } = await apiClient.post('/ocr/upload?processing_mode=receipt', form, { timeout: 360000 });
@@ -539,7 +535,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       if (folderRef.current) folderRef.current.value = '';
       return;
     }
-    setActiveBatchId(batchId); setBatchComplete(false); setQuestionHistory([]);
+    setActiveBatchId(batchId); setBatchComplete(false);
     let accumulated = []; let completed = 0; const errors = [];
     for (const file of files) {
       try {
@@ -659,24 +655,6 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     anchor.click(); URL.revokeObjectURL(url);
   };
 
-  const askAllModels = async () => {
-    const value = question.trim();
-    if (!latestRun || !value || questionLoading) return;
-    const evaluatedModels = (latestRun.results || []).map((result) => result.model_name).filter(Boolean);
-    setQuestionLoading(true);
-    try {
-      const { data } = await apiClient.post('/finance-evaluations/ask', {
-        document_id: latestRun.document_id,
-        question: value,
-        model_names: evaluatedModels,
-      }, { timeout: 360000 });
-      setQuestionHistory((history) => [...history, { ...data, asked_at: new Date().toISOString() }]);
-      setQuestion('');
-    } catch (error) {
-      setStatus(error.response?.data?.detail || error.message || '공통 질문 처리에 실패했습니다.');
-    } finally { setQuestionLoading(false); }
-  };
-
   return <div className={embedded ? 'finance-eval-embedded-shell' : 'app-shell finance-eval-shell'}>{!embedded && <Sidebar />}<main className={`finance-eval-page ${embedded ? 'embedded' : ''}`}>
     <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> {batchComplete && batchRuns.length > 1 ? '일괄 통계 JSON' : '결과 JSON'}</button></header>
     {!embedded && <section className="eval-setup">
@@ -713,8 +691,6 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     </section>}
 
     <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 처리 화면이 여기에 표시됩니다.</p>}</section>
-
-    <section className="common-question-panel"><header><div><h2>모델 공통 질문</h2><p>최근 평가 영수증의 동일한 OCR 원문과 질문을 모든 모델에 전달합니다.</p></div><span>{latestRun ? `${latestRun.results?.length || 0}개 모델` : '평가 후 사용 가능'}</span></header><div className="question-compose"><textarea value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="예: 이 영수증의 결제 금액과 주요 구매 품목을 알려줘." disabled={!latestRun || questionLoading} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); askAllModels(); } }} /><button type="button" disabled={!latestRun || !question.trim() || questionLoading} onClick={askAllModels}>{questionLoading ? '모델 답변 생성 중...' : '모든 모델에 질문'}</button></div><div className="question-history">{questionHistory.map((entry, entryIndex) => <article key={`${entry.asked_at}-${entryIndex}`}><h3>Q. {entry.question}</h3><div>{(entry.answers || []).map((answer) => <section className={answer.success ? '' : 'answer-error'} key={answer.model_name}><header><strong>{answer.model_name}</strong><span>{(Number(answer.latency_ms || 0) / 1000).toFixed(1)}초</span></header><p>{answer.success ? answer.answer : answer.error || '답변 생성 실패'}</p></section>)}</div></article>)}{!questionHistory.length && <p className="eval-empty">평가 완료 후 질문하면 모델별 답변이 나란히 표시됩니다.</p>}</div></section>
 
     <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 이미지도 실행 날짜와 시간이 다르면 별도 결과로 누적됩니다.</p></div><span>{runs.length}회</span></header>
       <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>

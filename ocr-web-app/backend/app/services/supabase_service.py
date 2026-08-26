@@ -555,12 +555,15 @@ class SupabaseService:
         self._raise_for_supabase(response, "채팅 기록 조회 실패")
         return response.json()
 
-    def create_chat_session(self, user_email: str, title: str, document_id: str) -> dict[str, Any]:
+    def create_chat_session(self, user_email: str, title: str, document_id: str | None) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)
+        payload: dict[str, Any] = {"user_id": user_id, "group_id": None, "title": title[:120]}
+        if document_id is not None:
+            payload["document_id"] = document_id
         response = httpx.post(
             f"{self.url}/rest/v1/chat_sessions",
             headers={**self._service_headers(), "Prefer": "return=representation"},
-            json={"user_id": user_id, "document_id": document_id, "group_id": None, "title": title[:120]}, timeout=15,
+            json=payload, timeout=15,
         )
         self._raise_for_supabase(response, "채팅 세션 생성 실패")
         return response.json()[0]

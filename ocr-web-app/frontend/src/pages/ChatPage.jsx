@@ -9,6 +9,8 @@ import '../style/ChatPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
+const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
+const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
 const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
 const PRIVACY_RESPONSE = '요청하신 정보는 개인정보 보호 정책에 따라 제공할 수 없습니다. 채용 검토에 필요한 학력, 경력, 기술, 교육 및 자격 정보는 질문할 수 있습니다.';
 const SENSITIVE_QUERY_PATTERN = /(생년월일|생년|몇\s*살|나이|연령|성별|남자인지|여자인지|휴대폰|핸드폰|전화번호|연락처|이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌번호|통장번호)/i;
@@ -215,17 +217,25 @@ function EvidencePreview({ source, onUpload, uploading }) {
 
 function ChatPageContent() {
   const appUser = getAppUser();
+  const chatStateKey = `${CHAT_STATE_KEY_PREFIX}${appUser.email || 'anonymous'}`;
+  const restoredChatState = useMemo(() => {
+    try { return JSON.parse(localStorage.getItem(chatStateKey) || '{}'); } catch { return {}; }
+  }, [chatStateKey]);
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(appUser.role) || appUser.email === 'developer@docunex.com';
   const [documents, setDocuments] = useState([]);
   const [indexingId, setIndexingId] = useState(null);
   const [ragError, setRagError] = useState('');
   const [sessions, setSessions] = useState([]);
-  const [activeSessionId, setActiveSessionId] = useState(null);
-  const [activeId, setActiveId] = useState(null);
-  const [messages, setMessages] = useState([{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 뒤 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
-  const [query, setQuery] = useState('');
-  const [sources, setSources] = useState([]);
-  const [selectedSource, setSelectedSource] = useState(null);
+  const [sessionsLoaded, setSessionsLoaded] = useState(false);
+  const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState(restoredChatState.activeSessionId ?? null);
+  const [activeId, setActiveId] = useState(restoredChatState.activeId ?? null);
+  const [messages, setMessages] = useState(() => Array.isArray(restoredChatState.messages) && restoredChatState.messages.length
+    ? restoredChatState.messages
+    : [{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 뒤 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
+  const [query, setQuery] = useState(restoredChatState.query || '');
+  const [sources, setSources] = useState(() => Array.isArray(restoredChatState.sources) ? restoredChatState.sources : []);
+  const [selectedSource, setSelectedSource] = useState(restoredChatState.selectedSource || null);
   const [busy, setBusy] = useState(false);
   const [uploadMode, setUploadMode] = useState(false);
   const [scrapbookOpen, setScrapbookOpen] = useState(false);
@@ -234,7 +244,14 @@ function ChatPageContent() {
   const [evidenceFlash, setEvidenceFlash] = useState(false);
   const [modelConfig, setModelConfig] = useState({ model: 'Baseline LLM', embedding_model: 'Baseline Embedding', ready: false });
   const [evaluationDataset, setEvaluationDataset] = useState(null);
-  const [evaluationResult, setEvaluationResult] = useState(null);
+  const [evaluationResult, setEvaluationResult] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pic_to_text_rag_evaluation_latest');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [evaluationStatus, setEvaluationStatus] = useState('대기');
   const [evaluationRunning, setEvaluationRunning] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
@@ -244,6 +261,7 @@ function ChatPageContent() {
   const fileRef = useRef(null);
   const evaluationFileRef = useRef(null);
   const evaluationRunningRef = useRef(false);
+  const restorationAttemptedRef = useRef(false);
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const previewSource = selectedSource || (activeDoc ? {
@@ -260,14 +278,45 @@ function ChatPageContent() {
   }, [scrapbook]);
 
   useEffect(() => {
+    localStorage.setItem(chatStateKey, JSON.stringify({
+      messages, activeSessionId, activeId, sources, selectedSource, query,
+    }));
+    if (activeSessionId) localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, String(activeSessionId));
+    else localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
+  }, [chatStateKey, messages, activeSessionId, activeId, sources, selectedSource, query]);
+
+  useEffect(() => {
     apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {});
   }, []);
 
   const refreshSessions = () => apiClient.get('/chatbot/sessions')
     .then(({ data }) => setSessions(data || []))
-    .catch(() => {});
+    .catch(() => {})
+    .finally(() => setSessionsLoaded(true));
 
   useEffect(() => { refreshSessions(); }, []);
+
+  useEffect(() => {
+    if (!sessionsLoaded || !documentsLoaded || restorationAttemptedRef.current) return;
+    restorationAttemptedRef.current = true;
+
+    const savedSessionId = activeSessionId || localStorage.getItem(ACTIVE_CHAT_SESSION_KEY);
+    if (!savedSessionId) return;
+
+    const savedSession = sessions.find(
+        (session) => String(session.id) === String(savedSessionId)
+    );
+
+    if (savedSession) {
+        openSession(savedSession, { restoreEvidence: true }).catch(() => {
+        localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
+        });
+    } else {
+      setActiveSessionId(null);
+      localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
+    }
+    }, [sessions, sessionsLoaded, documentsLoaded]);
+
 
   const refreshRagDocuments = () => apiClient.get('/rag/documents').then(({ data }) => {
     const mapped = (data || []).map((item) => ({
@@ -279,11 +328,10 @@ function ChatPageContent() {
       createdAt: new Date(item.created_at),
     }));
     setDocuments(mapped);
-    // Keep an explicitly selected/uploaded document, but never restore the
-    // first history item automatically when the chat page starts. A new login
-    // (and a fresh page mount) must begin with an empty RAG upload preview.
+    // Preserve the restored/explicitly selected document, but do not select
+    // the first history item automatically.
     setActiveId((current) => mapped.some((item) => item.id === current) ? current : null);
-  }).catch(() => {});
+  }).catch(() => {}).finally(() => setDocumentsLoaded(true));
 
   useEffect(() => { refreshRagDocuments(); }, []);
 
@@ -298,12 +346,13 @@ function ChatPageContent() {
     })))).catch(() => {});
   }, []);
 
-  const openSession = async (session) => {
+  const openSession = async (session, { restoreEvidence = false } = {}) => {
     const { data } = await apiClient.get(`/chatbot/sessions/${session.id}/messages`);
     const linkedDocument = documents.find((document) => document.documentId === session.document_id);
-    if (linkedDocument) setActiveId(linkedDocument.id);
+    setActiveId(linkedDocument?.id ?? null);
     setUploadMode(false);
     setActiveSessionId(session.id);
+    localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, session.id);
     setMessages((Array.isArray(data) ? data : []).map((item) => {
       const storedSources = Array.isArray(item.sources) ? item.sources : [];
       return {
@@ -313,11 +362,14 @@ function ChatPageContent() {
         sources: storedSources,
       };
     }));
-    setSources([]);
-    setSelectedSource(null);
+    if (!restoreEvidence) {
+      setSources([]);
+      setSelectedSource(null);
+    }
   };
 
   const startNewChat = () => {
+    localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
     setActiveSessionId(null);
     setMessages([{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 후 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
     setQuery('');
@@ -368,9 +420,15 @@ function ChatPageContent() {
       setSelectedSource(null);
       setMessages((items) => [...items, { role: 'assistant', text: PRIVACY_RESPONSE, sourceCount: 0, sources: [] }]);
       try {
-        if (!sessionId && activeDoc?.documentId) {
-          const { data: session } = await apiClient.post('/chatbot/sessions', { title: question.slice(0, 120), document_id: activeDoc.documentId });
-          sessionId = session.id; setActiveSessionId(sessionId);
+        if (!sessionId) {
+            const { data: session } = await apiClient.post('/chatbot/sessions', {
+                title: question.slice(0, 120),
+                document_id: activeDoc?.documentId ?? null
+            });
+
+            sessionId = session.id;
+            setActiveSessionId(sessionId);
+            localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, sessionId);
         }
         if (sessionId) {
           await apiClient.post(`/chatbot/sessions/${sessionId}/messages`, { role: 'user', content: question, sources: [] });
@@ -394,14 +452,16 @@ function ChatPageContent() {
       setSources(relevant);
       if (!sessionId) {
         try {
-          const { data: session } = await apiClient.post('/chatbot/sessions', {
+            const { data: session } = await apiClient.post('/chatbot/sessions', {
             title: question.slice(0, 120),
-            document_id: activeDoc?.documentId,
-          });
-          sessionId = session.id;
-          setActiveSessionId(sessionId);
+            document_id: activeDoc?.documentId ?? null,
+            });
+
+            sessionId = session.id;
+            setActiveSessionId(sessionId);
+            localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, sessionId);
         } catch { /* 기록 저장 실패와 AI 답변 생성을 분리 */ }
-      }
+        }
       if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
         role: 'user', content: question, sources: [],
       }).catch(() => {});

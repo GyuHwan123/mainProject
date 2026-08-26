@@ -306,7 +306,14 @@ export default function ReportPage() {
   const [ragEvaluation, setRagEvaluation] = useState(() => {
     try { return JSON.parse(localStorage.getItem(RAG_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
   });
-  const [umapData, setUmapData] = useState(null);
+  const [umapData, setUmapData] = useState(() => {
+    try {
+      const saved = localStorage.getItem('pic_to_text_rag_umap_latest');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [umapError, setUmapError] = useState('');
 
   useEffect(() => {
@@ -366,12 +373,13 @@ export default function ReportPage() {
     setUmapError('');
     apiClient.get('/rag/evaluation/umap').then(({ data }) => {
       if (!active) return;
+
       setUmapData(data);
-    }).catch((requestError) => {
-      if (!active) return;
-      setUmapData(null);
-      setUmapError(requestError.response?.data?.detail || '현재 corpus UMAP을 생성할 수 없습니다.');
-    });
+      localStorage.setItem(
+        'pic_to_text_rag_umap_latest',
+        JSON.stringify(data)
+      );
+    })
     return () => { active = false; };
   }, [developerReport, isDeveloper]);
 

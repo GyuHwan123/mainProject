@@ -22,11 +22,28 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
-FINANCE_PROMPT_VERSION = "receipt-v3-evidence-and-item-semantics"
+EXPENSE_CATEGORIES = (
+    "기타", "교통", "교통비", "주유/교통", "숙박비", "일비/식대",
+    "식비", "생활/식비", "식비/생활", "식비/쇼핑", "식비/주류",
+    "도서", "교육비", "의료", "복리후생", "문화", "레저",
+    "미용", "미용/생활", "전자제품", "전자제품/문구", "사무용품",
+    "소프트웨어", "취미/쇼핑", "취미/소품",
+)
+FINANCE_PROMPT_VERSION = "receipt-v4-fixed-expense-categories"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 _ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
 _ITEM_COLUMN_HEADER = re.compile(rf"(?:{_ITEM_COLUMN_LABEL}[\s|:/·-]*){{2,}}", re.IGNORECASE)
+
+
+def _normalize_expense_category(value: Any) -> str:
+    """Return one centrally managed category; unknown model output falls back safely."""
+    raw = str(value or "").strip()
+    if not raw:
+        return "기타"
+    compact = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
+    by_compact = {re.sub(r"[^0-9A-Za-z가-힣]", "", category).lower(): category for category in EXPENSE_CATEGORIES}
+    return by_compact.get(compact, "기타")
 
 
 def _clean_item_name_evidence(value: Any) -> tuple[str, list[str]]:
@@ -688,7 +705,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     result["deterministic_hints"] = hints
     normalized_record = {
         "document_type": document_type,
-        "expense_category": str(hints.get("expense_category") or result.get("expense_category") or "기타").strip()[:100],
+        "expense_category": _normalize_expense_category(hints.get("expense_category") or result.get("expense_category")),
         "merchant": _normalize_merchant(result.get("merchant"), text),
         "transaction_date": transaction_date,
         "supply_amount": supply,
@@ -1161,8 +1178,11 @@ doc_type은 다음 중 하나입니다.
 반환 키: image, doc_type, expense_category, merchant, transaction_date, supply_amount,
 tax_amount, discount_amount, total_amount, payment_method, card_number, description.
 
+expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선택하세요. 목록에 적절한 값이 없거나 근거가 부족하면 `기타`를 선택하세요.
+{json.dumps(EXPENSE_CATEGORIES, ensure_ascii=False)}
+
 판단 규칙:
-1. OCR에 직접 근거가 있는 값만 작성하고, 불명확한 값은 null로 둡니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
+1. OCR에 직접 근거가 있는 값만 작성하고, 불명확한 값은 null로 둡니다. 단, expense_category는 품목명·상호·문서 문맥을 근거로 고정 목록에서 가장 가까운 값을 선택하고 판단이 어려우면 `기타`로 작성합니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
 2. 상호는 실제 판매 주체를 선택합니다. 쇼핑몰·건물·지점 안내·URL은 입점 장소일 수 있으므로, 영수증을 발행하고 상품을 판매한 입점 매장명을 우선합니다. 예를 들어 OCR에 `유니클로`와 `Starfield` 또는 `starfield.co.kr`가 함께 있으면 merchant는 쇼핑몰인 Starfield가 아니라 입점 매장인 `유니클로`입니다. 브랜드명 뒤의 `(과세)`·`(면세)`는 세금 구분이므로 상호에서 제거합니다.
 3. 실제 결제된 상품 행만 items로 만듭니다. 먼저 `상품명 | 수량 | 단가 | 금액`의 대응을 확인한 뒤 출력하며, 상품 행이 명확하면 items를 비워 두지 않습니다. `총품목/총수량`의 총품목 수 N은 서로 다른 상품 행의 수이므로, 표시가 명확하면 실제 상품을 N개 찾아야 합니다.
 4. 새 상품명에 별도의 수량·단가·금액이 붙으면 독립 품목입니다. 한글명과 영문명이 이어져도 가격 묶음이 하나일 때만 같은 품목이며, `DIY`, `도안`, 괄호 표기라는 이유만으로 다른 유료 상품을 규격에 합치지 않습니다. 상호와 품목명이 같아도 각각 근거가 있으면 merchant와 items 양쪽에 모두 작성합니다. 예를 들어 상호가 `유니클로`이고 상품 행이 `유니클로(과세) 1 60,000`이면 merchant는 `유니클로`, items에는 `유니클로(과세)` 1개를 작성합니다.
@@ -1282,7 +1302,7 @@ async def _classify_receipt(
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
         return {
             "document_type": hints.get("document_type") or "EXPENSE_REPORT",
-            "expense_category": hints.get("expense_category") or "확인 필요",
+            "expense_category": _normalize_expense_category(hints.get("expense_category")),
             "transaction_date": hints.get("transaction_date"),
             "supply_amount": hints.get("supply_amount") or 0,
             "tax_amount": hints.get("tax_amount") or 0,

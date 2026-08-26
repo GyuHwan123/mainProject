@@ -351,7 +351,7 @@ async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
 async def search(user_email: str, query: str, rag_document_id: str | None, limit: int) -> list[dict[str, Any]]:
     embedding = (await embed_texts([query]))[0]
     candidates = supabase_service.search_rag_chunks(
-        user_email, embedding, rag_document_id, 10,
+        user_email, embedding, rag_document_id, 4,
     )
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]

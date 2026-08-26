@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.routes.finance_evaluations import _prediction_from_finance_record  # noqa: E402
+from app.api.routes.finance_evaluations import _pipeline_trace, _prediction_from_finance_record  # noqa: E402
 
 
 class FinanceEvaluationRouteTests(unittest.TestCase):
@@ -24,6 +24,22 @@ class FinanceEvaluationRouteTests(unittest.TestCase):
         self.assertEqual(prediction["total_quantity"], 1)
         self.assertEqual(prediction["items"][0]["name"], "노트")
         self.assertEqual(raw["source_filename"], "receipt.jpg")
+
+    def test_pipeline_trace_collects_existing_classification_diagnostics(self):
+        trace = _pipeline_trace({
+            "llm_trace": {"summary_raw": {"merchant": "문구점"}},
+            "validator_trace": {"changed": True},
+            "deterministic_hints": {"total_amount": 5000},
+            "item_extraction_diagnostics": {
+                "candidates": [{"name_candidate": "노트"}],
+                "model_items": [{"name": "노트"}],
+                "resolved_items": [{"name": "노트"}],
+            },
+        })
+
+        self.assertEqual(trace["llm"]["summary_raw"]["merchant"], "문구점")
+        self.assertTrue(trace["validator"]["changed"])
+        self.assertEqual(trace["item_candidates"][0]["name_candidate"], "노트")
 
 if __name__ == "__main__":
     unittest.main()

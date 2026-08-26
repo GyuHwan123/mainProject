@@ -429,7 +429,39 @@ def _normalize_payment_method(value: Any, evidenced_value: Any, rejected_by_poli
     return model_value[:100] or None
 
 
+def _validator_snapshot(result: dict[str, Any]) -> dict[str, Any]:
+    """Capture values observed by validation without changing validation behavior."""
+    summary_fields = (
+        "doc_type", "document_type", "expense_category", "merchant", "transaction_date",
+        "supply_amount", "tax_amount", "discount_amount", "total_amount", "payment_method",
+        "card_number", "description", "receipt_summary", "items",
+    )
+    return {
+        key: json.loads(json.dumps(result.get(key), ensure_ascii=False))
+        for key in summary_fields
+        if key in result
+    }
+
+
+def _validator_trace(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
+    keys = sorted(set(before) | set(after))
+    changes = [
+        {"field": key, "before": before.get(key), "after": after.get(key)}
+        for key in keys
+        if before.get(key) != after.get(key)
+    ]
+    return {
+        "validator": "finance._normalize",
+        "version": FINANCE_PROMPT_VERSION,
+        "input": before,
+        "output": after,
+        "changed": bool(changes),
+        "changes": changes,
+    }
+
+
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
+    validator_input = _validator_snapshot(result)
     hints = _receipt_hints(text, filename)
     receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
     stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
@@ -648,7 +680,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
             transaction_date = None
     result["source_filename"] = filename
     result["deterministic_hints"] = hints
-    return {
+    normalized_record = {
         "document_type": document_type,
         "expense_category": str(hints.get("expense_category") or result.get("expense_category") or "기타").strip()[:100],
         "merchant": _normalize_merchant(result.get("merchant"), text),
@@ -666,6 +698,16 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "model_name": str(result.get("_model_name") or RECEIPTS_MODEL_NAME),
         "status": "REVIEW",
     }
+    validator_output = _validator_snapshot(result)
+    validator_output.update({
+        key: normalized_record[key]
+        for key in (
+            "document_type", "expense_category", "merchant", "transaction_date",
+            "supply_amount", "tax_amount", "total_amount", "payment_method", "description",
+        )
+    })
+    result["validator_trace"] = _validator_trace(validator_input, validator_output)
+    return normalized_record
 
 
 def _receipt_table_hint(pages: list[dict[str, Any]] | None) -> str:
@@ -1180,6 +1222,12 @@ async def _classify_receipt_with_model(
     if not isinstance(result, dict):
         logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
         raise ValueError("object expected")
+    result["llm_trace"] = {
+        "model_name": model_name,
+        "prompt_version": FINANCE_PROMPT_VERSION,
+        "summary_raw": json.loads(json.dumps(result, ensure_ascii=False)),
+        "summary_response_text": raw,
+    }
     result.pop("items", None)
     candidates = _receipt_item_candidates(pages)
     try:
@@ -1191,6 +1239,8 @@ async def _classify_receipt_with_model(
         )
         items_result = json.loads(items_raw)
         model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
+        result["llm_trace"]["items_raw"] = json.loads(json.dumps(items_result, ensure_ascii=False))
+        result["llm_trace"]["items_response_text"] = items_raw
         model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
         stated_count = _receipt_hints(text, filename).get("stated_item_count")
         result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
@@ -1208,6 +1258,8 @@ async def _classify_receipt_with_model(
             "model_items": [],
             "failed": True,
         }
+        result["llm_trace"].setdefault("items_raw", None)
+        result["llm_trace"].setdefault("items_response_text", None)
     return result
 
 

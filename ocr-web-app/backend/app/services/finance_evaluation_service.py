@@ -10,6 +10,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize
+from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
@@ -561,12 +562,29 @@ async def evaluate_models(
             system_prediction["discount_amount"] = structured.get("discount_amount")
             system_prediction["card_number"] = structured.get("card_number")
             system_score = score_fields(system_prediction, truth, pure)
+            structured_trace = structured.get("item_extraction_diagnostics") or {}
+            pipeline_trace = {
+                "llm": structured.get("llm_trace") or {},
+                "validator": structured.get("validator_trace") or {},
+                "deterministic_hints": structured.get("deterministic_hints") or {},
+                "item_candidates": structured_trace.get("candidates") or [],
+                "model_items": structured_trace.get("model_items") or [],
+                "resolved_items": structured_trace.get("resolved_items") or [],
+            }
+            error_analysis = analyze_finance_evaluation_failure(
+                ocr_text=text,
+                ground_truth=truth,
+                prediction=system_prediction,
+                pipeline_trace=pipeline_trace,
+            )
             results.append({
                 "model_name": model_name,
                 "success": True,
                 "latency_ms": latency_ms,
                 "system": {
                     "prediction": system_prediction,
+                    "pipeline_trace": pipeline_trace,
+                    "error_analysis": error_analysis,
                     "score": system_score,
                     "ocr_impact": estimate_ocr_impact(text, truth, system_score),
                     "workbook": verify_workbook(system),

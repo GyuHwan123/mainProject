@@ -16,6 +16,7 @@ from app.services.finance_evaluation_service import (
     score_fields,
     verify_workbook,
 )
+from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
 from app.services.supabase_service import supabase_service
 
 
@@ -59,6 +60,18 @@ def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, 
             "item_candidates": len(candidates),
             "uncertain_candidates": sum(1 for candidate in candidates if candidate.get("uncertainty")),
         },
+    }
+
+
+def _pipeline_trace(structured: dict[str, Any]) -> dict[str, Any]:
+    diagnostics = structured.get("item_extraction_diagnostics") or {}
+    return {
+        "llm": structured.get("llm_trace") or {},
+        "validator": structured.get("validator_trace") or {},
+        "deterministic_hints": structured.get("deterministic_hints") or {},
+        "item_candidates": diagnostics.get("candidates") or [],
+        "model_items": diagnostics.get("model_items") or [],
+        "resolved_items": diagnostics.get("resolved_items") or [],
     }
 
 
@@ -159,6 +172,13 @@ def evaluate_existing_finance_record(
     truth = normalize_ground_truth(payload.ground_truth)
     prediction, structured = _prediction_from_finance_record(record)
     score = score_fields(prediction, truth, structured)
+    pipeline_trace = _pipeline_trace(structured)
+    error_analysis = analyze_finance_evaluation_failure(
+        ocr_text=text,
+        ground_truth=truth,
+        prediction=prediction,
+        pipeline_trace=pipeline_trace,
+    )
     response = {
         "document_id": payload.document_id,
         "document_name": document.get("file_name") or "receipt",
@@ -173,6 +193,8 @@ def evaluate_existing_finance_record(
             "latency_ms": payload.latency_ms,
             "system": {
                 "prediction": prediction,
+                "pipeline_trace": pipeline_trace,
+                "error_analysis": error_analysis,
                 "score": score,
                 "ocr_impact": estimate_ocr_impact(text, truth, score),
                 "workbook": verify_workbook(record),
@@ -249,6 +271,8 @@ def list_saved_finance_evaluations(
                 "error": row.get("error_message"),
                 "system": {
                     "prediction": row.get("prediction") or {},
+                    "pipeline_trace": row.get("pipeline_trace") or {},
+                    "error_analysis": row.get("error_analysis") or {},
                     "score": {
                         "fields": row.get("field_scores") or {},
                         "correct_fields": row.get("correct_fields") or 0,

@@ -26,7 +26,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
       total: Number(summary.total || cases.length),
       hitAt1: summary.hit_at_1 ?? hitAt(1),
       hitAt3: summary.hit_at_3 ?? hitAt(3),
-      hitAt5: summary.hit_at_5 ?? hitAt(5),
+      hitAt4: summary.hit_at_4 ?? hitAt(4),
       recall: summary.recall_at_k,
       mrr: summary.mrr,
       contextPrecision: summary.context_precision ?? summary.citation_accuracy,
@@ -38,7 +38,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
   }, [evaluation]);
   const metricValue = (value) => value == null ? '—' : percent(value);
   const retrievalMetrics = [
-    ['Hit@1', metrics?.hitAt1], ['Hit@3', metrics?.hitAt3], ['Hit@5', metrics?.hitAt5],
+    ['Hit@1', metrics?.hitAt1], ['Hit@3', metrics?.hitAt3], ['Hit@4', metrics?.hitAt4],
     ['Recall@K', metrics?.recall], ['MRR', metrics?.mrr], ['Context Precision', metrics?.contextPrecision],
   ];
   const answerMetrics = [

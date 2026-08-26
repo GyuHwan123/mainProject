@@ -117,7 +117,7 @@ async def evaluate_rag(
     answer_threshold = settings.RAG_EVALUATION_ANSWER_THRESHOLD
     filename_to_id, title_to_id = _catalog_maps()
     retrieval_scores: dict[str, list[float]] = {
-        "hit": [], "hit_at_1": [], "hit_at_3": [], "hit_at_5": [],
+        "hit": [], "hit_at_1": [], "hit_at_3": [], "hit_at_4": [], "hit_at_5": [],
         "recall": [], "mrr": [], "ndcg": [],
     }
     answer_accuracies: list[float] = []
@@ -140,6 +140,7 @@ async def evaluate_rag(
             retrieval_scores["hit"].append(float(hit))
             retrieval_scores["hit_at_1"].append(float(bool(expected.intersection(retrieved_documents[:1]))))
             retrieval_scores["hit_at_3"].append(float(bool(expected.intersection(retrieved_documents[:3]))))
+            retrieval_scores["hit_at_4"].append(float(bool(expected.intersection(retrieved_documents[:4]))))
             retrieval_scores["hit_at_5"].append(float(bool(expected.intersection(retrieved_documents[:5]))))
             retrieval_scores["recall"].append(recall)
             retrieval_scores["mrr"].append(reciprocal_rank)
@@ -211,6 +212,7 @@ async def evaluate_rag(
             "hit_at_k": _mean(retrieval_scores["hit"]),
             "hit_at_1": _mean(retrieval_scores["hit_at_1"]),
             "hit_at_3": _mean(retrieval_scores["hit_at_3"]),
+            "hit_at_4": _mean(retrieval_scores["hit_at_4"]),
             "hit_at_5": _mean(retrieval_scores["hit_at_5"]),
             "recall_at_k": _mean(retrieval_scores["recall"]),
             "mrr": _mean(retrieval_scores["mrr"]),

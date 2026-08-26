@@ -526,7 +526,8 @@ export default function OCRPage() {
       clearPendingReceipts();
       clearFinanceEvaluationRuns();
       queueFinanceEvaluationInput(evaluationDatasetFile, files);
-      navigate('/reports?view=developer&developerReport=receipt');
+      localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment');
+      navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment');
       return;
     }
     clearPendingReceipts();

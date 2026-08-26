@@ -60,8 +60,8 @@ export default function Sidebar() {
     <div className="brand-wrap"><div className="brand-mark">P</div><div className="brand-name">PicToText</div></div>
     <nav className="sidebar-nav">{visibleItems.map((item) => {
       const opensReceiptReport = item.path === '/reports' && location.pathname === '/ocr' && isDeveloper;
-      const destination = opensReceiptReport ? '/reports?view=developer&developerReport=receipt' : item.path;
-      return <Link key={item.path} to={destination} onClick={() => { if (opensReceiptReport) localStorage.setItem('pic_to_text_developer_report', 'receipt'); }} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>;
+      const destination = opensReceiptReport ? '/reports?view=developer&developerReport=receipt&receiptTab=experiment' : item.path;
+      return <Link key={item.path} to={destination} onClick={() => { if (opensReceiptReport) { localStorage.setItem('pic_to_text_developer_report', 'receipt'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); } }} className={`nav-item ${location.pathname === item.path ? 'active' : ''}`} title={item.label}><span>{item.icon}</span></Link>;
     })}</nav>
     <div className="sidebar-settings" ref={settingsRef}>
       {settingsOpen && <div className="settings-menu" role="menu">

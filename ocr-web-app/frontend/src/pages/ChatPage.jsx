@@ -392,11 +392,11 @@ function ChatPageContent() {
         documentId: item.document_id, pageNumber: item.page_number, bbox: item.bbox,
       }));
       setSources(relevant);
-      if (!sessionId) {
+      if (!sessionId && activeId) {
         try {
           const { data: session } = await apiClient.post('/chatbot/sessions', {
             title: question.slice(0, 120),
-            document_id: activeDoc?.documentId,
+            document_id: activeId,
           });
           sessionId = session.id;
           setActiveSessionId(sessionId);

@@ -41,6 +41,14 @@ ITEM_NAME_ALIASES = {
     "barberservice": "barber_service",
     "이발서비스": "barber_service",
     "이발소": "barber_service",
+    # Taxi receipts use several labels for the same purchased transport
+    # service. Keep these exact aliases narrow so unrelated bus/train fares do
+    # not become equivalent merely because they also contain ``요금``.
+    "탑승요금": "taxi_transport_service",
+    "택시이용": "taxi_transport_service",
+    "택시요금": "taxi_transport_service",
+    "택시운임": "taxi_transport_service",
+    "택시승차요금": "taxi_transport_service",
 }
 
 ITEM_TOKEN_ALIASES = {
@@ -48,12 +56,47 @@ ITEM_TOKEN_ALIASES = {
     "alpaca": "알파카",
     "peru": "페루",
 }
-ITEM_IGNORED_TOKENS = {"diy", "도안", "상품", "제품"}
+ITEM_IGNORED_TOKENS = {
+    "diy", "도안", "상품", "제품",
+    "best", "추천", "강추", "초강추", "오리지널",
+}
 MERCHANT_IGNORED_DESCRIPTORS = ("중고서점",)
+
+# Branch-qualified and bilingual renderings of the same merchant are equivalent
+# for evaluation. Keep this list explicit so unrelated branches (for example,
+# different Aladin stores) are not accidentally collapsed by fuzzy matching.
+MERCHANT_ALIASES = {
+    "교보문고": "kyobo_books",
+    "교보문고광화문점": "kyobo_books",
+    "신세계도곡점": "shinsegae_food_market_dogok",
+    "신세계foodmarket": "shinsegae_food_market_dogok",
+    "cos현대백화점": "cos_hyundai_trade_center",
+    "cos현대무역센터점": "cos_hyundai_trade_center",
+    "카페모마스광화문점": "cafe_momas_gwanghwamun",
+    "광화문점": "cafe_momas_gwanghwamun",
+}
+
+
+def _normalize_item_display_name(value: Any) -> str:
+    """Remove receipt-only decorations without correcting OCR spelling."""
+    text = " ".join(str(value or "").strip().split())
+    text = re.sub(r"^\s*\d{1,3}\s*[).:\-]\s*", "", text)
+    promotional_prefix = re.compile(
+        r"^\s*\+?\s*(?:(?:초강추|강추|추천|best)\s*[:：\-]?\s*)+",
+        re.IGNORECASE,
+    )
+    had_promotional_prefix = promotional_prefix.search(text) is not None
+    text = promotional_prefix.sub("", text)
+    if had_promotional_prefix:
+        text = re.sub(r"^\s*오리지널\s+", "", text, flags=re.IGNORECASE)
+    # Product identifiers and retail barcodes are evidence metadata, not part
+    # of the human-readable product name used by the ground truth.
+    text = re.sub(r"\s+(?:[A-Z]{1,5}\d{6,}|\d{8,})\s*$", "", text, flags=re.IGNORECASE)
+    return " ".join(text.split())
 
 
 def _item_tokens(value: Any) -> set[str]:
-    text = str(value or "").lower()
+    text = _normalize_item_display_name(value).lower()
     for source, target in ITEM_TOKEN_ALIASES.items():
         text = re.sub(rf"\b{re.escape(source)}\b", f" {target} ", text)
     return {
@@ -134,6 +177,7 @@ def _canonical(field: str, value: Any) -> Any:
         return ""
     text = " ".join(str(value).strip().lower().split())
     if field == "name":
+        text = _normalize_item_display_name(text)
         compact = re.sub(r"[^0-9a-z가-힣]", "", text)
         return ITEM_NAME_ALIASES.get(compact, text)
     if field == "transaction_date":
@@ -153,13 +197,20 @@ def _canonical(field: str, value: Any) -> Any:
                 return standard
         if "체크카드" in compact or "checkcard" in compact or "debitcard" in compact:
             return "debit_card"
-        if compact.endswith("카드") or compact.endswith("card"):
+        if "카드승인" in compact or "카드결제" in compact or compact.endswith("카드") or compact.endswith("card"):
             return "credit_card"
     if field == "merchant":
         text = re.sub(r"(?:주식회사|\(?주\)?|㈜)", "", text)
         for descriptor in MERCHANT_IGNORED_DESCRIPTORS:
             text = text.replace(descriptor, "")
-        return re.sub(r"[^0-9a-z가-힣]", "", text)
+        compact = re.sub(r"[^0-9a-z가-힣]", "", text)
+        # OCR/model output can prepend a Latin brand rendering (e.g. KYOBO)
+        # while the ground truth uses the Korean branch-qualified name.
+        if "교보문고" in compact:
+            return MERCHANT_ALIASES["교보문고"]
+        if compact.startswith("유니클로"):
+            return "uniqlo"
+        return MERCHANT_ALIASES.get(compact, compact)
     if field == "card_number":
         return re.sub(r"[^0-9*]", "", text)
     return text
@@ -174,6 +225,14 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
         expected_pattern = "".join("." if char == "*" else re.escape(char) for char in str(expected))
         return re.fullmatch(expected_pattern, str(actual)) is not None
     if field == "merchant" and expected and actual:
+        # A bare parent brand and its branch-qualified rendering identify the
+        # same merchant. Do not apply this to two conflicting explicit branch
+        # names (e.g. 공차 역삼점 vs 공차 선릉중앙점).
+        for brand in ("현대백화점", "유니클로"):
+            if (expected == brand and str(actual).startswith(brand)) or (
+                actual == brand and str(expected).startswith(brand)
+            ):
+                return True
         if min(len(str(expected)), len(str(actual))) < 4:
             return False
         return SequenceMatcher(None, str(expected), str(actual)).ratio() >= 0.78

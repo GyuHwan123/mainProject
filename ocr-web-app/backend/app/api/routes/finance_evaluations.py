@@ -25,6 +25,20 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 
 
+def _prediction_from_finance_record(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Rebuild the scored schema from persisted root and structured fields."""
+    structured = record.get("structured_data") or {}
+    prediction = {
+        field: record.get(field) if record.get(field) is not None else structured.get(field)
+        for field in CORE_FIELDS
+    }
+    prediction["items"] = structured.get("items") or []
+    summary = structured.get("receipt_summary") if isinstance(structured.get("receipt_summary"), dict) else {}
+    if prediction.get("total_quantity") is None:
+        prediction["total_quantity"] = summary.get("stated_total_quantity")
+    return prediction, structured
+
+
 def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, Any]:
     """Expose the same compact OCR evidence that is passed to the receipt LLM."""
     page_list = pages or []
@@ -78,7 +92,7 @@ class FinanceRecordEvaluationRequest(BaseModel):
 class FinanceEvaluationBatchRequest(BaseModel):
     batch_name: str = Field(min_length=1, max_length=200)
     dataset_name: str | None = None
-    model_name: str = Field(min_length=1, max_length=200)
+    model_name: str | None = Field(default=None, max_length=200)
     total_items: int = Field(default=0, ge=0, le=10000)
     evaluation_mode: Literal["SINGLE", "BULK"] = "SINGLE"
 
@@ -152,9 +166,8 @@ def evaluate_existing_finance_record(
     # the requested record with the current upload's OCR evidence for scoring.
     text = (document.get("extracted_text") or "").strip()
     truth = normalize_ground_truth(payload.ground_truth)
-    prediction = {field: record.get(field) for field in CORE_FIELDS}
-    prediction["items"] = (record.get("structured_data") or {}).get("items") or []
-    score = score_fields(prediction, truth)
+    prediction, structured = _prediction_from_finance_record(record)
+    score = score_fields(prediction, truth, structured)
     response = {
         "document_id": payload.document_id,
         "document_name": document.get("file_name") or "receipt",
@@ -201,7 +214,7 @@ def create_finance_evaluation_batch(
         user_email=user.email,
         batch_name=payload.batch_name,
         dataset_name=payload.dataset_name,
-        model_name=payload.model_name,
+        model_name=payload.model_name or settings.RECEIPTS_LLM_MODEL or "final-service",
         total_items=payload.total_items,
         evaluation_mode=payload.evaluation_mode,
     )

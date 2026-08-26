@@ -29,7 +29,7 @@ class ChatReply(BaseModel):
 
 class ChatSessionCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
-    document_id: str
+    document_id: str | None = None
 
 
 class ChatMessageCreate(BaseModel):

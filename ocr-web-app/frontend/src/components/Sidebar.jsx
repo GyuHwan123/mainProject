@@ -48,6 +48,8 @@ export default function Sidebar() {
     try {
       await supabase?.auth.signOut();
     } finally {
+      localStorage.removeItem(`docunex_chat_state:${currentUser.email || 'anonymous'}`);
+      localStorage.removeItem('docunex_active_chat_session');
       clearAppSession();
       navigate('/login', { replace: true });
       window.location.reload();

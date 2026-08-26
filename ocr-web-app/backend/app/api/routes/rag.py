@@ -1,15 +1,36 @@
+import json
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
 from app.models.user import User
 from app.services.rag_service import rag_service
-from app.services.supabase_service import supabase_service
+from app.services.supabase_service import COMPANY_RAG_DOCUMENT_IDS, supabase_service
 from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
 
 router = APIRouter()
+
+COMPANY_DOCUMENTS_DIR = (
+    Path(__file__).resolve().parents[4]
+    / "models" / "bge-m3" / "data" / "company_documents" / "documents"
+)
+COMPANY_DOCUMENT_CATALOG = COMPANY_DOCUMENTS_DIR.parent / "metadata" / "document_catalog.json"
+
+
+@lru_cache(maxsize=1)
+def _company_document_files() -> dict[str, str]:
+    catalog = json.loads(COMPANY_DOCUMENT_CATALOG.read_text(encoding="utf-8"))
+    allowed_ids = set(COMPANY_RAG_DOCUMENT_IDS)
+    return {
+        str(item["doc_id"]): str(item["filename"])
+        for item in catalog.get("documents", [])
+        if item.get("doc_id") in allowed_ids and item.get("filename")
+    }
 
 
 class RagSearchRequest(BaseModel):
@@ -21,6 +42,23 @@ class RagSearchRequest(BaseModel):
 @router.get("/documents")
 def list_documents(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     return supabase_service.list_rag_documents(user.email)
+
+
+@router.get("/company-documents/{doc_id}/file")
+def get_company_document_file(
+    doc_id: str, _user: User = Depends(require_current_user),
+) -> FileResponse:
+    filename = _company_document_files().get(doc_id)
+    if not filename:
+        raise HTTPException(status_code=404, detail="기업 공용문서를 찾을 수 없습니다.")
+    documents_dir = COMPANY_DOCUMENTS_DIR.resolve()
+    file_path = (documents_dir / filename).resolve()
+    if file_path.parent != documents_dir or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="기업 공용문서 원본을 찾을 수 없습니다.")
+    return FileResponse(
+        file_path, media_type="application/pdf", filename=filename,
+        content_disposition_type="inline",
+    )
 
 
 @router.post("/documents/{document_id}/index")

@@ -32,6 +32,79 @@ def _get_reranker() -> Any:
     return FlagReranker(RERANK_MODEL, use_fp16=torch.cuda.is_available())
 
 
+def _compute_rerank_scores_once(
+    reranker: Any, sentence_pairs: list[list[str]], *, normalize: bool = True,
+) -> list[float]:
+    import numpy as np
+    import torch
+    from FlagEmbedding.utils.tokenizer_compat import prepare_for_model_compat
+
+    sentence_pairs = reranker.get_detailed_inputs(sentence_pairs)
+    batch_size = reranker.batch_size
+    max_length = reranker.max_length
+    query_max_length = reranker.query_max_length or max_length * 3 // 4
+    device = reranker.target_devices[0]
+    if device == "cpu":
+        reranker.use_fp16 = False
+    if reranker.use_fp16:
+        reranker.model.half()
+    reranker.model.to(device)
+    reranker.model.eval()
+
+    all_inputs = []
+    for start_index in range(0, len(sentence_pairs), batch_size):
+        sentence_batch = sentence_pairs[start_index:start_index + batch_size]
+        query_inputs = reranker.tokenizer(
+            [pair[0] for pair in sentence_batch], return_tensors=None,
+            add_special_tokens=False, max_length=query_max_length, truncation=True,
+        )["input_ids"]
+        passage_inputs = reranker.tokenizer(
+            [pair[1] for pair in sentence_batch], return_tensors=None,
+            add_special_tokens=False, max_length=max_length, truncation=True,
+        )["input_ids"]
+        all_inputs.extend(
+            prepare_for_model_compat(
+                reranker.tokenizer, query_input, passage_input,
+                truncation="only_second", max_length=max_length, padding=False,
+            )
+            for query_input, passage_input in zip(query_inputs, passage_inputs)
+        )
+
+    length_sorted_indices = np.argsort([-len(item["input_ids"]) for item in all_inputs])
+    sorted_inputs = [all_inputs[index] for index in length_sorted_indices]
+
+    while True:
+        try:
+            first_batch = reranker.tokenizer.pad(
+                sorted_inputs[:min(len(sorted_inputs), batch_size)],
+                padding=True, return_tensors="pt",
+            ).to(device)
+            with torch.no_grad():
+                first_scores = reranker.model(
+                    **first_batch, return_dict=True,
+                ).logits.view(-1).float().cpu().numpy().tolist()
+            break
+        except (RuntimeError, torch.cuda.OutOfMemoryError):
+            batch_size = batch_size * 3 // 4
+
+    all_scores = first_scores
+    for start_index in range(batch_size, len(sorted_inputs), batch_size):
+        inputs = reranker.tokenizer.pad(
+            sorted_inputs[start_index:start_index + batch_size],
+            padding=True, return_tensors="pt",
+        ).to(device)
+        with torch.no_grad():
+            scores = reranker.model(
+                **inputs, return_dict=True,
+            ).logits.view(-1).float()
+        all_scores.extend(scores.cpu().numpy().tolist())
+
+    restored_scores = [all_scores[index] for index in np.argsort(length_sorted_indices)]
+    if normalize:
+        restored_scores = [float(1 / (1 + np.exp(-score))) for score in restored_scores]
+    return restored_scores
+
+
 SECTION_TITLES = {
     "인적사항", "기본사항", "학력", "학력사항", "경력", "경력사항", "교육", "교육/연수",
     "교육및연수", "연수사항", "수상", "수상내용", "자격", "자격증", "자격사항",
@@ -236,7 +309,9 @@ async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> lis
     try:
         reranker = await asyncio.to_thread(_get_reranker)
         pairs = [[query, str(candidate.get("content") or "")] for candidate in candidates]
-        scores = await asyncio.to_thread(reranker.compute_score, pairs, normalize=True)
+        scores = await asyncio.to_thread(
+            _compute_rerank_scores_once, reranker, pairs, normalize=True,
+        )
         if hasattr(scores, "tolist"):
             scores = scores.tolist()
         if not isinstance(scores, (list, tuple)):

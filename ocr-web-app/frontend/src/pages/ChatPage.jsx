@@ -9,6 +9,7 @@ import '../style/ChatPage.scss';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
+const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
 const PRIVACY_RESPONSE = '요청하신 정보는 개인정보 보호 정책에 따라 제공할 수 없습니다. 채용 검토에 필요한 학력, 경력, 기술, 교육 및 자격 정보는 질문할 수 있습니다.';
 const SENSITIVE_QUERY_PATTERN = /(생년월일|생년|몇\s*살|나이|연령|성별|남자인지|여자인지|휴대폰|핸드폰|전화번호|연락처|이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌번호|통장번호)/i;
 
@@ -124,6 +125,7 @@ function EvidencePreview({ source, onUpload, uploading }) {
   const [privacyPages, setPrivacyPages] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const bbox = Number(source?.pageNumber || 1) === currentPage ? source?.bbox : null;
+  const isCompanyDocument = COMPANY_DOCUMENT_ID_PATTERN.test(source?.documentId || '');
 
   useEffect(() => {
     setCurrentPage(Math.max(1, Number(source?.pageNumber) || 1));
@@ -138,8 +140,12 @@ function EvidencePreview({ source, onUpload, uploading }) {
       if (!source?.documentId) { setPreview({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }); return; }
       setPreview({ type: 'loading', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
       const [{ data: blob }, { data: privacy }] = await Promise.all([
-        apiClient.get(`/ocr/documents/${source.documentId}/file`, { responseType: 'blob', timeout: 60000 }),
-        apiClient.get(`/ocr/documents/${source.documentId}/privacy-boxes`),
+        apiClient.get(isCompanyDocument
+          ? `/rag/company-documents/${encodeURIComponent(source.documentId)}/file`
+          : `/ocr/documents/${source.documentId}/file`, { responseType: 'blob', timeout: 60000 }),
+        isCompanyDocument
+          ? Promise.resolve({ data: [] })
+          : apiClient.get(`/ocr/documents/${source.documentId}/privacy-boxes`),
       ]);
       if (active) setPrivacyPages(Array.isArray(privacy) ? privacy : []);
       const name = source.source || '';
@@ -175,7 +181,7 @@ function EvidencePreview({ source, onUpload, uploading }) {
       }
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [source?.documentId, source?.source]);
+  }, [isCompanyDocument, source?.documentId, source?.source]);
 
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
@@ -202,9 +208,9 @@ function EvidencePreview({ source, onUpload, uploading }) {
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
     {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
     {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
-    {['unsupported', 'error'].includes(preview.type) && <div className="evidence-preview-empty"><strong>미리보기를 표시할 수 없습니다</strong><button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button></div>}
+    {['unsupported', 'error'].includes(preview.type) && <div className="evidence-preview-empty"><strong>{isCompanyDocument ? '기업 공용문서 원본을 표시할 수 없습니다' : '미리보기를 표시할 수 없습니다'}</strong>{!isCompanyDocument && <button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button>}</div>}
     </div>
-  </div></div>;
+  </div>{isCompanyDocument && source.content && <aside className="company-evidence-text"><strong>근거 텍스트</strong><p>{source.content}</p></aside>}</div>;
 }
 
 function ChatPageContent() {
@@ -386,7 +392,6 @@ function ChatPageContent() {
         documentId: item.document_id, pageNumber: item.page_number, bbox: item.bbox,
       }));
       setSources(relevant);
-      setSelectedSource(relevant[0] || null);
       if (!sessionId) {
         try {
           const { data: session } = await apiClient.post('/chatbot/sessions', {
@@ -487,6 +492,7 @@ function ChatPageContent() {
     setEvaluationStatus('평가 중...');
     try {
       const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 3600000 });
+      localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
       setEvaluationResult(data); setEvaluationStatus('완료');
     } catch (error) {
       const detail = error.response?.data?.detail;

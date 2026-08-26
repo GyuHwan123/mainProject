@@ -551,7 +551,7 @@ function ChatPageContent() {
     setEvaluationError(''); setEvaluationResult(null);
     setEvaluationStatus('평가 중...');
     try {
-      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 3600000 });
+      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 36000000 });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
       setEvaluationResult(data); setEvaluationStatus('완료');
     } catch (error) {

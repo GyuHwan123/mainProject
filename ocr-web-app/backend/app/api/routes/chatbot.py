@@ -96,7 +96,7 @@ async def generate(
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")
     logger.warning("Ollama model call: model=%s json_format=%s", effective_model, json_format)
     try:
-        async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+        async with httpx.AsyncClient(base_url=base_url, timeout=1200) as client:
             response = await client.post("/api/generate", json=payload)
             response.raise_for_status()
             answer = response.json().get("response", "").strip()

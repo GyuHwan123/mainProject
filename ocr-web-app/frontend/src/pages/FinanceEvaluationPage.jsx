@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IoDownloadOutline } from 'react-icons/io5';
 
 import apiClient from '../api/client';
@@ -115,6 +115,49 @@ function receiptTableRows(pages) {
       page: page.page || 1, table: tableIndex + 1, row: rowIndex + 1,
       cells: (row || []).map((cell) => String(cell ?? '').trim()),
     }))));
+}
+
+const ERROR_CATEGORY_LABELS = {
+  OCR_ERROR: 'OCR 오류', CANDIDATE_ERROR: '후보 생성 오류', LLM_ERROR: 'LLM 오류',
+  VALIDATION_ERROR: '검증 오류', NORMALIZATION_ERROR: '정규화 오류', UNKNOWN: '원인 미확정',
+};
+const ERROR_CATEGORY_COLORS = {
+  OCR_ERROR: '#e64949', CANDIDATE_ERROR: '#f59e0b', LLM_ERROR: '#5b5ce2',
+  VALIDATION_ERROR: '#15966f', NORMALIZATION_ERROR: '#0e9fbb', UNKNOWN: '#8a97a8',
+};
+
+function tagsForMismatch(field, tags) {
+  const itemMatch = /^items\[(\d+)]\.(.+)$/.exec(field);
+  if (itemMatch) {
+    const scope = `items[${itemMatch[1]}]`;
+    return tags.filter((tag) => tag.scope === scope && (!tag.field || tag.field === itemMatch[2]));
+  }
+  if (field === 'items.count') {
+    return tags.filter((tag) => ['ITEM_MISSING', 'EXTRA_ITEM', 'DUPLICATE_ITEM', 'SUMMARY_ITEM_INCONSISTENCY'].includes(tag.code));
+  }
+  return tags.filter((tag) => tag.field === field);
+}
+
+function ErrorTag({ tag }) {
+  const reviewLabel = tag.decision === 'AUTO' ? `${Math.round(Number(tag.confidence || 0) * 100)}%` : tag.decision === 'NEEDS_REVIEW' ? '검토 필요' : '원인 미확정';
+  return <span className={`error-tag error-tag-${String(tag.category || 'UNKNOWN').toLowerCase()}`} title={tag.message || tag.code}>
+    <b>{ERROR_CATEGORY_LABELS[tag.category] || tag.category}</b><code>{tag.code}</code><em>{reviewLabel}</em>
+  </span>;
+}
+
+function displayEvaluationValue(value) {
+  if (value == null || value === '') return '-';
+  if (typeof value === 'object') return JSON.stringify(value, null, 0);
+  return String(value);
+}
+
+function BatchEvaluationProgress({ progress }) {
+  const percent = progress.total ? Math.round(progress.completed / progress.total * 100) : 0;
+  return <div className="batch-evaluation-progress" role="progressbar" aria-label="일괄 평가 진행률" aria-valuemin="0" aria-valuemax={progress.total} aria-valuenow={progress.completed}>
+    <div><strong>{progress.running ? '일괄 평가 진행 중' : '일괄 평가 완료'}</strong><span>{progress.completed} / {progress.total}단계 · {percent}%</span></div>
+    <i><b style={{ width: `${percent}%` }} /></i>
+    <small>{progress.stage === 'finalizing' ? '평가 결과를 DB에 저장하고 최종 집계하는 중입니다.' : progress.running ? `현재 처리: ${progress.currentFile || '준비 중'}` : `${progress.imageTotal}개 이미지 평가와 최종 집계가 완료되었습니다.`}</small>
+  </div>;
 }
 
 function normalizedEvidence(value) {
@@ -249,6 +292,8 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   const score = result.system?.score || {};
   const impact = result.system?.ocr_impact;
   const workbook = result.system?.workbook;
+  const errorAnalysis = result.system?.error_analysis || {};
+  const errorTags = Array.isArray(errorAnalysis.error_tags) ? errorAnalysis.error_tags : [];
   if (Array.isArray(run.ocr_pages)) OCR_PREVIEW_CONTEXT.set(run.ocr_pages, {
     diagnostics: run.ocr_diagnostics,
     prediction: result.system?.prediction,
@@ -262,7 +307,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
       actual: `결과 ${String(field.actual ?? '-')} · 정답 ${String(field.expected ?? '-')}`,
     }));
   const unmatched = fieldMatches.filter((field) => !field.correct);
-  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => <p key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em></p>)}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div><details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
+  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR Excel형 워크시트</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}<details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
 }
 
 export function datasetRows(payload) {
@@ -280,13 +325,15 @@ export function truthOf(row) {
   const items = Array.isArray(source['구매물품']) ? source['구매물품'].map((item) => ({
     name: item['상품명'], quantity: item['수량'], unit_price: item['단가'], total_amount: item['금액'],
   })) : [];
-  const category = source['구매물품']?.find((item) => item?.['카테고리'])?.['카테고리'];
+  const category = source['카테고리'] ?? source['구매물품']?.find((item) => item?.['카테고리'])?.['카테고리'];
+  const totalQuantity = source['총 물품 수량'] ?? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
   return {
     merchant: source['가게명'],
     transaction_date: String(source['구매일자'] || '').slice(0, 10) || null,
     expense_category: category,
     total_amount: source['총 결제액'],
     payment_method: source['결제방식'],
+    total_quantity: totalQuantity,
     items,
   };
 }
@@ -360,6 +407,14 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const [batchComplete, setBatchComplete] = useState(() => rememberedBatchState().batchComplete);
   const [queuedBatchFiles, setQueuedBatchFiles] = useState(null);
   const [pendingReceipts, setPendingReceipts] = useState(() => readReceiptWorkspace().pendingEvaluations);
+  const [batchHistory, setBatchHistory] = useState([]);
+  const [evaluationMode, setEvaluationMode] = useState('single');
+  const [hasSessionBatchResults, setHasSessionBatchResults] = useState(false);
+  const [batchProgress, setBatchProgress] = useState(null);
+
+  const loadBatchHistory = useCallback(() => apiClient.get('/finance-evaluations/batches')
+    .then(({ data }) => setBatchHistory(Array.isArray(data) ? data : []))
+    .catch(() => setBatchHistory([])), []);
 
   const batchRuns = useMemo(() => activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId) : [], [runs, activeBatchId]);
   const models = useMemo(() => {
@@ -382,9 +437,46 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       };
     });
   }, [summaries]);
+  const batchMismatchRows = useMemo(() => batchRuns.flatMap((run) => (run.results || []).flatMap((result) => {
+    const tags = result.system?.error_analysis?.error_tags || [];
+    return flattenedMatches(result.system?.score).filter((field) => !field.correct).map((field) => ({
+      imageId: run.document_id || `dataset-${Number(run.dataset_index || 0) + 1}`,
+      imageName: run.matched_image || run.document_name || '-',
+      datasetIndex: Number(run.dataset_index || 0) + 1,
+      model: result.model_name,
+      field: field.field,
+      label: field.label,
+      expected: field.expected,
+      actual: field.actual,
+      tags: tagsForMismatch(field.field, tags),
+    }));
+  })), [batchRuns]);
+  const batchErrorDistribution = useMemo(() => {
+    const counts = {};
+    batchRuns.forEach((run) => (run.results || []).forEach((result) => (result.system?.error_analysis?.error_tags || []).forEach((tag) => {
+      const key = tag.category || 'UNKNOWN'; counts[key] = (counts[key] || 0) + 1;
+    })));
+    const total = Object.values(counts).reduce((sum, value) => sum + value, 0);
+    let offset = 0;
+    const items = Object.entries(counts).map(([category, count]) => {
+      const start = total ? offset / total * 100 : 0; offset += count;
+      return { category, count, percent: total ? count / total * 100 : 0, start, end: total ? offset / total * 100 : 0, color: ERROR_CATEGORY_COLORS[category] || ERROR_CATEGORY_COLORS.UNKNOWN };
+    });
+    return { total, items, background: items.length ? `conic-gradient(${items.map((item) => `${item.color} ${item.start}% ${item.end}%`).join(',')})` : '#edf1f5' };
+  }, [batchRuns]);
+  const batchFieldAccuracy = useMemo(() => {
+    const fields = {};
+    batchRuns.forEach((run) => (run.results || []).forEach((result) => flattenedMatches(result.system?.score).forEach((field) => {
+      const entry = fields[field.label] || { label: field.label, correct: 0, total: 0 };
+      entry.total += 1; entry.correct += Number(field.correct); fields[field.label] = entry;
+    })));
+    return Object.values(fields).map((entry) => ({ ...entry, rate: entry.total ? entry.correct / entry.total : 0 })).sort((a, b) => a.rate - b.rate || a.label.localeCompare(b.label));
+  }, [batchRuns]);
   const latestRun = runs[runs.length - 1];
   const latestPendingReceipt = pendingReceipts[pendingReceipts.length - 1];
   const latestDocument = latestPendingReceipt || latestRun;
+
+  useEffect(() => { loadBatchHistory(); }, [loadBatchHistory]);
 
   useEffect(() => {
     if (!latestDocument?.document_id || imagePreview?.name === latestDocument.document_name) return undefined;
@@ -480,6 +572,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const runEvaluation = async (file) => {
     if (!file || !dataset.length || loading) return;
     clearPendingReceipts();
+    setEvaluationMode('single');
     clearFinanceEvaluationRuns();
     setRuns([]);
     setPendingReceipts([]);
@@ -515,6 +608,9 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       return;
     }
     clearPendingReceipts();
+    setEvaluationMode('batch');
+    setHasSessionBatchResults(false);
+    setBatchProgress({ completed: 0, total: files.length + 1, imageTotal: files.length, currentFile: '', stage: 'images', running: true });
     clearFinanceEvaluationRuns();
     setRuns([]);
     setPendingReceipts([]);
@@ -532,26 +628,36 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     } catch (error) {
       setStatus(`평가 배치를 저장하지 못했습니다: ${error.response?.data?.detail || error.message}`);
       setLoading(false);
+      setBatchProgress(null);
       if (folderRef.current) folderRef.current.value = '';
       return;
     }
     setActiveBatchId(batchId); setBatchComplete(false);
     let accumulated = []; let completed = 0; const errors = [];
+    let processed = 0;
     for (const file of files) {
+      setBatchProgress({ completed: processed, total: files.length + 1, imageTotal: files.length, currentFile: file.name, stage: 'images', running: true });
       try {
         const matched = matchDatasetRow(file);
         setStatus(`폴더 일괄 평가 ${completed + 1}/${files.length} · ${file.name}`);
         const entry = await evaluateFile(file, matched, batchId);
         accumulated = [...accumulated, entry]; saveRuns(accumulated); completed += 1;
+        setHasSessionBatchResults(true);
       } catch (error) {
         errors.push(`${file.name}: ${error.response?.data?.detail || error.message || '평가 실패'}`);
+      } finally {
+        processed += 1;
+        setBatchProgress({ completed: processed, total: files.length + 1, imageTotal: files.length, currentFile: file.name, stage: 'images', running: true });
       }
     }
+    setBatchProgress({ completed: files.length, total: files.length + 1, imageTotal: files.length, currentFile: files[files.length - 1]?.name || '', stage: 'finalizing', running: true });
     try {
       await apiClient.post(`/finance-evaluations/batches/${batchId}/finalize`);
+      loadBatchHistory();
     } catch (error) {
       errors.push(`배치 집계 저장: ${error.response?.data?.detail || error.message || '저장 실패'}`);
     }
+    setBatchProgress({ completed: files.length + 1, total: files.length + 1, imageTotal: files.length, currentFile: files[files.length - 1]?.name || '', stage: 'complete', running: false });
     setPipelineProgress(null); setLoading(false); setBatchComplete(completed >= 2);
     setStatus(`폴더 일괄 평가 완료 · 성공 ${completed}/${files.length}${errors.length ? ` · 실패 ${errors.length}` : ''}`);
     if (folderRef.current) folderRef.current.value = '';
@@ -607,8 +713,8 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     // component state, and an evaluation function is about to run.
     clearFinanceEvaluationInput(input);
     setQueuedBatchFiles(null);
-    if (files.length === 1) runEvaluation(files[0]);
-    else runFolderEvaluation(files);
+    if (files.length === 1) { setEvaluationMode('single'); runEvaluation(files[0]); }
+    else { setEvaluationMode('batch'); runFolderEvaluation(files); }
   }, [queuedBatchFiles, dataset.length, loading]);
 
   const exportResults = () => {
@@ -624,11 +730,13 @@ export default function FinanceEvaluationPage({ embedded = false }) {
         fieldErrorCounts[key] = (fieldErrorCounts[key] || 0) + 1;
         errorCases.push({
           dataset_index: Number(run.dataset_index) + 1,
+          image_id: run.document_id || null,
           image: run.matched_image || run.document_name,
           model: result.model_name,
           field: key,
           actual: field.actual ?? null,
           expected: field.expected ?? null,
+          error_tags: tagsForMismatch(field.field, result.system?.error_analysis?.error_tags || []),
         });
       });
     }));
@@ -655,27 +763,31 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     anchor.click(); URL.revokeObjectURL(url);
   };
 
+  const batchInsightsReady = hasSessionBatchResults && batchRuns.length > 0;
+
   return <div className={embedded ? 'finance-eval-embedded-shell' : 'app-shell finance-eval-shell'}>{!embedded && <Sidebar />}<main className={`finance-eval-page ${embedded ? 'embedded' : ''}`}>
-    <header><div><p>FINANCE MODEL LAB</p><h1>영수증 서비스 결과 평가</h1><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> {batchComplete && batchRuns.length > 1 ? '일괄 통계 JSON' : '결과 JSON'}</button></header>
+    <header><div><p>FINANCE MODEL LAB</p><div className="finance-eval-title-row"><h1>영수증 서비스 결과 평가</h1><nav className="finance-eval-mode-tabs" aria-label="평가 방식"><button type="button" className={evaluationMode === 'single' ? 'active' : ''} onClick={() => setEvaluationMode('single')}>단일 평가</button><button type="button" className={evaluationMode === 'batch' ? 'active' : ''} onClick={() => setEvaluationMode('batch')}>일괄 평가</button></nav></div><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> {evaluationMode === 'batch' ? '일괄 통계 JSON' : '결과 JSON'}</button></header>
     {!embedded && <section className="eval-setup">
       <label><span>정답 데이터</span><input type="file" accept=".json,application/json" onChange={(event) => loadDataset(event.target.files?.[0])} /><small>{datasetName || 'receipt_kr.json을 선택하세요'}</small></label>
       <label><span>평가 모델</span><small>.env의 RECEIPTS_LLM_MODEL을 사용합니다.</small></label>
       <label><span>현재 정답 항목</span><select disabled={!dataset.length} value={selectedIndex} onChange={(event) => setSelectedIndex(Number(event.target.value))}>{dataset.map((row, index) => <option value={index} key={`${nameOf(row)}-${index}`}>{index + 1}. {nameOf(row) || `항목 ${index + 1}`}</option>)}</select></label>
-      <button className="eval-upload" disabled={!dataset.length || loading} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : '평가 시작'}</button>
+      {evaluationMode === 'single' && <button className="eval-upload" disabled={!dataset.length || loading} onClick={() => imageRef.current?.click()}>{loading ? '평가 실행 중...' : '평가 시작'}</button>}
       <input ref={imageRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" onChange={(event) => runEvaluation(event.target.files?.[0])} />
-      <button className="eval-upload batch-upload" disabled={!dataset.length || loading} onClick={() => folderRef.current?.click()}>{loading ? '일괄 평가 중...' : '프로젝트 폴더 일괄 평가'}</button>
+      {evaluationMode === 'batch' && <button className="eval-upload batch-upload" disabled={!dataset.length || loading} onClick={() => folderRef.current?.click()}>{loading ? '일괄 평가 중...' : '프로젝트 폴더 일괄 평가'}</button>}
       <input ref={folderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => runFolderEvaluation(event.target.files)} />
       <p>{status}</p>
+      {evaluationMode === 'batch' && batchProgress && <BatchEvaluationProgress progress={batchProgress} />}
     </section>}
-    {embedded && <section className="eval-setup embedded-eval-status"><p>{status}</p></section>}
+    {embedded && <section className="eval-setup embedded-eval-status">{evaluationMode === 'batch' && batchProgress ? <BatchEvaluationProgress progress={batchProgress} /> : <p>{status}</p>}</section>}
 
-    {!!pendingReceipts.length && <section className="pending-receipt-evaluations">
+    {evaluationMode === 'single' && !!pendingReceipts.length && <section className="pending-receipt-evaluations">
       <header><div><h2>정답 데이터 없는 영수증</h2><p>자동 문서화에서 전달된 이미지입니다. 새로고침 전까지 이 화면에 유지됩니다.</p></div><span>{pendingReceipts.length}건 · 정답 데이터가 없습니다</span></header>
       <div>{pendingReceipts.map((receipt) => <PendingReceiptEvaluation key={receipt.document_id} receipt={receipt} />)}</div>
     </section>}
 
-    {batchComplete && batchRuns.length > 1 && <section className="eval-summary-grid">
-      {scoredSummaries.map((summary) => <article key={summary.model}>
+    {evaluationMode === 'batch' && <section className="batch-insight-grid">
+      <article className="batch-history-card"><header><div><h2>일괄 평가 이력</h2><p>DB에 저장된 최근 실행 목록</p></div><span>{batchHistory.length}회</span></header><div>{batchHistory.map((batch) => <section className={batch.id === activeBatchId ? 'active' : ''} key={batch.id}><div><strong>{batch.batch_name}</strong><small>{batch.created_at ? new Date(batch.created_at).toLocaleString('ko-KR') : '-'}</small></div><span>{batch.completed_items ?? 0}/{batch.total_items ?? 0}</span><em>{batch.status}</em></section>)}{!batchHistory.length && <p className="eval-empty">저장된 일괄 평가가 없습니다.</p>}</div></article>
+      <section className="eval-summary-grid batch-selection-metrics">{batchInsightsReady && scoredSummaries.map((summary) => <article key={summary.model}>
         <small>TEST01~TEST20 선정 지표</small><h2 title={summary.model}>{summary.model}</h2>
         <strong>{summary.finalScore.toFixed(1)}점</strong><p>총점 100 · {summary.qualityGate ? '품질 게이트 통과' : '품질 게이트 재검토'}</p>
         <dl>
@@ -687,15 +799,33 @@ export default function FinanceEvaluationPage({ embedded = false }) {
           <div><dt>속도점수</dt><dd>{summary.speedScore == null ? '재평가 필요' : `${summary.speedScore.toFixed(2)} / 3`}</dd></div>
           <div><dt>로컬 비용점수</dt><dd>{summary.costScore.toFixed(1)} / 2</dd></div>
         </dl>
-      </article>)}
+      </article>)}{!batchInsightsReady && <article className="batch-insight-empty"><small>선정 지표</small><h2>평가 결과 대기</h2><p>일괄 평가를 진행하면 선정 지표가 생성됩니다.</p></article>}</section>
+      <article className="batch-error-chart"><header><div><h2>오류 유형 분포</h2><p>현재 일괄 평가의 오류 태그 기준</p></div><span>{batchInsightsReady ? batchErrorDistribution.total : 0}건</span></header>{batchInsightsReady ? <div><div className="error-donut" style={{ background: batchErrorDistribution.background }}><i><strong>{batchErrorDistribution.total}</strong><small>총 오류</small></i></div><ul>{batchErrorDistribution.items.map((item) => <li key={item.category}><i style={{ background: item.color }} /><span>{ERROR_CATEGORY_LABELS[item.category] || item.category}</span><b>{item.count} ({item.percent.toFixed(1)}%)</b></li>)}</ul></div> : <p className="eval-empty">일괄 평가를 진행하면 오류 유형 분포가 생성됩니다.</p>}</article>
+      <article className="batch-field-chart"><header><div><h2>평균 필드별 매칭도</h2><p>현재 일괄 평가 전체 이미지 기준</p></div><span>{batchInsightsReady ? batchFieldAccuracy.length : 0}필드</span></header><div>{batchInsightsReady && batchFieldAccuracy.map((field) => <section key={field.label}><span title={field.label}>{field.label}</span><i><b style={{ width: `${field.rate * 100}%` }} /></i><strong>{(field.rate * 100).toFixed(1)}%</strong></section>)}{(!batchInsightsReady || !batchFieldAccuracy.length) && <p className="eval-empty">{batchInsightsReady ? '필드 평가 결과가 없습니다.' : '일괄 평가를 진행하면 필드별 매칭도가 생성됩니다.'}</p>}</div></article>
     </section>}
 
-    <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 처리 화면이 여기에 표시됩니다.</p>}</section>
+    {evaluationMode === 'batch' && batchInsightsReady && <section className="batch-mismatch-panel">
+      <header><div><h2>매칭 실패 오류 목록</h2><p>일괄 평가에서 정답과 일치하지 않은 필드와 예상 원인을 이미지별로 표시합니다.</p></div><span>{batchMismatchRows.length}건</span></header>
+      <div className="batch-mismatch-table">
+        <div className="batch-mismatch-row batch-mismatch-head"><span>이미지 ID</span><span>이미지 이름</span><span>필드</span><span>정답</span><span>예측값</span><span>예상 오류 분류</span></div>
+        {batchMismatchRows.map((row, index) => <div className="batch-mismatch-row" key={`${row.imageId}-${row.model}-${row.field}-${index}`}>
+          <span title={row.imageId}><b>#{row.datasetIndex}</b><small>{row.imageId}</small></span>
+          <span title={row.imageName}>{row.imageName}<small>{row.model}</small></span>
+          <strong>{row.label}</strong>
+          <span title={displayEvaluationValue(row.expected)}>{displayEvaluationValue(row.expected)}</span>
+          <span title={displayEvaluationValue(row.actual)}>{displayEvaluationValue(row.actual)}</span>
+          <span className="batch-error-tags">{row.tags.length ? row.tags.map((tag, tagIndex) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tagIndex}`} />) : <em>분류 없음</em>}</span>
+        </div>)}
+        {!batchMismatchRows.length && <p className="eval-empty">일괄 평가에서 매칭 실패한 필드가 없습니다.</p>}
+      </div>
+    </section>}
 
-    <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 이미지도 실행 날짜와 시간이 다르면 별도 결과로 누적됩니다.</p></div><span>{runs.length}회</span></header>
+    {evaluationMode === 'single' && <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 처리 화면이 여기에 표시됩니다.</p>}</section>}
+
+    {evaluationMode === 'batch' && <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 이미지도 실행 날짜와 시간이 다르면 별도 결과로 누적됩니다.</p></div><span>{runs.length}회</span></header>
       <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>
       {[...runs].sort((a, b) => String(b.evaluated_at || '').localeCompare(String(a.evaluated_at || ''))).flatMap((run) => (run.results || []).map((result) => { const impact = result.system.ocr_impact; const likelyOcrErrors = impact?.counts?.LIKELY_OCR_ERROR || 0; const score = result.system.score; const workbook = result.system.workbook; return <div className="eval-row" key={`${run.dataset_name}-${run.dataset_index}-${run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{run.dataset_index + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{(score.field_accuracy * 100).toFixed(1)}%</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields}/{score.evaluated_fields}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span className={likelyOcrErrors ? 'ocr-error' : 'ok'}>{impact ? `${likelyOcrErrors}개 가능` : '-'}</span><span>{(result.latency_ms / 1000).toFixed(1)}초</span><details><summary>매칭 상세 및 OCR 영향 보기</summary><div>{Object.entries(score.fields || {}).map(([field, value]) => field === 'items' ? <p className={value.count_correct ? 'ok' : 'bad'} key={field}><b>품목 수</b><span>{value.actual_count}</span><em>정답 {value.expected_count} · 초과 {value.false_positive_count || 0}</em></p> : <p className={value.correct ? 'ok' : 'bad'} key={field}><b>{LABELS[field] || field}</b><span>{String(value.actual ?? '-')}</span><em>정답 {String(value.expected ?? '-')}</em></p>)}</div><OcrImpact impact={impact} /></details></div>; }))}
       {!runs.length && <p className="eval-empty">아직 저장된 평가 결과가 없습니다.</p>}</div>
-    </section>
+    </section>}
   </main></div>;
 }

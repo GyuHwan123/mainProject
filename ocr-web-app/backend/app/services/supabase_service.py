@@ -33,10 +33,13 @@ class SupabaseService:
     def _service_headers(self, *, json_content: bool = True) -> dict[str, str]:
         if not self.url or not self.service_role_key:
             raise HTTPException(status_code=503, detail="Supabase 서버 설정이 필요합니다.")
-        headers = {
-            "Authorization": f"Bearer {self.service_role_key}",
-            "apikey": self.service_role_key,
-        }
+        headers = {"apikey": self.service_role_key}
+        # Legacy anon/service-role keys are JWTs and may be sent as Bearer
+        # credentials. New sb_publishable_/sb_secret_ keys are opaque API keys;
+        # sending those in Authorization makes PostgREST try to parse them as
+        # JWTs and reject the request (PGRST303).
+        if self.service_role_key.startswith("eyJ"):
+            headers["Authorization"] = f"Bearer {self.service_role_key}"
         if json_content:
             headers["Content-Type"] = "application/json"
         return headers
@@ -310,6 +313,23 @@ class SupabaseService:
             raise HTTPException(status_code=404, detail="재무 평가 배치를 찾을 수 없습니다.")
         return rows[0]
 
+    def list_finance_evaluation_batches(self, user_email: str, limit: int = 30) -> list[dict[str, Any]]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            params={
+                "select": "id,batch_name,dataset_name,model_name,status,total_items,completed_items,failed_items,summary_metrics,created_at,completed_at",
+                "user_id": f"eq.{user_id}",
+                "evaluation_mode": "eq.BULK",
+                "order": "created_at.desc",
+                "limit": str(max(1, min(int(limit), 100))),
+            },
+            headers=self._service_headers(),
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "재무 평가 배치 목록 조회 실패")
+        return response.json()
+
     def save_finance_record_evaluation(
         self,
         *,
@@ -522,6 +542,63 @@ class SupabaseService:
         )
         self._raise_for_supabase(response, "재무 평가 결과 조회 실패")
         return response.json()
+
+    def list_finance_monitoring_data(
+        self,
+        user_email: str,
+        *,
+        start_at: str,
+        end_at: str,
+        model_name: str | None = None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return the persisted rows needed by the receipt monitoring dashboard."""
+        user_id = self.get_public_user_id(user_email)
+        # PostgREST needs separate keys for the lower and upper bound. Passing
+        # them as a list preserves both filters through httpx.
+        evaluation_params = [
+            ("select", "id,item_id,field_accuracy,complete_match,latency_ms,status,field_scores,error_tags,error_message,evaluated_at,model_name,batch_id"),
+            ("user_id", f"eq.{user_id}"),
+            ("evaluated_at", f"gte.{start_at}"),
+            ("evaluated_at", f"lt.{end_at}"),
+            ("order", "evaluated_at.asc"),
+            ("limit", "10000"),
+        ]
+        if model_name:
+            evaluation_params.append(("model_name", f"eq.{model_name}"))
+        evaluations_response = httpx.get(
+            f"{self.url}/rest/v1/finance_record_evaluations",
+            params=evaluation_params,
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(evaluations_response, "영수증 모니터링 평가 조회 실패")
+
+        item_response = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_items",
+            params=[
+                ("select", "id,status,error_stage,error_message,started_at,completed_at,batch_id"),
+                ("user_id", f"eq.{user_id}"),
+                ("started_at", f"gte.{start_at}"),
+                ("started_at", f"lt.{end_at}"),
+                ("order", "started_at.asc"),
+                ("limit", "10000"),
+            ],
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(item_response, "영수증 모니터링 처리 이력 조회 실패")
+        batch_response = httpx.get(
+            f"{self.url}/rest/v1/finance_evaluation_batches",
+            params=[
+                ("select", "id,batch_name,model_name,status,total_items,completed_items,failed_items,summary_metrics,created_at,completed_at"),
+                ("user_id", f"eq.{user_id}"),
+                ("created_at", f"gte.{start_at}"),
+                ("created_at", f"lt.{end_at}"),
+                ("order", "created_at.desc"),
+                ("limit", "200"),
+            ],
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(batch_response, "영수증 모니터링 실행 이력 조회 실패")
+        return {"evaluations": evaluations_response.json(), "items": item_response.json(), "batches": batch_response.json()}
 
     def create_document_signed_url(self, storage_path: str) -> str:
         encoded_path = quote(storage_path, safe="/")

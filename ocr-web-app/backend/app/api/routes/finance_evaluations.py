@@ -1,4 +1,8 @@
+from collections import Counter
+from datetime import date, datetime, time, timedelta
+from math import ceil
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +25,7 @@ from app.services.supabase_service import supabase_service
 
 
 router = APIRouter()
+KST = ZoneInfo("Asia/Seoul")
 
 
 def _prediction_from_finance_record(record: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -105,6 +110,153 @@ def require_developer(user: User = Depends(require_current_user)) -> User:
     if user.role not in {"DEVELOPER", "ADMIN"} and user.email != "developer@docunex.com":
         raise HTTPException(status_code=403, detail="개발자 권한이 필요합니다.")
     return user
+
+
+def _average(values: list[float]) -> float | None:
+    return sum(values) / len(values) if values else None
+
+
+def _local_date(row: dict[str, Any], key: str) -> str:
+    value = str(row.get(key) or "")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(KST).date().isoformat()
+    except ValueError:
+        return value[:10]
+
+
+def _monitoring_metrics(evaluations: list[dict[str, Any]], items: list[dict[str, Any]]) -> dict[str, Any]:
+    completed = [row for row in evaluations if row.get("status") == "COMPLETED"]
+    amount_scores = [
+        float(bool(detail.get("correct")))
+        for row in completed
+        if isinstance((detail := (row.get("field_scores") or {}).get("total_amount")), dict)
+    ]
+    item_count = len(items) or len(evaluations)
+    ocr_failures = sum(row.get("error_stage") == "OCR" for row in items)
+    return {
+        "field_accuracy": _average([float(row.get("field_accuracy") or 0) for row in completed]),
+        "amount_accuracy": _average(amount_scores),
+        "perfect_receipt_rate": _average([float(bool(row.get("complete_match"))) for row in completed]),
+        "processing_success_rate": len(completed) / item_count if item_count else None,
+        "average_latency_ms": _average([float(row.get("latency_ms") or 0) for row in completed]),
+        "ocr_success_rate": (item_count - ocr_failures) / item_count if item_count else None,
+        "total_count": item_count,
+    }
+
+
+def _monitoring_details(evaluations: list[dict[str, Any]], items: list[dict[str, Any]]) -> dict[str, Any]:
+    completed = [row for row in evaluations if row.get("status") == "COMPLETED"]
+    errors: Counter[str] = Counter()
+    fields: dict[str, list[bool]] = {}
+
+    def add_field(name: str, detail: Any) -> None:
+        if isinstance(detail, dict) and detail.get("correct") is not None:
+            fields.setdefault(name, []).append(bool(detail["correct"]))
+
+    for row in evaluations:
+        for tag in row.get("error_tags") or []:
+            if isinstance(tag, dict):
+                errors[str(tag.get("category") or "UNKNOWN")] += 1
+        for field, detail in (row.get("field_scores") or {}).items():
+            if field != "items":
+                add_field(field, detail)
+                continue
+            if isinstance(detail, dict):
+                if detail.get("count_correct") is not None:
+                    fields.setdefault("items.count", []).append(bool(detail["count_correct"]))
+                for scored_item in detail.get("items") or []:
+                    for item_field, item_detail in (scored_item.get("fields") or {}).items():
+                        add_field(f"items.{item_field}", item_detail)
+    for item in items:
+        if item.get("status") == "FAILED" and item.get("error_stage"):
+            stage = str(item["error_stage"])
+            category = "OCR_ERROR" if stage == "OCR" else "LLM_ERROR" if stage == "DOCUMENTATION" else "PIPELINE_ERROR"
+            errors[category] += 1
+
+    total_errors = sum(errors.values())
+    latencies = sorted(float(row.get("latency_ms") or 0) for row in completed)
+    p95_latency = latencies[max(ceil(len(latencies) * .95) - 1, 0)] if latencies else None
+    timeout_count = sum("timeout" in str(row.get("error_message") or "").lower() for row in evaluations + items)
+    llm_json_failures = sum(
+        any(
+            isinstance(tag, dict) and tag.get("category") == "LLM_ERROR" and "JSON" in str(tag.get("code") or "").upper()
+            for tag in row.get("error_tags") or []
+        )
+        for row in evaluations
+    )
+    return {
+        "error_distribution": [
+            {"category": category, "count": count, "rate": count / total_errors if total_errors else 0}
+            for category, count in errors.most_common()
+        ],
+        "total_errors": total_errors,
+        "field_accuracy": [
+            {"field": field, "accuracy": sum(values) / len(values), "count": len(values)}
+            for field, values in sorted(fields.items(), key=lambda item: (-sum(item[1]) / len(item[1]), item[0]))
+        ],
+        "system": {
+            "average_latency_ms": _average(latencies),
+            "p95_latency_ms": p95_latency,
+            "timeout_count": timeout_count,
+            "ocr_failure_count": sum(item.get("error_stage") == "OCR" for item in items),
+            "llm_json_failure_count": llm_json_failures,
+            "total_count": len(items) or len(evaluations),
+        },
+    }
+
+
+@router.get("/monitoring")
+def get_finance_monitoring(
+    start_date: date,
+    end_date: date,
+    model_name: str | None = None,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    if end_date < start_date:
+        raise HTTPException(status_code=422, detail="종료일은 시작일보다 빠를 수 없습니다.")
+    if (end_date - start_date).days > 365:
+        raise HTTPException(status_code=422, detail="조회 기간은 최대 366일까지 선택할 수 있습니다.")
+    start_at = datetime.combine(start_date, time.min, KST).isoformat()
+    end_exclusive = datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat()
+    data = supabase_service.list_finance_monitoring_data(
+        user.email, start_at=start_at, end_at=end_exclusive, model_name=model_name,
+    )
+    evaluations = data["evaluations"]
+    items = data["items"]
+    details = _monitoring_details(evaluations, items)
+    period_days = (end_date - start_date).days + 1
+    previous_end_date = start_date - timedelta(days=1)
+    previous_start_date = previous_end_date - timedelta(days=period_days - 1)
+    previous_data = supabase_service.list_finance_monitoring_data(
+        user.email,
+        start_at=datetime.combine(previous_start_date, time.min, KST).isoformat(),
+        end_at=datetime.combine(start_date, time.min, KST).isoformat(),
+        model_name=model_name,
+    )
+
+    daily = []
+    cursor = start_date
+    while cursor <= end_date:
+        day = cursor.isoformat()
+        day_evaluations = [row for row in evaluations if _local_date(row, "evaluated_at") == day]
+        day_items = [row for row in items if _local_date(row, "started_at") == day]
+        daily.append({"date": day, **_monitoring_metrics(day_evaluations, day_items)})
+        cursor += timedelta(days=1)
+    return {
+        "start_date": start_date.isoformat(),
+        "end_date": end_date.isoformat(),
+        "model_name": model_name,
+        "summary": _monitoring_metrics(evaluations, items),
+        "details": details,
+        "comparison": {
+            "start_date": previous_start_date.isoformat(),
+            "end_date": previous_end_date.isoformat(),
+            "summary": _monitoring_metrics(previous_data["evaluations"], previous_data["items"]),
+            "details": _monitoring_details(previous_data["evaluations"], previous_data["items"]),
+        },
+        "recent_runs": data.get("batches", []),
+        "daily": daily,
+    }
 
 
 async def _installed_ollama_models() -> list[str]:
@@ -231,6 +383,13 @@ def create_finance_evaluation_batch(
         total_items=payload.total_items,
         evaluation_mode=payload.evaluation_mode,
     )
+
+
+@router.get("/batches")
+def list_finance_evaluation_batches(
+    user: User = Depends(require_developer),
+) -> list[dict[str, Any]]:
+    return supabase_service.list_finance_evaluation_batches(user.email)
 
 
 @router.post("/batches/{batch_id}/finalize")

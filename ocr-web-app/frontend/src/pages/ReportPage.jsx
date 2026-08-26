@@ -122,22 +122,169 @@ function BusinessReport({ stats, loading }) {
   </>;
 }
 
-function ReceiptMonitoringDashboard() {
-  const metrics = ['필드 정확도 (Field Accuracy)', '금액 정확도 (Amount Accuracy)', '완전 성공률 (Perfect Receipt)', '처리 성공률 (Processing Success)', '평균 처리시간 (Avg Latency)', 'OCR 성공률'];
-  const panels = ['기간별 성능 추세', '오류 유형 분포', '필드별 정확도', '시스템 성능'];
+const MONITORING_METRICS = [
+  { key: 'field_accuracy', label: '필드 정확도 (Field Accuracy)', color: '#1767df', type: 'percent', description: '평가한 전체 필드 중 정답과 일치한 필드의 비율입니다. 높을수록 좋습니다.' },
+  { key: 'amount_accuracy', label: '금액 정확도 (Amount Accuracy)', color: '#079b62', type: 'percent', description: '영수증의 최종 총금액이 정답 데이터와 정확히 일치한 비율입니다. 높을수록 좋습니다.' },
+  { key: 'perfect_receipt_rate', label: '완전 성공률 (Perfect Receipt)', color: '#7c3aed', type: 'percent', description: '기본 필드와 모든 품목 필드가 하나도 틀리지 않은 영수증의 비율입니다. 필드 하나라도 틀리면 실패로 계산합니다.' },
+  { key: 'processing_success_rate', label: '처리 성공률 (Processing Success)', color: '#f06a13', type: 'percent', description: '요청된 영수증 중 전체 평가 파이프라인을 정상 완료한 비율입니다. 높을수록 좋습니다.' },
+  { key: 'average_latency_ms', label: '평균 처리시간 (Avg Latency)', color: '#24599b', type: 'latency', description: '정상 처리된 영수증의 평균 처리 소요 시간입니다. 낮을수록 빠르고 좋습니다.' },
+  { key: 'ocr_success_rate', label: 'OCR 성공률', color: '#079b62', type: 'percent', description: '전체 처리 요청 중 OCR 단계에서 실패하지 않은 비율입니다. 높을수록 좋습니다.' },
+];
 
-  return <section className="receipt-monitoring">
+const dateInputValue = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+const metricText = (value, type) => value == null ? '—' : type === 'latency' ? `${(value / 1000).toFixed(1)} sec` : `${(value * 100).toFixed(1)}%`;
+const metricDelta = (current, previous, type) => {
+  if (current == null || previous == null) return null;
+  return type === 'latency' ? (current - previous) / 1000 : (current - previous) * 100;
+};
+const deltaText = (delta, type) => delta == null ? '—' : `${delta > 0 ? '↑' : delta < 0 ? '↓' : '−'} ${Math.abs(delta).toFixed(1)}${type === 'latency' ? ' sec' : '%p'}`;
+const chartPoints = (values, width, height, maxValue = 1) => {
+  const valid = values.map((value, index) => value == null ? null : { value, index }).filter(Boolean);
+  return valid.map(({ value, index }) => `${values.length === 1 ? width / 2 : index * width / (values.length - 1)},${height - Math.min(value / maxValue, 1) * height}`).join(' ');
+};
+
+function MetricSparkline({ values, color, type }) {
+  const normalized = type === 'latency' ? values.map((value) => value == null ? null : value / 1000) : values;
+  const maxValue = type === 'latency' ? Math.max(...normalized.filter((value) => value != null), 1) : 1;
+  const points = chartPoints(normalized, 220, 34, maxValue);
+  return <svg className="metric-sparkline" viewBox="0 0 220 38" preserveAspectRatio="none" aria-hidden="true">
+    <line x1="0" y1="36" x2="220" y2="36" />
+    {points && <><polyline points={points} style={{ stroke: color }} />{points.split(' ').map((point, index) => { const [cx, cy] = point.split(','); return <circle key={`${cx}-${index}`} cx={cx} cy={cy} r="2" style={{ fill: color }} />; })}</>}
+  </svg>;
+}
+
+function DailyPerformanceChart({ daily }) {
+  const series = MONITORING_METRICS.slice(0, 4);
+  const width = 620; const height = 190; const top = 10; const plotHeight = 150;
+  return <div className="daily-performance-chart">
+    <div className="daily-chart-legend">{series.map((metric) => <span key={metric.key}><i style={{ background: metric.color }} />{metric.label.split(' (')[0]}</span>)}</div>
+    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="일별 영수증 성능 추세">
+      {[0, .25, .5, .75, 1].map((tick) => <g key={tick}><line x1="42" y1={top + plotHeight * (1 - tick)} x2="610" y2={top + plotHeight * (1 - tick)} /><text x="35" y={top + plotHeight * (1 - tick) + 3}>{Math.round(tick * 100)}%</text></g>)}
+      {series.map((metric) => {
+        const values = daily.map((day) => day[metric.key]);
+        const points = chartPoints(values, 568, plotHeight, 1).split(' ').filter(Boolean).map((point) => { const [x, y] = point.split(',').map(Number); return `${x + 42},${y + top}`; }).join(' ');
+        return points ? <g className="daily-chart-series" key={metric.key}><polyline points={points} style={{ stroke: metric.color }} />{points.split(' ').map((point, index) => { const [cx, cy] = point.split(','); return <circle key={index} cx={cx} cy={cy} r="2.5" style={{ fill: metric.color }} />; })}</g> : null;
+      })}
+      {daily.map((day, index) => <text className="date-label" key={day.date} x={daily.length === 1 ? 326 : 42 + index * 568 / (daily.length - 1)} y="181">{day.date.slice(5)}</text>)}
+    </svg>
+  </div>;
+}
+
+const ERROR_META = {
+  OCR_ERROR: ['OCR 오류', '#2f75dd'], CANDIDATE_ERROR: ['품목 누락', '#f4aa00'],
+  LLM_ERROR: ['환각 / JSON 오류', '#7652d6'], VALIDATION_ERROR: ['검증 오류', '#11a167'],
+  PIPELINE_ERROR: ['파이프라인 오류', '#ef5b2a'], UNKNOWN: ['기타 오류', '#8a98aa'],
+};
+const FIELD_LABELS = {
+  merchant: '상호명', transaction_date: '거래일자', total_amount: '총금액', supply_amount: '공급가액',
+  tax_amount: '부가세', payment_method: '결제수단', card_number: '영수증/거래번호', expense_category: '비용 구분',
+  total_quantity: '총수량', 'items.count': '품목 수', 'items.name': '품목명', 'items.quantity': '수량',
+  'items.unit_price': '단가', 'items.total_amount': '품목 금액',
+};
+
+function ErrorDistribution({ details }) {
+  const rows = details?.error_distribution || [];
+  let offset = 0;
+  const gradient = rows.length ? `conic-gradient(${rows.map((row) => { const start = offset; offset += row.rate * 100; return `${(ERROR_META[row.category] || ERROR_META.UNKNOWN)[1]} ${start}% ${offset}%`; }).join(', ')})` : '#edf2f6';
+  return rows.length ? <div className="error-distribution"><div className="error-donut" style={{ background: gradient }}><span>총 오류<strong>{details.total_errors.toLocaleString()}건</strong></span></div><div className="error-legend">{rows.map((row) => { const meta = ERROR_META[row.category] || [row.category, ERROR_META.UNKNOWN[1]]; return <div key={row.category}><i style={{ background: meta[1] }} /><span>{meta[0]}</span><strong>{row.count} ({(row.rate * 100).toFixed(1)}%)</strong></div>; })}</div></div> : <div className="empty-monitoring-box"><span>집계된 오류가 없습니다.</span></div>;
+}
+
+function FieldAccuracyList({ details, previousDetails }) {
+  const previous = new Map((previousDetails?.field_accuracy || []).map((row) => [row.field, row.accuracy]));
+  const rows = (details?.field_accuracy || []).slice(0, 10);
+  return rows.length ? <div className="field-accuracy-list">{rows.map((row) => { const delta = previous.has(row.field) ? (row.accuracy - previous.get(row.field)) * 100 : null; return <div key={row.field}><span>{FIELD_LABELS[row.field] || row.field}</span><strong>{(row.accuracy * 100).toFixed(1)}%</strong><i><b style={{ width: `${row.accuracy * 100}%` }} /></i><em className={delta == null ? 'empty' : delta >= 0 ? 'up' : 'down'}>{delta == null ? '—' : `${delta >= 0 ? '↑' : '↓'} ${Math.abs(delta).toFixed(1)}%p`}</em></div>; })}</div> : <div className="empty-monitoring-box"><span>필드 평가 데이터가 없습니다.</span></div>;
+}
+
+function SystemPerformance({ system }) {
+  const rows = [
+    ['평균 처리시간', metricText(system?.average_latency_ms, 'latency')],
+    ['P95 처리시간', metricText(system?.p95_latency_ms, 'latency')],
+    ['타임아웃 발생', `${system?.timeout_count || 0}건`], ['OCR 실패', `${system?.ocr_failure_count || 0}건`],
+    ['LLM JSON 실패', `${system?.llm_json_failure_count || 0}건`], ['전체 처리 건수', `${(system?.total_count || 0).toLocaleString()}건`],
+  ];
+  return <div className="system-performance-list">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>;
+}
+
+function RecentRuns({ runs }) {
+  return <div className="recent-runs-scroll"><div className="recent-runs-table"><div className="run-table-head"><span>일시</span><span>모델</span><span>처리 수</span><span>필드 정확도</span><span>완전 성공률</span><span>처리 성공률</span><span>평균 처리시간</span></div>{runs.map((run) => { const summary = run.summary_metrics || {}; const total = Number(summary.requested_count ?? run.total_items ?? 0); const success = Number(summary.successful_count ?? run.completed_items ?? 0); return <div key={run.id}><span>{run.created_at ? new Date(run.created_at).toLocaleString('ko-KR') : '—'}</span><span title={run.model_name}>{run.model_name || 'gemma3-4b-trained'}</span><strong>{total.toLocaleString()}</strong><span>{metricText(summary.average_field_accuracy, 'percent')}</span><span>{metricText(summary.complete_match_rate, 'percent')}</span><span>{metricText(total ? success / total : null, 'percent')}</span><span>{metricText(summary.average_latency_ms, 'latency')}</span></div>; })}{!runs.length && <p>선택한 기간의 실행 이력이 없습니다.</p>}</div></div>;
+}
+
+function ReceiptMonitoringDashboard() {
+  const initialEndDate = new Date();
+  const initialStartDate = new Date(initialEndDate); initialStartDate.setDate(initialEndDate.getDate() - 6);
+  const [dateRange, setDateRange] = useState({ startDate: dateInputValue(initialStartDate), endDate: dateInputValue(initialEndDate) });
+  const [period, setPeriod] = useState('7');
+  const [monitoring, setMonitoring] = useState({ summary: {}, details: {}, comparison: { summary: {}, details: {} }, recent_runs: [], daily: [] });
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
+  const [monitoringError, setMonitoringError] = useState('');
+  const monitoringQueryParams = useMemo(() => ({
+    start_date: dateRange.startDate,
+    end_date: dateRange.endDate,
+  }), [dateRange]);
+  const periodLabel = period === 'custom' ? '사용자 지정' : `최근 ${period}일`;
+
+  useEffect(() => {
+    if (!dateRange.startDate || !dateRange.endDate || dateRange.startDate > dateRange.endDate) return undefined;
+    let active = true;
+    setMonitoringLoading(true); setMonitoringError('');
+    apiClient.get('/finance-evaluations/monitoring', { params: monitoringQueryParams }).then(({ data }) => {
+      if (active) setMonitoring(data);
+    }).catch((requestError) => {
+      if (active) setMonitoringError(requestError.response?.data?.detail || '모니터링 데이터를 불러오지 못했습니다.');
+    }).finally(() => { if (active) setMonitoringLoading(false); });
+    return () => { active = false; };
+  }, [monitoringQueryParams]);
+
+  const changeDate = (field, value) => {
+    setDateRange((current) => ({ ...current, [field]: value }));
+    setPeriod('custom');
+  };
+
+  const changePeriod = (value) => {
+    if (value === 'custom') {
+      setPeriod(value);
+      return;
+    }
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - Number(value) + 1);
+    setDateRange({ startDate: dateInputValue(startDate), endDate: dateInputValue(endDate) });
+    setPeriod(value);
+  };
+  const comparisonLabel = period === 'custom' ? '이전 동일 기간' : `지난 ${period}일`;
+
+  return <section className="receipt-monitoring" data-start-date={monitoringQueryParams.start_date} data-end-date={monitoringQueryParams.end_date}>
     <div className="receipt-monitoring-heading">
       <div><p>FINANCE MODEL LAB</p><h2>영수증 서비스 성능 모니터링 대시보드</h2><span>서비스 운영 데이터를 기반으로 모델/파이프라인의 성능을 모니터링합니다.</span></div>
       <div className="receipt-monitoring-filters" aria-label="영수증 성능 필터">
-        <button type="button">2025-05-24 <span>~</span> 2025-05-31</button>
-        <button type="button">최근 7일 <span>⌄</span></button>
-        <button type="button">모델: gemma3-4b-trained <span>⌄</span></button>
+        <div className="receipt-date-range">
+          <input type="date" aria-label="조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => changeDate('startDate', event.target.value)} />
+          <span>~</span>
+          <input type="date" aria-label="조회 종료일" value={dateRange.endDate} min={dateRange.startDate} onChange={(event) => changeDate('endDate', event.target.value)} />
+        </div>
+        <select aria-label="조회 기간" value={period} onChange={(event) => changePeriod(event.target.value)}>
+          <option value="7">최근 7일</option>
+          <option value="30">최근 30일</option>
+          <option value="90">최근 90일</option>
+          <option value="custom">사용자 지정</option>
+        </select>
+        <button type="button" className="receipt-model-filter" disabled>모델: gemma3-4b-trained</button>
       </div>
     </div>
-    <div className="receipt-monitoring-kpis">{metrics.map((metric) => <article key={metric}><h3>{metric}</h3><strong>—</strong><div className="empty-sparkline" /></article>)}</div>
-    <div className="receipt-monitoring-panels">{panels.map((panel) => <article key={panel}><header><h3>{panel}</h3><span>최근 7일</span></header><div className="empty-monitoring-box"><span>—</span></div></article>)}</div>
-    <div className="receipt-monitoring-bottom"><article><header><h3>알림 / 이상 탐지</h3></header><div className="empty-monitoring-row">—</div></article><article><header><h3>최근 실행 이력</h3></header><div className="empty-monitoring-row">—</div></article></div>
+    {monitoringError && <div className="report-access-error">{monitoringError}</div>}
+    <div className="receipt-monitoring-kpis">{MONITORING_METRICS.map((metric) => {
+      const current = monitoring.summary[metric.key];
+      const previous = monitoring.comparison?.summary?.[metric.key];
+      const delta = metricDelta(current, previous, metric.type);
+      return <article key={metric.key}><h3>{metric.label}<span className="kpi-info" tabIndex="0" role="img" aria-label={`${metric.label} 설명`}><i>i</i><span className="kpi-tooltip" role="tooltip">{metric.description}</span></span></h3><div className="monitoring-kpi-value"><strong style={{ color: current == null ? undefined : metric.color }}>{monitoringLoading ? '…' : metricText(current, metric.type)}</strong><span className={delta == null ? 'empty' : delta > 0 ? 'up' : delta < 0 ? 'down' : 'same'}>{deltaText(delta, metric.type)}</span><small>(vs {comparisonLabel} {metricText(previous, metric.type)})</small></div><MetricSparkline values={monitoring.daily.map((day) => day[metric.key])} color={metric.color} type={metric.type} /></article>;
+    })}</div>
+    <div className="receipt-monitoring-panels">
+      <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>{periodLabel} · 일별</span></header>{monitoringLoading ? <div className="empty-monitoring-box"><span>불러오는 중</span></div> : monitoring.daily.some((day) => day.total_count) ? <DailyPerformanceChart daily={monitoring.daily} /> : <div className="empty-monitoring-box"><span>선택한 기간의 평가 데이터가 없습니다.</span></div>}</article>
+      <article><header><h3>오류 유형 분포</h3><span>{periodLabel}</span></header><ErrorDistribution details={monitoring.details} /></article>
+      <article><header><h3>필드별 정확도</h3><span>{periodLabel}</span></header><FieldAccuracyList details={monitoring.details} previousDetails={monitoring.comparison?.details} /></article>
+      <article><header><h3>시스템 성능</h3><span>{periodLabel}</span></header><SystemPerformance system={monitoring.details?.system} /></article>
+    </div>
+    <div className="receipt-monitoring-bottom"><article><header><h3>알림 / 이상 탐지</h3></header><div className="empty-monitoring-row">—</div></article><article className="recent-runs-card"><header><h3>최근 실행 이력</h3><span>{monitoring.recent_runs?.length || 0}회</span></header><RecentRuns runs={monitoring.recent_runs || []} /></article></div>
   </section>;
 }
 
@@ -255,7 +402,13 @@ export default function ReportPage() {
     <main className="developer-report">
       <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
-      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <FinanceEvaluationPage embedded /> : <>
+      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
+        <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
+          <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
+          <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>
+        </div>
+        {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard />}
+      </> : <>
       <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>

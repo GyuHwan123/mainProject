@@ -116,6 +116,22 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 3)
         self.assertTrue(score["complete_match"])
 
+    def test_normalizes_semantically_equivalent_finance_labels(self):
+        score = score_fields(
+            {
+                "merchant": "KORAIL",
+                "expense_category": "교통비",
+                "items": [{"name": "KTX125 일반실 1호차입석"}],
+            },
+            {
+                "merchant": "한국철도공사",
+                "expense_category": "교통",
+                "items": [{"name": "KTX 125 일반실 승차권"}],
+            },
+        )
+
+        self.assertTrue(score["complete_match"])
+
     def test_verifies_expected_finance_sheet(self):
         result = verify_workbook({
             "document_type": "EXPENSE_REPORT", "expense_category": "회의비", "merchant": "테스트카페",

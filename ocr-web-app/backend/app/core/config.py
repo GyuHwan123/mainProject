@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     RECEIPTS_LLM_MODEL: str = ""
     RAG_PROMPT_VERSION: str = "baseline-v1"
     RAG_TOP_K: int = 4
+    RAG_ANSWERABILITY_THRESHOLD: float = 0.01
     RAG_CHUNK_TARGET_CHARS: int = 380
     RAG_TEXT_CHUNK_MAX_CHARS: int = 900
     RAG_TEXT_CHUNK_OVERLAP_CHARS: int = 120

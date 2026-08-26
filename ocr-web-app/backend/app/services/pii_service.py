@@ -5,9 +5,15 @@ from typing import Any
 
 MASK = "[민감정보 보호]"
 PRIVACY_RESPONSE = "요청하신 정보는 개인정보 보호 정책에 따라 제공할 수 없습니다. 채용 검토에 필요한 학력, 경력, 기술, 교육 및 자격 정보는 질문할 수 있습니다."
-SENSITIVE_QUERY = re.compile(
+SENSITIVE_FIELD = re.compile(
     r"(생년월일|생년|몇\s*살|나이|연령|성별|남자인지|여자인지|휴대폰|핸드폰|전화번호|연락처|"
-    r"이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌번호|통장번호)",
+    r"이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌정보|계좌번호|통장번호|"
+    r"개인정보|민감정보)",
+    re.I,
+)
+SENSITIVE_DISCLOSURE_REQUEST = re.compile(
+    r"(알려\s*줘|말해\s*줘|보여\s*줘|찾아\s*줘|조회해\s*줘|공개해\s*줘|제공해\s*줘|출력해\s*줘|"
+    r"확인해\s*줘)",
     re.I,
 )
 PATTERNS = [
@@ -28,7 +34,18 @@ ADDRESS = re.compile(r"(?:서울|부산|대구|인천|광주|대전|울산|세�
 
 
 def is_sensitive_query(query: str) -> bool:
-    return bool(SENSITIVE_QUERY.search(str(query or "")))
+    text = str(query or "").strip()
+    if not text:
+        return False
+    if _direct_pii(text):
+        return True
+    if not SENSITIVE_FIELD.search(text):
+        return False
+    return any(
+        abs(field.start() - request.start()) <= 60
+        for field in SENSITIVE_FIELD.finditer(text)
+        for request in SENSITIVE_DISCLOSURE_REQUEST.finditer(text)
+    )
 
 
 def _rect(item: dict[str, Any]) -> tuple[float, float, float, float] | None:

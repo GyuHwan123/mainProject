@@ -17,6 +17,7 @@ RERANK_MODEL = settings.RAG_RERANK_MODEL
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
 TEXT_CHUNK_MAX_CHARS = settings.RAG_TEXT_CHUNK_MAX_CHARS
 TEXT_CHUNK_OVERLAP_CHARS = settings.RAG_TEXT_CHUNK_OVERLAP_CHARS
+ANSWERABILITY_THRESHOLD = settings.RAG_ANSWERABILITY_THRESHOLD
 
 
 @lru_cache(maxsize=1)
@@ -365,6 +366,12 @@ async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> lis
         ) from exc
 
 
+def _has_sufficient_evidence(candidates: list[dict[str, Any]]) -> bool:
+    if not candidates:
+        return False
+    return float(candidates[0].get("similarity") or 0.0) >= ANSWERABILITY_THRESHOLD
+
+
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
     document = supabase_service.get_ocr_document(user_email, document_id)
     try:
@@ -451,7 +458,8 @@ async def search(user_email: str, query: str, rag_document_id: str | None, limit
                     "content": f"[문서 제목] {title}", "bbox": bbox, "similarity": 1.0,
                     "vector_similarity": 1.0, "source": document["file_name"],
                 })
-    return candidates[:limit]
+    candidates = candidates[:limit]
+    return candidates if _has_sufficient_evidence(candidates) else []
 
 
 rag_service = type("RagService", (), {"index_document": staticmethod(index_document), "search": staticmethod(search)})()

@@ -22,8 +22,91 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
-FINANCE_PROMPT_VERSION = "receipt-v1"
+FINANCE_PROMPT_VERSION = "receipt-v3-evidence-and-item-semantics"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
+
+_ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
+_ITEM_COLUMN_HEADER = re.compile(rf"(?:{_ITEM_COLUMN_LABEL}[\s|:/·-]*){{2,}}", re.IGNORECASE)
+
+
+def _clean_item_name_evidence(value: Any) -> tuple[str, list[str]]:
+    """Remove only recognizable metadata/header prefixes from an item name."""
+    original = " ".join(str(value or "").strip().split())
+    cleaned = original
+    reasons: list[str] = []
+
+    headers = list(_ITEM_COLUMN_HEADER.finditer(cleaned))
+    if headers:
+        suffix = cleaned[headers[-1].end():].strip(" |:/·-")
+        if re.search(r"[A-Za-z가-힣]", suffix):
+            cleaned = suffix
+            reasons.append("embedded_item_header_removed")
+
+    metadata_prefix = re.compile(
+        r"^(?:(?:\[?\s*판매\s*(?:일시|일자|번호|매)?\s*\]?|거래\s*(?:일시|번호)|"
+        r"포스\s*(?:번호)?|pos\s*(?:no\.?)?)\s*[:#]?\s*"
+        r"(?:20\d{2}[-./]\d{1,2}[-./]\d{1,2}(?:\s+\d{1,2}:\d{2}(?::\d{2})?)?|"
+        r"[0-9A-Za-z-]{3,})\s*)+",
+        re.IGNORECASE,
+    )
+    without_metadata = metadata_prefix.sub("", cleaned).strip(" |:/·-")
+    if without_metadata and without_metadata != cleaned:
+        cleaned = without_metadata
+        reasons.append("transaction_metadata_removed")
+
+    return cleaned, reasons
+
+
+def _structure_item_name(value: Any) -> dict[str, Any]:
+    """Split a displayed item name into canonical name and typed metadata."""
+    name = " ".join(str(value or "").strip().split())
+    aliases: list[str] = []
+    specifications: list[str] = []
+    options: list[str] = []
+
+    # A parenthesized English rendering after a Korean product name is an
+    # alias, not an additional part of the canonical product name.
+    if re.search(r"[가-힣]", name):
+        def remove_english_alias(match: re.Match[str]) -> str:
+            content = match.group(1).strip()
+            if re.fullmatch(r"[A-Za-z][A-Za-z .&'/-]*", content):
+                aliases.append(content)
+                return ""
+            return match.group(0)
+        name = re.sub(r"\(([^()]*)\)", remove_english_alias, name)
+
+    # SKU/color selections belong in specification, while size expressions
+    # such as 1볼/50g remain part of the evaluated product name.
+    def remove_option(match: re.Match[str]) -> str:
+        options.append(match.group(1).strip())
+        return ""
+    name = re.sub(
+        # A 3+ digit identifier followed by an option description is an SKU/
+        # colour selection. Keep short quantity specifications such as
+        # ``1볼/50g`` in the evaluated display name.
+        r"\(\s*(\d{3,8}(?:\s+|[-_/])[^()]*)\s*\)",
+        remove_option,
+        name,
+        flags=re.IGNORECASE,
+    )
+    canonical_name = " ".join(name.split())
+    return {
+        "canonical_name": canonical_name,
+        "aliases": aliases,
+        "specifications": specifications,
+        "options": options,
+    }
+
+
+def _separate_item_name_metadata(value: Any) -> tuple[str, list[str]]:
+    """Backward-compatible wrapper used by existing callers and tests."""
+    structured = _structure_item_name(value)
+    separated = [
+        *structured["aliases"],
+        *structured["specifications"],
+        *structured["options"],
+    ]
+    return structured["canonical_name"], separated
 
 
 class FinanceClassifyRequest(BaseModel):
@@ -145,7 +228,8 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
             pass
     if transaction_date is None:
         short_date_match = re.search(
-            r"(?<!\d)(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})(?!\d)",
+            r"(?<!\d)(\d{2})\s*[-./]\s*(\d{1,2})\s*[-./]\s*(\d{1,2})"
+            r"(?:\s*(?:오전|오후)?\s*\d{1,2}:\d{2}(?::\d{2})?)?(?!\d)",
             text,
         )
         if short_date_match:
@@ -176,7 +260,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
 
     def labeled_amount(labels: str) -> int | None:
         match = re.search(
-            rf"(?:{labels})\s*[:：]?\s*(?:금액\s*)?([0-9]{{1,3}}(?:[.,][0-9]{{3}})+|[0-9]{{3,8}})\s*원?",
+            rf"(?:{labels})\s*[:：]?\s*(?:금액\s*)?([0-9]{{1,3}}(?:\s*[.,]\s*[0-9]{{3}})+|[0-9]{{3,8}})\s*원?",
             text,
             re.IGNORECASE,
         )
@@ -185,7 +269,11 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         value = _receipt_number(match.group(1))
         return value if value >= 100 else None
 
-    labeled_final = labeled_amount(r"최종\s*결제|실\s*결제|받을\s*금액|승인\s*금액|결제\s*금액")
+    labeled_final = labeled_amount(
+        r"최종\s*결제(?:\s*금액)?|실\s*결제(?:\s*금액)?|받을\s*금액|"
+        r"승인(?:\s*금액|\s*액)|결제(?:\s*금액|\s*액)|청구(?:\s*금액|\s*액)|"
+        r"신용\s*판매(?:\s*금액|\s*액)|현금\s*결제(?:\s*금액)?|카드\s*결제(?:\s*금액)?"
+    )
     labeled_discount = labeled_amount(r"할인(?:\s*금액|\s*액)?|쿠폰(?:\s*할인)?")
     labeled_gross = labeled_amount(r"정가|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
     if labeled_final:
@@ -244,10 +332,34 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
                 stated_total_amount = candidate
 
     payment_method = None
-    if re.search(r"카드\s*(?:결제|승인)|신용\s*카드|체크\s*카드", text, re.IGNORECASE):
+    payment_method_rejected_by_policy = False
+    card_transaction_pattern = (
+        r"카드\s*(?:결제|승인|매출표)|신용\s*카드|체크\s*카드|"
+        r"신용\s*(?:승인|송인|매출표)"
+    )
+    if re.search(card_transaction_pattern, text, re.IGNORECASE):
         payment_method = "카드"
     elif re.search(r"현금\s*(?:결제|영수증)|현금영수증", text, re.IGNORECASE):
         payment_method = "현금"
+
+    # Preserve the existing broad card detection, then suppress it only when
+    # every card mention belongs to refund/exchange/cancellation instructions.
+    policy_context = re.compile(r"환불|환급|취소|교환|반품|지참|소요|최대\s*\d+\s*일", re.IGNORECASE)
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    policy_card_found = any(policy_context.search(line) and re.search(r"카드", line, re.IGNORECASE) for line in lines)
+    transactional_card_found = any(
+        not policy_context.search(line)
+        and re.search(
+            r"카드\s*(?:결제|승인)(?:액|금액|번호)?|카드\s*매출표|"
+            r"신용\s*(?:판매액|승인|송인|매출표)",
+            line,
+            re.IGNORECASE,
+        )
+        for line in lines
+    )
+    if payment_method == "카드" and policy_card_found and not transactional_card_found:
+        payment_method = None
+        payment_method_rejected_by_policy = True
 
     return {
         "transaction_date": transaction_date,
@@ -262,6 +374,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         "stated_total_quantity": stated_total_quantity,
         "stated_total_amount": stated_total_amount,
         "payment_method": payment_method,
+        "payment_method_rejected_by_policy": payment_method_rejected_by_policy,
     }
 
 
@@ -294,6 +407,28 @@ def _normalize_merchant(value: Any, text: str) -> str | None:
     return merchant[:200] or None
 
 
+def _normalize_payment_method(value: Any, evidenced_value: Any, rejected_by_policy: bool = False) -> str | None:
+    """Prefer an explicit OCR payment label over missing/conflicting LLM text."""
+    model_value = str(value or "").strip()
+    hint_value = str(evidenced_value or "").strip()
+    placeholders = {"-", "--", "없음", "미확인", "확인필요", "null", "none", "n/a", "na"}
+    if model_value.lower().replace(" ", "") in placeholders:
+        model_value = ""
+
+    if rejected_by_policy:
+        return None
+
+    if hint_value == "현금":
+        return "현금"
+    if hint_value == "카드":
+        # Preserve useful issuer/card-type detail only when it agrees with the
+        # OCR evidence that this was a card payment.
+        if re.search(r"카드|card", model_value, re.IGNORECASE):
+            return model_value[:100]
+        return "카드"
+    return model_value[:100] or None
+
+
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     hints = _receipt_hints(text, filename)
     receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
@@ -315,12 +450,48 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         raw_name = str(item.get("name") or "").strip()
         if re.fullmatch(r"(?:https?://|www\.)\S+", raw_name, re.IGNORECASE):
             return False
+        if re.fullmatch(r"(?:현대\s*HDS|CAT\s*ID|승인\s*번호|X)", raw_name, re.IGNORECASE):
+            return False
         return True
 
     items = [item for item in items if is_real_item(item)]
+    item_diagnostics = result.get("item_extraction_diagnostics")
+    is_card_sales_slip = bool(re.search(
+        r"카드\s*매출표|신용\s*(?:승인|송인|매출표)",
+        text,
+        re.IGNORECASE,
+    ))
+    has_item_diagnostics = isinstance(item_diagnostics, dict)
+    evidenced_candidates = item_diagnostics.get("candidates") if has_item_diagnostics else None
+    # A card sales slip contains only the transaction amount/tax/approval
+    # details. If the OCR structure found no item row, any model-created item
+    # is unsupported and must not be written to the workbook.
+    if is_card_sales_slip and has_item_diagnostics and not evidenced_candidates:
+        if items:
+            item_diagnostics["rejected_model_items"] = json.loads(json.dumps(items, ensure_ascii=False))
+        item_diagnostics["items_rejected_reason"] = "card_sales_slip_without_ocr_item_candidates"
+        items = []
     numeric_item_fields = ("quantity", "unit_price", "supply_amount", "tax_amount", "total_amount")
     for item in items:
-        item["name"] = str(item.get("name") or "").strip()
+        raw_name = str(item.get("name") or "").strip()
+        cleaned_name, cleanup_reasons = _clean_item_name_evidence(raw_name)
+        name_parts = _structure_item_name(cleaned_name)
+        item["name"] = name_parts["canonical_name"]
+        separated_name_metadata = [
+            *name_parts["aliases"], *name_parts["specifications"], *name_parts["options"],
+        ]
+        if cleanup_reasons or separated_name_metadata:
+            item["raw_name"] = raw_name
+        if cleanup_reasons:
+            item["name_cleanup"] = cleanup_reasons
+        if separated_name_metadata:
+            existing_specification = str(item.get("specification") or "").strip()
+            item["specification"] = " · ".join(filter(None, [existing_specification, *separated_name_metadata]))
+            item["name_metadata_separated"] = separated_name_metadata
+        if name_parts["aliases"]:
+            item["aliases"] = name_parts["aliases"]
+        if name_parts["options"]:
+            item["options"] = name_parts["options"]
         for field in numeric_item_fields:
             if item.get(field) is not None:
                 raw_value = str(item[field]).strip()
@@ -334,6 +505,42 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         if not _clean_number(item.get("unit_price")) and quantity > 0 and item_total > 0:
             item["unit_price"] = item_total / quantity
             item["note"] = " · ".join(filter(None, [str(item.get("note") or "").strip(), "품목금액÷수량으로 단가 복원"]))
+
+    candidate_rows = (
+        result.get("item_extraction_diagnostics", {}).get("candidates", [])
+        if isinstance(result.get("item_extraction_diagnostics"), dict)
+        else []
+    )
+    recoverable_candidates = [
+        candidate for candidate in candidate_rows
+        if isinstance(candidate, dict)
+        and candidate.get("name_candidate")
+        and _clean_number(candidate.get("quantity_candidate")) > 0
+        and _clean_number(candidate.get("unit_price_candidate")) > 0
+        and _clean_number(candidate.get("amount_candidate")) > 0
+    ]
+    evidenced_total = _clean_number(result.get("total_amount")) or _clean_number(hints.get("total_amount"))
+    model_item_total = sum(_clean_number(item.get("total_amount")) for item in items)
+    candidate_item_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in recoverable_candidates)
+    if (
+        evidenced_total > 0
+        and recoverable_candidates
+        and abs(candidate_item_total - evidenced_total) < 0.01
+        and abs(model_item_total - evidenced_total) >= 0.01
+    ):
+        diagnostics = result.setdefault("item_extraction_diagnostics", {})
+        diagnostics["rejected_model_items_after_total_validation"] = json.loads(json.dumps(items, ensure_ascii=False))
+        diagnostics["items_resolution"] = "ocr_candidates_match_receipt_total"
+        items = [{
+            "name": str(candidate["name_candidate"]),
+            "quantity": _clean_number(candidate.get("quantity_candidate")),
+            "unit_price": _clean_number(candidate.get("unit_price_candidate")),
+            "total_amount": _clean_number(candidate.get("amount_candidate")),
+            "product_code": candidate.get("product_code"),
+            "discount_amount": _clean_number(candidate.get("discount_amount_candidate")) or None,
+            "note": "OCR 품목 후보 합계와 영수증 총액 일치로 복원",
+            "item_resolution": "ocr_candidates_match_receipt_total",
+        } for candidate in recoverable_candidates]
 
     # Narrow recovery for the known tenant receipt layout. In this layout OCR
     # exposes ``유니클로(과세/면세)`` beside the product header, while small
@@ -357,8 +564,36 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
             "note": "OCR 근거 기반 단일 품목 복원",
         })
     result["items"] = items
-    if hints.get("discount_amount") is not None:
-        result["discount_amount"] = hints["discount_amount"]
+    # Discount is a high-risk hallucination. Besides requiring an explicit OCR
+    # label, verify it against the item gross and paid total whenever both are
+    # available. Flattened OCR can otherwise associate a discount label with a
+    # distant phone/order number on the page.
+    evidenced_discount = hints.get("discount_amount")
+    candidate_rows = (
+        result.get("item_extraction_diagnostics", {}).get("candidates", [])
+        if isinstance(result.get("item_extraction_diagnostics"), dict)
+        else []
+    )
+    candidate_amounts = [
+        _clean_number(candidate.get("amount_candidate"))
+        for candidate in candidate_rows if isinstance(candidate, dict)
+    ]
+    candidate_gross = sum(value for value in candidate_amounts if value > 0)
+    paid_total = _clean_number(result.get("total_amount")) or _clean_number(hints.get("total_amount"))
+    expected_discount = candidate_gross - paid_total if candidate_gross >= paid_total > 0 else None
+    discount_rejection = None
+    if evidenced_discount is not None and expected_discount is not None:
+        if expected_discount <= 0 or abs(_clean_number(evidenced_discount) - expected_discount) > 0.01:
+            discount_rejection = "inconsistent_with_item_gross_and_paid_total"
+            evidenced_discount = None
+    result["discount_amount"] = evidenced_discount
+    result["financial_evidence_diagnostics"] = {
+        "candidate_gross_amount": candidate_gross or None,
+        "paid_amount": paid_total or None,
+        "expected_discount_amount": expected_discount if expected_discount and expected_discount > 0 else None,
+        "accepted_discount_amount": evidenced_discount,
+        "discount_rejection": discount_rejection,
+    }
     # A lone count of 1 is too easy to confuse with nearby quantity/spec text
     # such as ``1볼/50g``. Only shorten multi-item output when a count of two
     # or more is supported by the receipt summary.
@@ -421,7 +656,11 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "supply_amount": supply,
         "tax_amount": tax,
         "total_amount": total,
-        "payment_method": str(result.get("payment_method") or hints.get("payment_method") or "").strip()[:100] or None,
+        "payment_method": _normalize_payment_method(
+            result.get("payment_method"),
+            hints.get("payment_method"),
+            bool(hints.get("payment_method_rejected_by_policy")),
+        ),
         "description": str(result.get("description") or "").strip()[:1000] or None,
         "structured_data": result,
         "model_name": str(result.get("_model_name") or RECEIPTS_MODEL_NAME),
@@ -451,11 +690,107 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
     )
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
+    non_item_row = re.compile(
+        r"^(?:X|현대\s*HDS|CAT\s*ID|승인\s*번호|수\s*량|총\s*수량|계|합계|총합계)$",
+        re.IGNORECASE,
+    )
+
+    def append_structured_candidate(candidate: dict[str, Any]) -> None:
+        raw = " | ".join(str(value) for value in candidate.get("raw_cells", []) if value)
+        dedupe_key = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
+        if not raw or dedupe_key in seen:
+            return
+        candidates.append(candidate)
+        seen.add(dedupe_key)
+
+    def discounted_item_pair(
+        row: list[Any], next_row: list[Any], page_number: Any,
+    ) -> dict[str, Any] | None:
+        """Merge a retail price row with its following SKU/discount row."""
+        first = " ".join(str(cell or "").strip() for cell in row if str(cell or "").strip())
+        second = " ".join(str(cell or "").strip() for cell in next_row if str(cell or "").strip())
+        if not first or not re.search(r"할인", second):
+            return None
+        first_amounts = [_receipt_number(value) for value in re.findall(r"\d{1,3}(?:[.,]\d{3})+|\d{3,8}", first)]
+        signed_second = [
+            int(re.sub(r"[,.]", "", value))
+            for value in re.findall(r"-?\d{1,3}(?:[.,]\d{3})+|-?\d{3,8}", second)
+        ]
+        negative = [abs(value) for value in signed_second if value < 0]
+        positive_money = [value for value in signed_second if value >= 100]
+        if not first_amounts or not negative or not positive_money:
+            return None
+        unit_price = first_amounts[-1]
+        final_amount = positive_money[-1]
+        if unit_price - negative[-1] != final_amount:
+            return None
+
+        raw_name = str(row[0] or "").strip()
+        # Metadata can be joined to the first product by borderless-table line
+        # grouping. The actual product is the final textual fragment.
+        raw_name = re.sub(
+            r"^.*(?:시간\s*:\s*(?:오전|오후)?\s*\d{1,2}:\d{2}|P[O0]S\s*번호\s*:\s*\S+)\s*",
+            "",
+            raw_name,
+            flags=re.IGNORECASE,
+        ).strip()
+        if len(raw_name) > 50:
+            fragments = re.findall(r"[A-Za-z가-힣][A-Za-z가-힣 ]{1,30}", raw_name)
+            raw_name = fragments[-1].strip() if fragments else raw_name
+        option_source = str(next_row[0] or "").strip()
+        sku_match = re.match(r"(\d{6,})(.*)", option_source)
+        product_code = sku_match.group(1) if sku_match else None
+        option = (sku_match.group(2) if sku_match else option_source)
+        option = re.split(r"\s*할인", option, maxsplit=1)[0].strip()
+        name = " ".join(value for value in (raw_name, option) if value)
+        if not re.search(r"[A-Za-z가-힣]", name):
+            return None
+        candidate = {
+            "page": page_number,
+            "source": "discounted_item_block",
+            "raw_cells": [first, second],
+            "name_candidate": name,
+            "quantity_candidate": 1,
+            "unit_price_candidate": unit_price,
+            "amount_candidate": final_amount,
+            "discount_amount_candidate": negative[-1],
+            "column_resolution": "discount_arithmetic",
+        }
+        if product_code:
+            candidate["product_code"] = product_code
+        return candidate
+
+    def single_amount_item(row: list[Any], page_number: Any) -> dict[str, Any] | None:
+        cells = [str(cell or "").strip() for cell in row]
+        name = cells[0] if cells else ""
+        raw = " | ".join(cell for cell in cells if cell)
+        if not name or summary_labels.search(raw) or non_item_row.fullmatch(re.sub(r"\s+", "", name)):
+            return None
+        if re.search(r"(?:직원|매장|영수증|날짜|시간|POS|CATID|승인|현대HDS|^X$)", name, re.IGNORECASE):
+            return None
+        numbers = re.findall(r"(?<!\d)\d{1,3}(?:[.,]\d{3})+|(?<!\d)\d{1,8}(?!\d)", " | ".join(cells[1:]))
+        if len(numbers) != 1 or not re.search(r"[A-Za-z가-힣]", name):
+            return None
+        amount = _receipt_number(numbers[0])
+        if amount <= 0:
+            return None
+        return {
+            "page": page_number,
+            "source": "single_amount_item_row",
+            "raw_cells": [cell for cell in cells if cell],
+            "name_candidate": name,
+            "quantity_candidate": 1,
+            "unit_price_candidate": amount,
+            "amount_candidate": amount,
+            "column_resolution": "single_amount_default_quantity",
+        }
 
     def add_candidate(cells: list[str], page_number: Any, source: str, columns: list[str] | None = None) -> None:
         # Keep empty cells until column roles are resolved. Removing them shifts
         # every value after a missed cell into the wrong semantic column.
         aligned_cells = [str(cell or "").strip() for cell in cells]
+        raw_first_cell = aligned_cells[0] if aligned_cells else ""
+        cleanup_reasons: list[str] = []
         if aligned_cells:
             aligned_cells[0] = re.sub(
                 r"^(?:(?:판매번호|포스번호|거래번호|주문번호|영수증번호)\s*[:#]?\s*[0-9A-Za-z-]+\s*)+",
@@ -466,6 +801,7 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
             # Receipt line numbers and U-prefixed inventory identifiers are
             # metadata, not product names. Preserve the code separately.
             aligned_cells[0] = re.sub(r"^\s*\d{1,3}\s+(?=\D)", "", aligned_cells[0]).strip()
+            aligned_cells[0], cleanup_reasons = _clean_item_name_evidence(aligned_cells[0])
         product_code = None
         if aligned_cells:
             code_match = re.search(r"(?<![0-9A-Za-z])(U\d{6,})(?!\d)", aligned_cells[0], re.IGNORECASE)
@@ -478,7 +814,10 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
         display_cells = [cell for cell in aligned_cells if cell]
         raw = " | ".join(display_cells)
         dedupe_key = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
-        if not raw or dedupe_key in seen or summary_labels.search(raw):
+        if (
+            not raw or dedupe_key in seen or summary_labels.search(raw)
+            or non_item_row.fullmatch(re.sub(r"\s+", "", aligned_cells[0] if aligned_cells else ""))
+        ):
             return
         if not re.search(r"[A-Za-z가-힣]", raw):
             return
@@ -510,6 +849,18 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
             "name_candidate": name or None,
             "amount_candidate": primary_parsed[-1] if primary_parsed else parsed[-1],
         }
+        if name:
+            name_parts = _structure_item_name(name)
+            candidate["name_candidate"] = name_parts["canonical_name"]
+            if name_parts["aliases"]:
+                candidate["alias_candidates"] = name_parts["aliases"]
+            if name_parts["specifications"]:
+                candidate["specification_candidates"] = name_parts["specifications"]
+            if name_parts["options"]:
+                candidate["option_candidates"] = name_parts["options"]
+        if cleanup_reasons:
+            candidate["raw_name_candidate"] = raw_first_cell
+            candidate["name_cleanup"] = cleanup_reasons
         if product_code:
             candidate["product_code"] = product_code
         if parenthesized:
@@ -577,7 +928,21 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
         tables = page.get("tables") or []
         for table in tables:
             pending_title: str | None = None
-            for row in table.get("rows") or []:
+            table_rows = table.get("rows") or []
+            skip_rows: set[int] = set()
+            for row_index, row in enumerate(table_rows):
+                if row_index in skip_rows:
+                    continue
+                if row_index + 1 < len(table_rows):
+                    paired = discounted_item_pair(row, table_rows[row_index + 1], page_number)
+                    if paired:
+                        append_structured_candidate(paired)
+                        skip_rows.add(row_index + 1)
+                        continue
+                single = single_amount_item(row, page_number)
+                if single:
+                    append_structured_candidate(single)
+                    continue
                 aligned_row = [str(cell or "").strip() for cell in row]
                 first_cell = aligned_row[0] if aligned_row else ""
                 compact_first = re.sub(r"\s+", "", first_cell)
@@ -617,7 +982,9 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
                             selected.append(item)
                     selected.sort(key=lambda item: ((item["bbox"][0][1] + item["bbox"][1][1]) / 2, item["bbox"][0][0]))
                     heights = [max(item["bbox"][1][1] - item["bbox"][0][1], 1) for item in selected]
-                    tolerance = (sorted(heights)[len(heights) // 2] if heights else 10) * .6
+                    # A conservative threshold prevents adjacent compact
+                    # receipt rows from being merged into one product line.
+                    tolerance = (sorted(heights)[len(heights) // 2] if heights else 10) * .4
                     lines: list[list[dict[str, Any]]] = []
                     for item in selected:
                         center_y = (item["bbox"][0][1] + item["bbox"][1][1]) / 2
@@ -652,6 +1019,84 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
                     candidate["unit_price_candidate"] = int(amount) // remainder
                     candidate["unit_price_resolution"] = "amount_divided_by_quantity"
     return candidates
+
+
+def _reconcile_items_with_candidates(
+    items: list[dict[str, Any]], candidates: list[dict[str, Any]], stated_count: int | None,
+) -> list[dict[str, Any]]:
+    """Ground item names in a uniquely matching OCR amount/quantity row."""
+    resolved = [dict(item) for item in items if isinstance(item, dict)]
+    used_candidates: set[int] = set()
+
+    for item in resolved:
+        item_amount = _clean_number(item.get("total_amount"))
+        item_unit_price = _clean_number(item.get("unit_price"))
+        item_quantity = _clean_number(item.get("quantity"))
+        matches: list[tuple[int, int]] = []
+        for index, candidate in enumerate(candidates):
+            if index in used_candidates or not candidate.get("name_candidate"):
+                continue
+            score = 0
+            candidate_amount = _clean_number(candidate.get("amount_candidate"))
+            candidate_unit_price = _clean_number(candidate.get("unit_price_candidate"))
+            candidate_quantity = _clean_number(candidate.get("quantity_candidate"))
+            if item_amount and candidate_amount and item_amount == candidate_amount:
+                score += 4
+            if item_unit_price and candidate_unit_price and item_unit_price == candidate_unit_price:
+                score += 2
+            if item_quantity and candidate_quantity and item_quantity == candidate_quantity:
+                score += 1
+            if score >= 4:
+                matches.append((score, index))
+        if not matches:
+            continue
+        best_score = max(score for score, _ in matches)
+        best = [index for score, index in matches if score == best_score]
+        if len(best) != 1:
+            continue
+        candidate_index = best[0]
+        candidate = candidates[candidate_index]
+        candidate_name = str(candidate.get("name_candidate") or "").strip()
+        model_name = str(item.get("name") or "").strip()
+        if candidate_name and candidate_name != model_name:
+            item["raw_model_name"] = model_name or None
+            item["name"] = candidate_name
+            item["name_resolution"] = "unique_ocr_amount_match"
+        candidate_metadata = [
+            *candidate.get("alias_candidates", []),
+            *candidate.get("specification_candidates", []),
+            *candidate.get("option_candidates", []),
+        ]
+        if candidate_metadata:
+            existing_specification = str(item.get("specification") or "").strip()
+            item["specification"] = " · ".join(filter(None, [existing_specification, *candidate_metadata]))
+        if candidate.get("alias_candidates"):
+            item["aliases"] = candidate["alias_candidates"]
+        if candidate.get("option_candidates"):
+            item["options"] = candidate["option_candidates"]
+        used_candidates.add(candidate_index)
+
+    # Recover a completely missed item pass only when the receipt-declared row
+    # count exactly agrees with fully evidenced OCR candidates.
+    if not resolved and stated_count and len(candidates) == int(stated_count):
+        recoverable = [candidate for candidate in candidates if candidate.get("name_candidate") and candidate.get("amount_candidate")]
+        if len(recoverable) == int(stated_count):
+            resolved = [{
+                "name": candidate["name_candidate"],
+                "quantity": candidate.get("quantity_candidate"),
+                "unit_price": candidate.get("unit_price_candidate"),
+                "total_amount": candidate.get("amount_candidate"),
+                "specification": " · ".join([
+                    *candidate.get("alias_candidates", []),
+                    *candidate.get("specification_candidates", []),
+                    *candidate.get("option_candidates", []),
+                ]) or None,
+                "aliases": candidate.get("alias_candidates") or None,
+                "options": candidate.get("option_candidates") or None,
+                "name_resolution": "receipt_count_confirmed_ocr_recovery",
+            } for candidate in recoverable]
+
+    return resolved
 
 
 def _receipt_prompt(text: str, filename: str, pages: list[dict[str, Any]] | None = None) -> str:
@@ -693,9 +1138,13 @@ def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) 
     summary = _receipt_hints(text, "receipt")
     stated_count = summary.get("stated_item_count")
     stated_quantity = summary.get("stated_total_quantity")
-    # raw_cells already preserve the evidence, so do not duplicate the full
-    # table and OCR text in this item-only prompt.
-    evidence = json.dumps(candidates, ensure_ascii=False, separators=(",", ":")) if candidates else text[:3500]
+    # Always include a compact OCR excerpt. Candidate generation is heuristic;
+    # hiding the source text when even one bad candidate exists prevents the
+    # model from recovering item rows that the table parser missed.
+    evidence = json.dumps({
+        "candidates": candidates,
+        "ocr_text": text[:3500],
+    }, ensure_ascii=False, separators=(",", ":"))
     return f"""영수증의 실제 구매 품목만 JSON으로 반환하세요.
 형식: {{"items":[{{"name":...,"specification":...,"quantity":...,"unit":...,"unit_price":...,"supply_amount":...,"tax_amount":...,"total_amount":...,"note":...}}]}}
 
@@ -711,6 +1160,9 @@ def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) 
 9. alternate_price_candidates는 괄호로 표시된 회원가·할인가·참고가격 후보입니다. 명확한 라벨이 없으면 주가격을 대체하지 마세요.
 10. 영수증에 명시된 총수량: {stated_quantity if stated_quantity is not None else '미확인'}. quantity_resolution이 receipt_total_remainder이면 다른 품목 수량과 총수량으로 복원한 값입니다.
 11. product_code는 재고·상품 식별 코드이며 품목명이 아닙니다. name_candidate를 품목명으로 사용하고 코드는 specification 또는 note에만 보존하세요.
+12. raw_name_candidate와 name_cleanup이 있으면 거래일시·POS·판매번호·상품 열 제목을 제거한 name_candidate를 사용하세요. 상품명에 날짜, POS 번호, `상품코드/단가/수량/금액` 헤더를 포함하지 마세요.
+13. alias_candidates는 다른 언어로 반복 표기된 같은 상품명, specification_candidates는 중량·크기·묶음 규격, option_candidates는 SKU·색상 옵션입니다. 이 값들은 name에 다시 합치지 말고 specification 또는 note에 보존하세요.
+14. candidates가 OCR 원문과 충돌하거나 품목을 누락하면 ocr_text를 사용해 복원하세요. 정가 다음 행에 SKU·색상·할인액·할인 후 금액이 이어지면 같은 품목입니다.
 
 [품목 근거]
 {evidence}
@@ -729,6 +1181,7 @@ async def _classify_receipt_with_model(
         logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
         raise ValueError("object expected")
     result.pop("items", None)
+    candidates = _receipt_item_candidates(pages)
     try:
         items_raw = await generate(
             _receipt_items_prompt(text, pages),
@@ -737,10 +1190,24 @@ async def _classify_receipt_with_model(
             model_name=model_name,
         )
         items_result = json.loads(items_raw)
-        result["items"] = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
+        model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
+        model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
+        stated_count = _receipt_hints(text, filename).get("stated_item_count")
+        result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
+        result["item_extraction_diagnostics"] = {
+            "candidates": candidates,
+            # Preserve the pre-normalization model payload for error tracing.
+            "model_items": model_items_snapshot,
+            "resolved_items": json.loads(json.dumps(result["items"], ensure_ascii=False)),
+        }
     except Exception:
         # Metadata remains useful when the isolated item pass fails.
         result["items"] = []
+        result["item_extraction_diagnostics"] = {
+            "candidates": candidates,
+            "model_items": [],
+            "failed": True,
+        }
     return result
 
 

@@ -8,6 +8,14 @@ from app.services.finance_evaluation_service import estimate_ocr_impact, normali
 
 
 class FinanceEvaluationServiceTests(unittest.TestCase):
+    def test_treats_haircut_and_beauty_service_as_same_item(self):
+        score = score_fields(
+            {"items": [{"name": "헤어컷", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},
+            {"items": [{"name": "미용 서비스", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
     def test_estimates_ocr_and_llm_error_causes_per_field(self):
         truth = {"merchant": "테스트 상점", "total_amount": 81300, "payment_method": "현금"}
         score = score_fields(
@@ -195,6 +203,15 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 0)
         self.assertFalse(score["complete_match"])
 
+    def test_treats_kyobo_bilingual_and_branch_names_as_same_merchant(self):
+        score = score_fields(
+            {"merchant": "KYOBO 교보문고"},
+            {"merchant": "교보문고 광화문점"},
+        )
+
+        self.assertEqual(score["correct_fields"], 1)
+        self.assertTrue(score["complete_match"])
+
     def test_matches_items_independent_of_order_and_allows_similar_names(self):
         score = score_fields(
             {"items": [
@@ -263,6 +280,62 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         score = score_fields(
             {"items": [{"name": "NAIL SALON"}]},
             {"items": [{"name": "미용 서비스"}]},
+        )
+
+        self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_matches_taxi_boarding_fare_and_taxi_use(self):
+        score = score_fields(
+            {"items": [{"name": "탑승요금", "quantity": 1, "total_amount": 5300}]},
+            {"items": [{"name": "택시 이용", "quantity": 1, "total_amount": 5300}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+        self.assertTrue(score["complete_match"])
+
+    def test_matches_card_approval_and_card_payment_method(self):
+        score = score_fields({"payment_method": "카드승인"}, {"payment_method": "카드"})
+
+        self.assertTrue(score["complete_match"])
+
+    def test_ignores_item_barcode_and_promotional_prefixes(self):
+        barcode = score_fields(
+            {"items": [{"name": "롯데 월드콘 말차 160 8802259025351"}]},
+            {"items": [{"name": "롯데 월드콘 말차 160"}]},
+        )
+        promotion = score_fields(
+            {"items": [{"name": "+초강추:오리지널 정통 타고야끼 8말"}]},
+            {"items": [{"name": "정통 타코야끼 8알"}]},
+        )
+
+        self.assertTrue(barcode["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+        self.assertTrue(promotion["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_matches_known_equivalent_merchant_renderings_from_batch(self):
+        pairs = (
+            ("신세계도곡점", "신세계 FOOD MARKET"),
+            ("COS 현대백화점", "COS 현대 무역센터점"),
+            ("카페모마스 광화문점", "광화문점"),
+            ("유니클로", "유니클로 스타필드 코엑스몰점"),
+            ("현대백화점", "현대백화점 압구정본점"),
+        )
+
+        for actual, expected in pairs:
+            with self.subTest(actual=actual, expected=expected):
+                self.assertTrue(score_fields({"merchant": actual}, {"merchant": expected})["complete_match"])
+
+    def test_does_not_match_conflicting_explicit_merchant_branches(self):
+        score = score_fields(
+            {"merchant": "공차 역삼점"},
+            {"merchant": "공차 선릉중앙점"},
+        )
+
+        self.assertFalse(score["complete_match"])
+
+    def test_does_not_collapse_other_transport_fares_into_taxi(self):
+        score = score_fields(
+            {"items": [{"name": "버스 요금"}]},
+            {"items": [{"name": "택시 이용"}]},
         )
 
         self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])

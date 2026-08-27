@@ -31,6 +31,9 @@ function isPublicAuthRequest(config) {
 }
 
 function clearExpiredSession() {
+  const email = localStorage.getItem('pic_to_text_email') || '';
+  localStorage.removeItem(`docunex_chat_state:${email || 'anonymous'}`);
+  localStorage.removeItem('docunex_active_chat_session');
   SESSION_KEYS.forEach((key) => localStorage.removeItem(key));
 }
 

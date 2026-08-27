@@ -14,6 +14,8 @@ export function hasAppSession() {
 }
 
 export function saveAppSession(session) {
+  localStorage.removeItem(`${CHAT_STATE_KEY_PREFIX}${session.user_email || 'anonymous'}`);
+  localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
   localStorage.setItem(TOKEN_KEY, session.access_token);
   localStorage.setItem(EMAIL_KEY, session.user_email);
   if (session.user_name) localStorage.setItem(NAME_KEY, session.user_name);

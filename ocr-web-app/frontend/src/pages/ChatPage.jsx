@@ -276,6 +276,7 @@ function ChatPageContent() {
   }, [scrapbook]);
 
   useEffect(() => {
+    if (!localStorage.getItem('pic_to_text_token')) return;
     localStorage.setItem(chatStateKey, JSON.stringify({
       messages, activeSessionId, activeId, sources, selectedSource, query,
     }));
@@ -298,7 +299,7 @@ function ChatPageContent() {
     if (!sessionsLoaded || !documentsLoaded || restorationAttemptedRef.current) return;
     restorationAttemptedRef.current = true;
 
-    const savedSessionId = activeSessionId || localStorage.getItem(ACTIVE_CHAT_SESSION_KEY);
+    const savedSessionId = localStorage.getItem(ACTIVE_CHAT_SESSION_KEY);
     if (!savedSessionId) return;
 
     const savedSession = sessions.find(

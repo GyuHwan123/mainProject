@@ -334,6 +334,18 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 파이프라인</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}<details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
 }
 
+function PipelineEmpty() {
+  return <article className="model-pipeline-result pipeline-empty-result">
+    <header><div><small>FINAL SERVICE</small><h2>평가 결과 대기</h2></div><dl><div><dt>정확도</dt><dd>—</dd></div><div><dt>필드 매칭</dt><dd>—/—</dd></div><div><dt>OCR 영향</dt><dd>—</dd></div><div><dt>응답시간</dt><dd>—</dd></div></dl></header>
+    <div className="pipeline-boxes">
+      <section><h3>1. 입력 이미지 · OCR 박스</h3><div className="image-mini"><span className="eval-preview-empty">평가할 이미지를 선택해 주세요.</span></div></section>
+      <section><h3>2. OCR-LLM 파이프라인</h3><div className="pipeline-empty-content">OCR 결과가 여기에 표시됩니다.</div></section>
+      <section><h3>3. 생성 Excel 결과</h3><div className="pipeline-empty-content">생성된 Excel 미리보기가 여기에 표시됩니다.</div></section>
+    </div>
+    <div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>0개</span></header><div><em>평가 후 매칭된 필드가 표시됩니다.</em></div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>0개</span></header><div><em>평가 후 확인이 필요한 필드가 표시됩니다.</em></div></section></div>
+  </article>;
+}
+
 export function datasetRows(payload) {
   if (Array.isArray(payload)) return payload;
   const collection = payload?.receipts || payload?.data;
@@ -432,6 +444,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const [queuedBatchFiles, setQueuedBatchFiles] = useState(null);
   const [pendingReceipts, setPendingReceipts] = useState(() => readReceiptWorkspace().pendingEvaluations);
   const [batchHistory, setBatchHistory] = useState([]);
+  const [singleHistory, setSingleHistory] = useState([]);
   const [evaluationMode, setEvaluationMode] = useState('single');
   const [hasSessionBatchResults, setHasSessionBatchResults] = useState(false);
   const [batchProgress, setBatchProgress] = useState(null);
@@ -439,6 +452,9 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const loadBatchHistory = useCallback(() => apiClient.get('/finance-evaluations/batches')
     .then(({ data }) => setBatchHistory(Array.isArray(data) ? data : []))
     .catch(() => setBatchHistory([])), []);
+  const loadSingleHistory = useCallback(() => apiClient.get('/finance-evaluations/runs', { params: { evaluation_mode: 'SINGLE', limit: 30 } })
+    .then(({ data }) => setSingleHistory(Array.isArray(data) ? data : []))
+    .catch(() => setSingleHistory([])), []);
 
   const batchRuns = useMemo(() => activeBatchId ? runs.filter((run) => run.batch_id === activeBatchId) : [], [runs, activeBatchId]);
   const models = useMemo(() => {
@@ -501,6 +517,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const latestDocument = latestPendingReceipt || latestRun;
 
   useEffect(() => { loadBatchHistory(); }, [loadBatchHistory]);
+  useEffect(() => { loadSingleHistory(); }, [loadSingleHistory]);
 
   useEffect(() => {
     if (!latestDocument?.document_id || imagePreview?.name === latestDocument.document_name) return undefined;
@@ -606,6 +623,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       setStatus(`${file.name}을 ${matched.index + 1}번 정답과 매핑했습니다. OCR 및 모델 비교 중...`);
       const entry = await evaluateFile(file, matched);
       saveRuns([entry]);
+      loadSingleHistory();
       setStatus(`${file.name} 자동 매핑 및 평가 완료 · ${matched.index + 1}/${dataset.length}`);
       if (matched.index < dataset.length - 1) setSelectedIndex(matched.index + 1);
     } catch (error) {
@@ -844,7 +862,13 @@ export default function FinanceEvaluationPage({ embedded = false }) {
       </div>
     </section>}
 
-    {evaluationMode === 'single' && <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <p className="eval-empty">이미지를 선택해 평가하면 처리 화면이 여기에 표시됩니다.</p>}</section>}
+    {evaluationMode === 'single' && <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <PipelineEmpty />}</section>}
+
+    {evaluationMode === 'single' && <section className="eval-results single-evaluation-history"><header><div><h2>최근 단일 평가 이력</h2><p>DB에 저장된 최근 단일 평가 결과입니다.</p></div><span>{singleHistory.length}건</span></header>
+      <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>
+      {singleHistory.flatMap((run) => (run.results || []).map((result) => { const impact = result.system?.ocr_impact; const likelyOcrErrors = impact?.counts?.LIKELY_OCR_ERROR || 0; const score = result.system?.score || {}; const workbook = result.system?.workbook || {}; return <div className="eval-row" key={`single-${run.evaluation_id || run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{Number(run.dataset_index || 0) + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{score.field_accuracy == null ? '-' : `${(score.field_accuracy * 100).toFixed(1)}%`}</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields ?? 0}/{score.evaluated_fields ?? 0}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span className={likelyOcrErrors ? 'ocr-error' : 'ok'}>{impact ? `${likelyOcrErrors}개 가능` : '-'}</span><span>{result.latency_ms == null ? '-' : `${(result.latency_ms / 1000).toFixed(1)}초`}</span></div>; }))}
+      {!singleHistory.length && <p className="eval-empty">저장된 단일 평가 이력이 없습니다.</p>}</div>
+    </section>}
 
     {evaluationMode === 'batch' && <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 이미지도 실행 날짜와 시간이 다르면 별도 결과로 누적됩니다.</p></div><span>{runs.length}회</span></header>
       <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>

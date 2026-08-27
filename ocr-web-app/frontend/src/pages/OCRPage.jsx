@@ -518,8 +518,8 @@ export default function OCRPage() {
       setError('일괄 처리할 영수증 이미지 또는 PDF를 2개 이상 선택해 주세요.');
       return;
     }
-    if (files.length > 20) {
-      setError('이미지 일괄 입력은 한 번에 최대 20개까지 처리할 수 있습니다.');
+    if (files.length > 50) {
+      setError('이미지 일괄 입력은 한 번에 최대 50개까지 처리할 수 있습니다.');
       return;
     }
     if (isReceiptEvaluator && evaluationDatasetFile) {

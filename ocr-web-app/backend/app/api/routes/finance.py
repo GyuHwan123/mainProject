@@ -278,6 +278,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     labeled_gross = labeled_amount(r"정가|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
     if labeled_final:
         total = labeled_final
+    total_amount_source = "labeled_final" if labeled_final else "arithmetic" if triples else "won_amount" if won_amounts else None
     amount_relation = None
     if labeled_discount and labeled_final and labeled_gross and labeled_gross - labeled_discount == labeled_final:
         amount_relation = {
@@ -366,6 +367,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         "supply_amount": supply,
         "tax_amount": tax,
         "total_amount": total,
+        "total_amount_source": total_amount_source,
         "discount_amount": labeled_discount,
         "amount_relation": amount_relation,
         "document_type": document_type,
@@ -650,6 +652,10 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     def prefer_evidenced_model_amount(field: str) -> float:
         model_value = _clean_number(result.get(field))
         hint_value = _clean_number(hints.get(field))
+        # An explicitly labelled final/approved/paid amount is stronger than
+        # an arbitrary OCR number selected by the model (often an item price).
+        if field == "total_amount" and hints.get("total_amount_source") == "labeled_final" and hint_value >= 100:
+            return hint_value
         # Arithmetic hints can accidentally combine item subtotals. Preserve a
         # plausible model value when that exact amount is present in OCR; use
         # the hint only to recover missing, implausibly scaled, or absent data.

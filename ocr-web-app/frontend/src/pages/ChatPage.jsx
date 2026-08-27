@@ -12,8 +12,6 @@ const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
 const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
-const PRIVACY_RESPONSE = '요청하신 정보는 개인정보 보호 정책에 따라 제공할 수 없습니다. 채용 검토에 필요한 학력, 경력, 기술, 교육 및 자격 정보는 질문할 수 있습니다.';
-const SENSITIVE_QUERY_PATTERN = /(생년월일|생년|몇\s*살|나이|연령|성별|남자인지|여자인지|휴대폰|핸드폰|전화번호|연락처|이메일|e-mail|메일주소|주소|거주지|어디\s*(?:에\s*)?살|사는\s*곳|주민등록|주민번호|계좌번호|통장번호)/i;
 
 class ChatErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { failed: false, message: '' }; }
@@ -416,30 +414,6 @@ function ChatPageContent() {
       : question;
     setMessages((items) => [...items, { role: 'user', text: question }]);
     setQuery(''); setSources([]); setBusy(true);
-    if (SENSITIVE_QUERY_PATTERN.test(question)) {
-      setSelectedSource(null);
-      setMessages((items) => [...items, { role: 'assistant', text: PRIVACY_RESPONSE, sourceCount: 0, sources: [] }]);
-      try {
-        if (!sessionId) {
-            const { data: session } = await apiClient.post('/chatbot/sessions', {
-                title: question.slice(0, 120),
-                document_id: activeDoc?.documentId ?? null
-            });
-
-            sessionId = session.id;
-            setActiveSessionId(sessionId);
-            localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, sessionId);
-        }
-        if (sessionId) {
-          await apiClient.post(`/chatbot/sessions/${sessionId}/messages`, { role: 'user', content: question, sources: [] });
-          await apiClient.post(`/chatbot/sessions/${sessionId}/messages`, { role: 'assistant', content: PRIVACY_RESPONSE, sources: [], model_name: 'privacy-policy' });
-          refreshSessions();
-        }
-      } catch { /* 보호 응답은 기록 저장 실패와 무관하게 표시 */ }
-      setBusy(false);
-      setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20);
-      return;
-    }
     try {
       const { data: matches } = await apiClient.post('/rag/search', {
         query: searchQuery, rag_document_id: activeId || null, limit: modelConfig.top_k || 8,
@@ -477,11 +451,14 @@ function ChatPageContent() {
         sources: relevant.map(({ id, content, source, index, score, documentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, pageNumber, bbox })),
       }).catch(() => {});
       refreshSessions();
-    } catch {
+    } catch (error) {
+      const privacyDetail = error.response?.status === 403 && typeof error.response?.data?.detail === 'string'
+        ? error.response.data.detail
+        : '';
       const best = relevant.filter((item) => item.score > 0);
-      const fallback = best.length
+      const fallback = privacyDetail || (best.length
         ? `문서에서 다음과 같은 관련 내용을 찾았습니다.\n\n${best[0].content}\n\n현재 AI 응답에 실패하여 가장 관련도 높은 문서 근거를 대신 표시했습니다.`
-        : `RAG 검색 또는 AI 응답에 실패했습니다. 문서가 RAG_READY 상태인지, Ollama에 ${modelConfig.embedding_model}와 ${modelConfig.model}이 설치되어 있는지 확인해 주세요.`;
+        : `RAG 검색 또는 AI 응답에 실패했습니다. 문서가 RAG_READY 상태인지, Ollama에 ${modelConfig.embedding_model}와 ${modelConfig.model}이 설치되어 있는지 확인해 주세요.`);
       setMessages((items) => [...items, { role: 'assistant', text: fallback, sourceCount: best.length, sources: best }]);
       if (sessionId) {
         apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {

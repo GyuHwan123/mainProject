@@ -28,6 +28,13 @@ SAMPLE_OCR = """주문번호 5,125.00
 
 
 class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
+    def test_explicit_final_amount_overrides_model_selected_item_amount(self):
+        ocr = "상품명 금액\n샤프 8,300\n최종 결제금액 56,300원"
+        normalized = _normalize({"total_amount": 8300, "items": [{"name": "샤프", "quantity": 1, "total_amount": 8300}]}, "receipt.jpg", ocr)
+
+        self.assertEqual(normalized["total_amount"], 56300)
+        self.assertEqual(normalized["structured_data"]["deterministic_hints"]["total_amount_source"], "labeled_final")
+
     def test_splits_metadata_and_item_prompts(self):
         prompt = _receipt_prompt(
             "볼펜 2 1,000",

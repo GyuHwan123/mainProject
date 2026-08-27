@@ -11,6 +11,7 @@ from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize
 from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
+from app.services.finance_normalization import normalization_equivalent
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
@@ -221,6 +222,8 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
     expected = _canonical(field, expected_value)
     actual = _canonical(field, actual_value)
     if expected == actual:
+        return True
+    if field in {"expense_category", "merchant", "name"} and normalization_equivalent(field, expected_value, actual_value):
         return True
     if field == "card_number" and expected and actual:
         expected_pattern = "".join("." if char == "*" else re.escape(char) for char in str(expected))

@@ -28,8 +28,9 @@
     text-align: center;
   }
   > div {
+    flex: 1;
     min-height: 0;
-    overflow: auto;
+    overflow: hidden;
   }
   > div > p {
     padding: 14px 9px;
@@ -39,11 +40,57 @@
   }
 }
 .rag-document-history {
-  max-height: 42%;
-  flex: none;
+  flex: 0 0 39%;
 }
 .chat-history-section {
   flex: 1;
+}
+.chat-workspace .history-list-rag {
+  overflow: hidden;
+}
+.history-pagination {
+  min-height: 36px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  gap: 4px;
+  overflow: hidden;
+  border-top: 1px solid rgba($line, 0.24);
+  background: $surface-color;
+
+  button {
+    width: 27px;
+    height: 27px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: $secondary-text-color;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 750;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      color: $main-color;
+      background: $hover-background;
+      border-color: rgba($sub-color, 0.35);
+    }
+
+    &.active {
+      color: $main-color;
+      background: rgba($sub-color, 0.16);
+      border-color: rgba($sub-color, 0.42);
+    }
+
+    &:disabled {
+      opacity: $disabled-opacity;
+      cursor: default;
+    }
+  }
 }
 .rag-history-row {
   width: 100%;
@@ -55,7 +102,7 @@
   color: $bgd;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid rgba($line, 0.18);
+  border-radius: 7px;
   text-align: left;
   cursor: pointer;
   > div {
@@ -76,10 +123,13 @@
     color: rgba($bgd, 0.43);
     font-size: 11px;
   }
-  &:hover,
+  &:hover {
+    color: $main-color;
+    background: rgba($sub-color, 0.08);
+  }
   &.active {
     color: $main-color;
-    background: rgba($sub-color, 0.11);
+    background: rgba($sub-color, 0.13);
   }
 }
 .chat-session-row {
@@ -144,8 +194,8 @@
   line-height: 1.6;
 }
 .index-summary {
-  margin: 9px;
-  padding: 10px;
+  margin: 7px;
+  padding: 8px;
   display: grid;
   gap: 2px;
   background: $bg-app;
@@ -153,11 +203,11 @@
   span,
   small {
     color: rgba($bgd, 0.45);
-    font-size: 12px;
+    font-size: 11px;
   }
   strong {
     color: $main-color;
-    font-size: 18px;
+    font-size: 16px;
   }
 }
 .source-count {

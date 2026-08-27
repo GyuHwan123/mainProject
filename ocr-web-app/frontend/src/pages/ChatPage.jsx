@@ -11,7 +11,18 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
+const HISTORY_PAGE_SIZE = 5;
 const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
+
+function HistoryPagination({ page, totalItems, onChange, label }) {
+  const totalPages = Math.ceil(totalItems / HISTORY_PAGE_SIZE);
+  if (totalPages <= 1) return null;
+  return <nav className="history-pagination" aria-label={`${label} 페이지`}>
+    <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="이전 페이지">‹</button>
+    {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => <button type="button" key={number} className={page === number ? 'active' : ''} aria-current={page === number ? 'page' : undefined} onClick={() => onChange(number)}>{number}</button>)}
+    <button type="button" disabled={page >= totalPages} onClick={() => onChange(page + 1)} aria-label="다음 페이지">›</button>
+  </nav>;
+}
 
 class ChatErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { failed: false, message: '' }; }
@@ -226,6 +237,8 @@ function ChatPageContent() {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [ragHistoryPage, setRagHistoryPage] = useState(1);
+  const [chatHistoryPage, setChatHistoryPage] = useState(1);
   const [activeSessionId, setActiveSessionId] = useState(restoredChatState.activeSessionId ?? null);
   const [activeId, setActiveId] = useState(restoredChatState.activeId ?? null);
   const [messages, setMessages] = useState(() => Array.isArray(restoredChatState.messages) && restoredChatState.messages.length
@@ -270,6 +283,16 @@ function ChatPageContent() {
     isDocumentPreview: true,
   } : null);
   const totalChunks = useMemo(() => documents.reduce((sum, item) => sum + (item.chunkCount || 0), 0), [documents]);
+  const pagedDocuments = useMemo(() => documents.slice((ragHistoryPage - 1) * HISTORY_PAGE_SIZE, ragHistoryPage * HISTORY_PAGE_SIZE), [documents, ragHistoryPage]);
+  const pagedSessions = useMemo(() => sessions.slice((chatHistoryPage - 1) * HISTORY_PAGE_SIZE, chatHistoryPage * HISTORY_PAGE_SIZE), [sessions, chatHistoryPage]);
+
+  useEffect(() => {
+    setRagHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(documents.length / HISTORY_PAGE_SIZE))));
+  }, [documents.length]);
+
+  useEffect(() => {
+    setChatHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE))));
+  }, [sessions.length]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -565,9 +588,9 @@ function ChatPageContent() {
       <section className="rag-grid">
         <aside className="history-panel">
           <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
-          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><span>{documents.length}</span></header><div>{documents.map((document) => <button key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div></button>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div></section>
-          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><span>{sessions.length}</span></header><div className="history-list-rag">{sessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button className="delete-session" onClick={() => removeSession(session.id)} title="대화 삭제"><IoTrashOutline /></button></div>)}
-          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div></section>
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><span>{documents.length}</span></header><div>{pagedDocuments.map((document) => <button key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div></button>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
+          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><span>{sessions.length}</span></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button className="delete-session" onClick={() => removeSession(session.id)} title="대화 삭제"><IoTrashOutline /></button></div>)}
+          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div><HistoryPagination page={chatHistoryPage} totalItems={sessions.length} onChange={setChatHistoryPage} label="채팅 이력" /></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
         </aside>
 

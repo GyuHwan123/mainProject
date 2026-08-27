@@ -15,8 +15,18 @@
     height: auto;
     grid-template-columns: 180px 1fr;
   }
+  .chat-workspace .history-panel {
+    height: auto;
+    align-self: start;
+
+    .rag-document-history,
+    .chat-history-section,
+    .history-section > div {
+      flex: none;
+    }
+  }
   .chat-workspace .context-panel {
-    min-height: 650px;
+    min-height: 520px;
   }
   .chat-workspace .conversation-panel {
     grid-column: 1 / -1;
@@ -36,16 +46,28 @@
     grid-template-columns: 1fr;
   }
   .chat-workspace .history-panel {
-    min-height: 230px;
+    min-height: 0;
   }
-  .chat-workspace .context-panel,
+  .history-pagination {
+    min-height: 38px;
+    padding-inline: 6px;
+
+    button {
+      width: 28px;
+      height: 28px;
+    }
+  }
+  .chat-workspace .context-panel {
+    grid-column: auto;
+    min-height: 640px;
+  }
   .chat-workspace .conversation-panel {
     grid-column: auto;
     min-height: 580px;
   }
   .evidence-workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: 390px 360px;
+    grid-template-rows: 310px 270px;
   }
   .evidence-preview {
     border-right: 0;

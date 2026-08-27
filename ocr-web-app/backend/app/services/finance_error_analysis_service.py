@@ -27,6 +27,13 @@ CATEGORY_EVIDENCE_PATTERNS = {
     "교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
     "주유/교통": re.compile(r"주유소|유종|휘발유|경유|주유|oil", re.IGNORECASE),
 }
+OCR_DIGIT_CONFUSIONS = str.maketrans({
+    "o": "0", "O": "0",
+    "i": "1", "I": "1", "l": "1", "L": "1",
+    "z": "2", "Z": "2",
+    "s": "5", "S": "5",
+    "b": "8", "B": "8",
+})
 
 
 def _number(value: Any) -> float | None:
@@ -56,6 +63,16 @@ def _similar(left: Any, right: Any) -> float:
     return SequenceMatcher(None, a, b).ratio()
 
 
+def _ocr_digit_confusion(expected: Any, observed: Any) -> bool:
+    expected_compact = _compact(expected)
+    observed_compact = _compact(observed)
+    if not expected_compact or not observed_compact or expected_compact == observed_compact:
+        return False
+    if not any(character.isdigit() for character in expected_compact):
+        return False
+    return observed_compact.translate(OCR_DIGIT_CONFUSIONS) == expected_compact
+
+
 def _value_equal(field: str, left: Any, right: Any) -> bool:
     if field in NUMBER_FIELDS:
         a, b = _number(left), _number(right)
@@ -66,6 +83,8 @@ def _value_equal(field: str, left: Any, right: Any) -> bool:
         return len(left_parts) == 3 and len(right_parts) == 3 and tuple(map(int, left_parts)) == tuple(map(int, right_parts))
     if field in {"expense_category", "merchant", "name"} and normalization_equivalent(field, left, right):
         return True
+    if field == "merchant":
+        return False
     return _similar(left, right) >= 0.72
 
 
@@ -227,7 +246,14 @@ def analyze_finance_evaluation_failure(
                         "normalized": semantic_normalized_value(field, expected),
                     },
                 ))
-    if not _evaluation_failed(ground_truth, prediction):
+            elif field == "name" and _ocr_digit_confusion(expected, actual) and _text_contains(ocr_text, "name", actual):
+                tags.append(_tag(
+                    "OCR_ERROR", "OCR_CHARACTER_CONFUSION", scope=f"items[{index}]", field=field, confidence=0.98,
+                    message="품목명의 숫자가 OCR에서 모양이 비슷한 문자로 잘못 인식됐습니다.",
+                    evidence={"expected": expected, "actual": actual},
+                ))
+    has_attributed_failure = any(tag["category"] != "NORMALIZATION_ERROR" for tag in tags)
+    if not _evaluation_failed(ground_truth, prediction) and not has_attributed_failure:
         category_counts = Counter(tag["category"] for tag in tags)
         return {
             "analysis_version": ANALYSIS_VERSION,
@@ -305,6 +331,12 @@ def analyze_finance_evaluation_failure(
                     message="정답 숫자는 OCR에 있지만 최종 예측값이 다릅니다.",
                     evidence={"expected": expected, "actual": actual},
                 ))
+        elif field == "merchant":
+            tags.append(_tag(
+                "LLM_ERROR", "MERCHANT_DETAIL_DROPPED", field=field, confidence=0.98,
+                message="OCR에 전체 상호가 있지만 모델이 상호 또는 지점 정보 일부만 추출했습니다.",
+                evidence={"expected": expected, "actual": actual},
+            ))
 
     matched_model_indexes: set[int] = set()
     matched_final_indexes: set[int] = set()
@@ -351,6 +383,18 @@ def analyze_finance_evaluation_failure(
 
         comparison_source = model_item or final_item
         if comparison_source is not None:
+            expected_name = truth_item.get("name")
+            observed_name = comparison_source.get("name")
+            if (
+                not _value_equal("name", expected_name, observed_name)
+                and _ocr_digit_confusion(expected_name, observed_name)
+                and _text_contains(ocr_text, "name", observed_name)
+            ):
+                tags.append(_tag(
+                    "OCR_ERROR", "OCR_CHARACTER_CONFUSION", scope=scope, field="name", confidence=0.98,
+                    message="품목명의 숫자가 OCR에서 모양이 비슷한 문자로 잘못 인식됐습니다.",
+                    evidence={"expected": expected_name, "actual": observed_name},
+                ))
             for field, code in (
                 ("quantity", "QUANTITY_ERROR"),
                 ("unit_price", "UNIT_PRICE_ERROR"),

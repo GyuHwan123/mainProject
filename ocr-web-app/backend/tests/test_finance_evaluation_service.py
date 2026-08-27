@@ -219,14 +219,14 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 0)
         self.assertFalse(score["complete_match"])
 
-    def test_treats_kyobo_bilingual_and_branch_names_as_same_merchant(self):
+    def test_does_not_ignore_kyobo_branch_without_split_ocr_boxes(self):
         score = score_fields(
             {"merchant": "KYOBO 교보문고"},
             {"merchant": "교보문고 광화문점"},
         )
 
-        self.assertEqual(score["correct_fields"], 1)
-        self.assertTrue(score["complete_match"])
+        self.assertEqual(score["correct_fields"], 0)
+        self.assertFalse(score["complete_match"])
 
     def test_matches_items_independent_of_order_and_allows_similar_names(self):
         score = score_fields(
@@ -327,7 +327,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertTrue(barcode["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
         self.assertTrue(promotion["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
 
-    def test_matches_known_equivalent_merchant_renderings_from_batch(self):
+    def test_does_not_apply_legacy_branch_ignoring_aliases(self):
         pairs = (
             ("신세계도곡점", "신세계 FOOD MARKET"),
             ("COS 현대백화점", "COS 현대 무역센터점"),
@@ -338,7 +338,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
 
         for actual, expected in pairs:
             with self.subTest(actual=actual, expected=expected):
-                self.assertTrue(score_fields({"merchant": actual}, {"merchant": expected})["complete_match"])
+                self.assertFalse(score_fields({"merchant": actual}, {"merchant": expected})["complete_match"])
 
     def test_does_not_match_conflicting_explicit_merchant_branches(self):
         score = score_fields(
@@ -356,10 +356,30 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
 
         self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
 
-    def test_allows_minor_merchant_ocr_typo_and_corporate_notation(self):
+    def test_does_not_normalize_merchant_typo_without_split_ocr_boxes(self):
         score = score_fields(
             {"merchant": "주)바늘이야기-법업스토어"},
             {"merchant": "(주)바늘이야기-팝업스토어"},
+        )
+
+        self.assertFalse(score["complete_match"])
+
+    def test_requires_full_merchant_when_expected_name_is_in_one_ocr_box(self):
+        pages = [{"items": [{"text": "CJ올리브영 청라커낼웨이점"}]}]
+        score = score_fields(
+            {"merchant": "CJ올리브영"},
+            {"merchant": "CJ올리브영 청라커낼웨이점"},
+            ocr_pages=pages,
+        )
+
+        self.assertFalse(score["complete_match"])
+
+    def test_allows_semantic_merchant_match_when_ocr_name_is_split_across_boxes(self):
+        pages = [{"items": [{"text": "CJ올리브영"}, {"text": "청라커낼웨이점"}]}]
+        score = score_fields(
+            {"merchant": "CJ올리브영"},
+            {"merchant": "CJ올리브영 청라커낼웨이점"},
+            ocr_pages=pages,
         )
 
         self.assertTrue(score["complete_match"])

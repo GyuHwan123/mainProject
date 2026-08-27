@@ -119,6 +119,31 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
 
         self.assertIn("SUMMARY_AMOUNT_SELECTION_ERROR", {tag["code"] for tag in result["error_tags"]})
 
+    def test_tags_digit_read_as_similar_letter_as_ocr_error(self):
+        result = analyze_finance_evaluation_failure(
+            ocr_text="[샌디스크] Z71/16G 1 10,000",
+            ground_truth={"items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}]},
+            prediction={"items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}]},
+            pipeline_trace={
+                "item_candidates": [{"name_candidate": "[샌디스크] Z71/16G", "quantity_candidate": 1, "amount_candidate": 10000}],
+                "model_items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}],
+            },
+        )
+
+        tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
+        self.assertIn(("OCR_ERROR", "OCR_CHARACTER_CONFUSION", "name"), tags)
+
+    def test_tags_partial_merchant_from_complete_ocr_text_as_llm_error(self):
+        result = analyze_finance_evaluation_failure(
+            ocr_text="CJ올리브영 청라커낼웨이점",
+            ground_truth={"merchant": "CJ올리브영 청라커낼웨이점"},
+            prediction={"merchant": "CJ올리브영"},
+            pipeline_trace={},
+        )
+
+        tags = {(tag["category"], tag["code"]) for tag in result["error_tags"]}
+        self.assertIn(("LLM_ERROR", "MERCHANT_DETAIL_DROPPED"), tags)
+
     def test_tags_validator_changes_and_item_mutations(self):
         result = analyze_finance_evaluation_failure(
             ocr_text="노트 1 5,000\n결제금액 5,000",

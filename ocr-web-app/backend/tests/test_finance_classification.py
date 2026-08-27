@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance import (  # noqa: E402
+    EXPENSE_CATEGORIES,
     _classify_receipt_with_model,
     _normalize,
+    _normalize_expense_category,
     _reconcile_items_with_candidates,
     _receipt_hints,
     _receipt_item_candidates,
@@ -28,6 +30,23 @@ SAMPLE_OCR = """주문번호 5,125.00
 
 
 class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
+    def test_receipt_prompt_restricts_expense_category_to_managed_list(self):
+        prompt = _receipt_prompt("브러쉬드 알파카 실", "receipt.jpg")
+
+        self.assertIn("고정 목록 중 정확히 하나", prompt)
+        self.assertIn("취미/소품", prompt)
+        self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
+
+    def test_unknown_expense_category_falls_back_to_miscellaneous(self):
+        self.assertEqual(_normalize_expense_category("취미소품"), "취미/소품")
+        self.assertEqual(_normalize_expense_category("생활/식비"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/생활"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/쇼핑"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/주류"), "식비/주류")
+        self.assertEqual(_normalize_expense_category("모델이 만든 새 분류"), "기타")
+        normalized = _normalize({"expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
+        self.assertEqual(normalized["expense_category"], "기타")
+
     def test_explicit_final_amount_overrides_model_selected_item_amount(self):
         ocr = "상품명 금액\n샤프 8,300\n최종 결제금액 56,300원"
         normalized = _normalize({"total_amount": 8300, "items": [{"name": "샤프", "quantity": 1, "total_amount": 8300}]}, "receipt.jpg", ocr)

@@ -528,16 +528,29 @@ class SupabaseService:
         metrics = self._refresh_finance_evaluation_summary(batch_id, finalize=True)
         return {"id": batch_id, "summary_metrics": metrics}
 
-    def list_finance_record_evaluations(self, user_email: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    def list_finance_record_evaluations(
+        self,
+        user_email: str,
+        *,
+        limit: int = 200,
+        evaluation_mode: str | None = None,
+        batch_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
+        batch_relation = "finance_evaluation_batches!inner" if evaluation_mode else "finance_evaluation_batches"
+        params = {
+            "select": f"*,finance_evaluation_items(dataset_index,source_file_name),{batch_relation}(dataset_name,evaluation_mode),ocr_documents(file_name,extracted_text,bounding_boxes)",
+            "user_id": f"eq.{user_id}",
+            "order": "evaluated_at.desc",
+            "limit": str(max(1, min(int(limit), 200))),
+        }
+        if evaluation_mode:
+            params["finance_evaluation_batches.evaluation_mode"] = f"eq.{evaluation_mode.upper()}"
+        if batch_id:
+            params["batch_id"] = f"eq.{batch_id}"
         response = httpx.get(
             f"{self.url}/rest/v1/finance_record_evaluations",
-            params={
-                "select": "*,finance_evaluation_items(dataset_index,source_file_name),finance_evaluation_batches(dataset_name)",
-                "user_id": f"eq.{user_id}",
-                "order": "evaluated_at.asc",
-                "limit": str(limit),
-            },
+            params=params,
             headers=self._service_headers(), timeout=20,
         )
         self._raise_for_supabase(response, "재무 평가 결과 조회 실패")

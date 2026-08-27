@@ -327,7 +327,7 @@ function RecentRuns({ runs }) {
   return <div className="recent-runs-scroll"><div className="recent-runs-table"><div className="run-table-head"><span>일시</span><span>모델</span><span>처리 수</span><span>필드 정확도</span><span>완전 성공률</span><span>처리 성공률</span><span>평균 처리시간</span></div>{runs.map((run) => { const summary = run.summary_metrics || {}; const total = Number(summary.requested_count ?? run.total_items ?? 0); const success = Number(summary.successful_count ?? run.completed_items ?? 0); return <div key={run.id}><span>{run.created_at ? new Date(run.created_at).toLocaleString('ko-KR') : '—'}</span><span title={run.model_name}>{run.model_name || 'gemma3-4b-trained'}</span><strong>{total.toLocaleString()}</strong><span>{metricText(summary.average_field_accuracy, 'percent')}</span><span>{metricText(summary.complete_match_rate, 'percent')}</span><span>{metricText(total ? success / total : null, 'percent')}</span><span>{metricText(summary.average_latency_ms, 'latency')}</span></div>; })}{!runs.length && <p>선택한 기간의 실행 이력이 없습니다.</p>}</div></div>;
 }
 
-function ReceiptMonitoringDashboard() {
+function ReceiptMonitoringDashboard({ onExportPdf }) {
   const initialEndDate = new Date();
   const initialStartDate = new Date(initialEndDate); initialStartDate.setDate(initialEndDate.getDate() - 6);
   const [dateRange, setDateRange] = useState({ startDate: dateInputValue(initialStartDate), endDate: dateInputValue(initialEndDate) });
@@ -387,6 +387,7 @@ function ReceiptMonitoringDashboard() {
           <option value="custom">사용자 지정</option>
         </select>
         <button type="button" className="receipt-model-filter" disabled>모델: gemma3-4b-trained</button>
+        <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
       </div>
     </div>
     {monitoringError && <div className="report-access-error">{monitoringError}</div>}
@@ -514,6 +515,18 @@ export default function ReportPage() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'developer-performance-report.json'; anchor.click(); URL.revokeObjectURL(url);
   };
+  const exportDashboardPdf = () => {
+    const originalTitle = document.title;
+    const reportName = reportView === 'business' ? '기업 업무 리포트' : developerReport === 'receipt' ? '영수증 서비스 대시보드' : 'AI 성능 리포트';
+    document.title = `${reportName}-${new Date().toISOString().slice(0, 10)}`;
+    const restorePrintState = () => {
+      document.title = originalTitle;
+      window.removeEventListener('afterprint', restorePrintState);
+    };
+    window.addEventListener('afterprint', restorePrintState);
+    window.print();
+    window.setTimeout(restorePrintState, 300000);
+  };
 
   const ocrAccuracy = runs.length ? percent(summary.accuracy) : '평가 대기';
   const ocrLatency = summary.time == null ? null : summary.time / 1000;
@@ -526,14 +539,14 @@ export default function ReportPage() {
 
   return <div className="app-shell developer-report-shell"><Sidebar />
     <main className="developer-report">
-      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
+      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && developerReport !== 'receipt' && <button disabled={!runs.length} onClick={exportReport}><IoDownloadOutline /> JSON 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
       {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
           <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
           <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>
         </div>
-        {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard />}
+        {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard onExportPdf={exportDashboardPdf} />}
       </> : <>
       <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
       <RagLlmEvaluation />

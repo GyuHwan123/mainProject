@@ -8,6 +8,7 @@ import { GrCatalogOption } from "react-icons/gr";
 import { clearAppSession } from '../features/appSession';
 import { getAppUser } from '../features/appSession';
 import { supabase } from '../lib/supabase';
+import '../style/Sidebar.scss';
 
 
 const items = [

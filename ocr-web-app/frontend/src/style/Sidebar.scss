@@ -1,0 +1,215 @@
+@use "./variables" as *;
+
+.sidebar {
+  width: 92px;
+  padding: 18px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-right: 1px solid #dfe5ec;
+  box-shadow: 4px 0 18px rgba(18, 68, 112, 0.045);
+
+  .brand-wrap {
+    width: 100%;
+    margin-bottom: 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: linear-gradient(135deg, $main-color, $sub-color);
+    border-radius: 12px;
+    font-size: 1.4rem;
+    font-weight: 700;
+  }
+
+  .brand-name {
+    color: $main-color;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+  }
+
+  .sidebar-nav {
+    width: 100%;
+    margin-top: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .nav-item {
+    width: 54px;
+    height: 54px;
+    display: grid;
+    place-items: center;
+    color: #66788a;
+    background: #f6f8fb;
+    border-radius: 16px;
+    font-size: 1.5rem;
+
+    &:hover {
+      color: $main-color;
+      background: #edf5fb;
+    }
+    &.active {
+      color: $main-color;
+      background: #e5f1fb;
+      box-shadow: inset 0 0 0 1px rgba(50, 112, 166, 0.25);
+    }
+  }
+
+  .sidebar-settings {
+    position: relative;
+    margin-top: auto;
+  }
+
+  .sidebar-footer {
+    position: relative;
+    width: 54px;
+    height: 54px;
+    display: grid;
+    place-items: center;
+    color: $main-color;
+    background: #eef4f9;
+    border: 0;
+    border-radius: 16px;
+    cursor: pointer;
+    font-size: 1.35rem;
+    transition:
+      background 0.18s ease,
+      box-shadow 0.18s ease;
+
+    &:hover,
+    &.active {
+      background: #dcecf8;
+      box-shadow: inset 0 0 0 1px rgba(50, 112, 166, 0.28);
+    }
+
+    &:hover .settings-tooltip,
+    &:focus-visible .settings-tooltip {
+      opacity: 1;
+      transform: translate(0, 50%);
+    }
+  }
+
+  .settings-tooltip {
+    position: absolute;
+    bottom: 50%;
+    left: calc(100% + 12px);
+    z-index: 30;
+    padding: 6px 9px;
+    color: #fff;
+    background: #272b36;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    transform: translate(4px, 50%);
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
+  }
+
+  .settings-menu {
+    position: absolute;
+    bottom: 0;
+    left: calc(100% + 12px);
+    z-index: 50;
+    width: 220px;
+    padding: 7px;
+    background: #fff;
+    border: 1px solid #dde2ea;
+    border-radius: 12px;
+    box-shadow: 0 14px 35px rgba(5, 12, 25, 0.28);
+
+    a,
+    button {
+      width: 100%;
+      padding: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #3c485b;
+      background: transparent;
+      border: 0;
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+
+      &:hover {
+        color: $main-color;
+        background: #eef5fb;
+      }
+    }
+
+    button:last-child {
+      color: #a44a4a;
+      &:hover {
+        color: #963b3b;
+        background: #fff0f0;
+      }
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+    svg {
+      flex: none;
+      font-size: 19px;
+    }
+    span {
+      display: grid;
+      gap: 2px;
+    }
+    strong {
+      font-size: 12px;
+    }
+    small {
+      color: #8d96a4;
+      font-size: 10px;
+    }
+  }
+}
+
+@media (max-width: 1120px) {
+  .sidebar {
+    width: 100%;
+    padding: 12px 18px;
+    flex-direction: row;
+    justify-content: space-between;
+
+    .sidebar-nav {
+      margin: 0;
+      flex-direction: row;
+    }
+    .sidebar-settings {
+      margin-top: 0;
+    }
+    .settings-menu {
+      top: calc(100% + 10px);
+      right: 0;
+      bottom: auto;
+      left: auto;
+    }
+    .settings-tooltip {
+      display: none;
+    }
+  }
+}

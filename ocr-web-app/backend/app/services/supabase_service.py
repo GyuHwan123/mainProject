@@ -533,7 +533,7 @@ class SupabaseService:
         response = httpx.get(
             f"{self.url}/rest/v1/finance_record_evaluations",
             params={
-                "select": "*,finance_evaluation_items(dataset_index,source_file_name),finance_evaluation_batches(dataset_name)",
+                "select": "*,finance_evaluation_items(dataset_index,source_file_name),finance_evaluation_batches(dataset_name,evaluation_mode)",
                 "user_id": f"eq.{user_id}",
                 "order": "evaluated_at.asc",
                 "limit": str(limit),

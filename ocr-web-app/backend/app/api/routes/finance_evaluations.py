@@ -402,13 +402,25 @@ def finalize_finance_evaluation_batch(
 
 @router.get("/runs")
 def list_saved_finance_evaluations(
+    evaluation_mode: Literal["SINGLE", "BULK"] | None = None,
+    limit: int = 30,
     user: User = Depends(require_developer),
 ) -> list[dict[str, Any]]:
     runs = []
     for row in supabase_service.list_finance_record_evaluations(user.email):
-        document = supabase_service.get_ocr_document(user.email, row["document_id"])
         item = row.get("finance_evaluation_items") or {}
         batch = row.get("finance_evaluation_batches") or {}
+        if isinstance(item, list):
+            item = item[0] if item else {}
+        if isinstance(batch, list):
+            batch = batch[0] if batch else {}
+        row_mode = str(batch.get("evaluation_mode") or "SINGLE").upper()
+        if evaluation_mode and row_mode != evaluation_mode:
+            continue
+        try:
+            document = supabase_service.get_ocr_document(user.email, row["document_id"])
+        except HTTPException:
+            document = {}
         runs.append({
             "document_id": row["document_id"],
             "document_name": document.get("file_name") or "receipt",
@@ -421,6 +433,7 @@ def list_saved_finance_evaluations(
             "batch_id": row.get("batch_id"),
             "evaluation_id": row.get("id"),
             "dataset_name": batch.get("dataset_name"),
+            "evaluation_mode": row_mode,
             "dataset_index": item.get("dataset_index", 0),
             "matched_image": item.get("source_file_name") or document.get("file_name"),
             "results": [{
@@ -444,7 +457,7 @@ def list_saved_finance_evaluations(
                 },
             }],
         })
-    return runs
+    return sorted(runs, key=lambda run: str(run.get("evaluated_at") or ""), reverse=True)[:max(1, min(limit, 100))]
 
 
 @router.post("/run")

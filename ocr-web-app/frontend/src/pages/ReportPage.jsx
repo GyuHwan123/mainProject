@@ -396,6 +396,18 @@ export default function ReportPage() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'developer-performance-report.json'; anchor.click(); URL.revokeObjectURL(url);
   };
+  const exportDashboardPdf = () => {
+    const originalTitle = document.title;
+    const reportName = reportView === 'business' ? '기업 업무 리포트' : developerReport === 'receipt' ? '영수증 서비스 대시보드' : 'AI 성능 리포트';
+    document.title = `${reportName}-${new Date().toISOString().slice(0, 10)}`;
+    const restorePrintState = () => {
+      document.title = originalTitle;
+      window.removeEventListener('afterprint', restorePrintState);
+    };
+    window.addEventListener('afterprint', restorePrintState);
+    window.print();
+    window.setTimeout(restorePrintState, 300000);
+  };
 
   const ocrAccuracy = runs.length ? percent(summary.accuracy) : '평가 대기';
   const ocrLatency = summary.time == null ? null : summary.time / 1000;
@@ -408,7 +420,7 @@ export default function ReportPage() {
 
   return <div className="app-shell developer-report-shell"><Sidebar />
     <main className="developer-report">
-      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && <button disabled={developerReport === 'receipt' || !runs.length} onClick={exportReport}><IoDownloadOutline /> 내보내기</button>}</div></header>
+      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button><button className="pdf-export-button" onClick={exportDashboardPdf}><IoDownloadOutline /> PDF 다운로드</button>{reportView === 'developer' && developerReport !== 'receipt' && <button disabled={!runs.length} onClick={exportReport}><IoDownloadOutline /> JSON 내보내기</button>}</div></header>
       {error && <div className="report-access-error">{error}</div>}
       {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">

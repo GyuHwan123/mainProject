@@ -6,6 +6,7 @@ import html
 import json
 import math
 import re
+import time
 from threading import Lock
 from typing import Any
 
@@ -15,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.chatbot import ChatMessage, ask_chatbot
+from app.api.routes.chatbot import ChatMessage, _ask_chatbot, ask_chatbot
 from app.core.config import settings
 from app.models.user import User
 from app.services.rag_service import embed_texts, rag_service
@@ -25,6 +26,8 @@ router = APIRouter()
 _latest_evaluations: dict[str, dict[str, Any]] = {}
 _umap_cache: dict[str, Any] = {}
 _umap_cache_lock = Lock()
+_llm_evaluation_lock = Lock()
+_llm_evaluation_states: dict[str, dict[str, Any]] = {}
 _UMAP_COLORS = {"HR": "#2563eb", "GA": "#16a34a", "IS": "#9333ea", "SH": "#ea580c", "ER": "#dc2626"}
 
 
@@ -50,6 +53,11 @@ class RagEvaluationDataset(BaseModel):
         if self.question_count != len(self.cases):
             raise ValueError("question_count와 cases 개수가 일치해야 합니다.")
         return self
+
+
+class RagLlmEvaluationRequest(BaseModel):
+    dataset: RagEvaluationDataset
+    model_name: str = Field(min_length=1, max_length=200)
 
 
 def require_developer(user: User = Depends(require_current_user)) -> User:
@@ -237,6 +245,186 @@ def latest_rag_evaluation(user: User = Depends(require_developer)) -> dict[str, 
     if not result:
         raise HTTPException(status_code=404, detail="현재 Backend 프로세스에 저장된 RAG 평가 결과가 없습니다.")
     return result
+
+
+def _bounded_cosine(left: list[float], right: list[float]) -> float:
+    return max(0.0, min(1.0, sum(a * b for a, b in zip(left, right))))
+
+
+async def _installed_ollama_models() -> list[str]:
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=10) as client:
+            response = await client.get("/api/tags")
+            response.raise_for_status()
+        return sorted({
+            str(model.get("name") or model.get("model") or "").strip()
+            for model in response.json().get("models", [])
+            if isinstance(model, dict) and (model.get("name") or model.get("model"))
+        })
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=503, detail="Ollama 설치 모델 목록을 조회할 수 없습니다.") from exc
+
+
+@router.get("/evaluation/llm/models")
+async def list_rag_evaluation_models(
+    _user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    models = await _installed_ollama_models()
+    return {
+        "models": models,
+        "default_model": settings.RAG_LLM_MODEL if settings.RAG_LLM_MODEL in models else None,
+    }
+
+
+@router.get("/evaluation/llm/status")
+def rag_llm_evaluation_status(user: User = Depends(require_developer)) -> dict[str, Any]:
+    with _llm_evaluation_lock:
+        return dict(_llm_evaluation_states.get(user.email) or {
+            "status": "idle", "current": 0, "total": 0, "question_id": None,
+        })
+
+
+@router.post("/evaluation/llm/run")
+async def run_rag_llm_evaluation(
+    payload: RagLlmEvaluationRequest,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    installed_models = await _installed_ollama_models()
+    if payload.model_name not in installed_models:
+        raise HTTPException(status_code=422, detail="현재 Ollama에 설치된 모델만 선택할 수 있습니다.")
+
+    with _llm_evaluation_lock:
+        current_state = _llm_evaluation_states.get(user.email) or {}
+        if current_state.get("status") == "running":
+            raise HTTPException(status_code=409, detail="이미 LLM 평가가 실행 중입니다.")
+        _llm_evaluation_states[user.email] = {
+            "status": "running", "current": 0, "total": len(payload.dataset.cases),
+            "question_id": None, "model_name": payload.model_name,
+        }
+
+    case_results: list[dict[str, Any]] = []
+    answer_scores: list[float] = []
+    answer_correctness: list[float] = []
+    faithfulness_scores: list[float] = []
+    relevancy_scores: list[float] = []
+    rejection_scores: list[float] = []
+    latencies: list[float] = []
+    token_counts: list[int] = []
+    filename_to_id, title_to_id = _catalog_maps()
+
+    try:
+        for index, case in enumerate(payload.dataset.cases, 1):
+            with _llm_evaluation_lock:
+                _llm_evaluation_states[user.email].update(
+                    current=index - 1, question_id=case.question_id,
+                )
+
+            sources = await rag_service.search(user.email, case.question, None, settings.RAG_TOP_K)
+            context = "\n\n".join(
+                f"[근거 {source_index + 1} · {source.get('source', '문서')} · "
+                f"{source.get('page_number', 1)}페이지 · Chunk {source.get('chunk_index', 0) + 1}] "
+                f"{source.get('content', '')}"
+                for source_index, source in enumerate(sources)
+            )
+            generation_metadata: dict[str, Any] = {}
+            started_at = time.perf_counter()
+            reply = await _ask_chatbot(
+                ChatMessage(message=case.question, context=context, history=[]), user,
+                evaluation_model=payload.model_name,
+                evaluation_metadata=generation_metadata,
+            )
+            latency_ms = (time.perf_counter() - started_at) * 1000
+            answer = reply.reply
+            rejected = _is_rejection(answer)
+            expected_vector, answer_vector, context_vector, question_vector = await embed_texts([
+                case.expected_answer or "정답 없음", answer,
+                context or "제공된 문서 근거가 없습니다.", case.question,
+            ])
+            answer_score = _bounded_cosine(expected_vector, answer_vector) if case.answerable else None
+            relevancy = _bounded_cosine(question_vector, answer_vector)
+            faithfulness = 1.0 if not case.answerable and rejected else _bounded_cosine(answer_vector, context_vector)
+            hallucination = 1.0 - faithfulness
+            retrieved_documents = _retrieved_document_ids(sources, filename_to_id, title_to_id)
+            expected_documents = set(case.expected_documents)
+            matched = expected_documents.intersection(retrieved_documents)
+            context_utilization = (
+                len(matched) / len(set(retrieved_documents)) if retrieved_documents else 0.0
+            )
+            output_tokens = int(generation_metadata.get("eval_count") or 0)
+
+            if answer_score is not None:
+                answer_scores.append(answer_score)
+                answer_correctness.append(float(answer_score >= settings.RAG_EVALUATION_ANSWER_THRESHOLD))
+            faithfulness_scores.append(faithfulness)
+            relevancy_scores.append(relevancy)
+            if not case.answerable:
+                rejection_scores.append(float(rejected))
+            latencies.append(latency_ms)
+            token_counts.append(output_tokens)
+            case_results.append({
+                "question_id": case.question_id,
+                "answerable": case.answerable,
+                "answer_accuracy": answer_score,
+                "answer_correct": (
+                    answer_score >= settings.RAG_EVALUATION_ANSWER_THRESHOLD
+                    if answer_score is not None else None
+                ),
+                "faithfulness": faithfulness,
+                "answer_relevancy": relevancy,
+                "hallucination_rate": hallucination,
+                "no_answer_correct": rejected if not case.answerable else None,
+                "context_utilization": context_utilization,
+                "latency_ms": latency_ms,
+                "output_token_count": output_tokens,
+            })
+            with _llm_evaluation_lock:
+                _llm_evaluation_states[user.email].update(current=index)
+
+        answer_accuracy = _mean(answer_correctness)
+        faithfulness = _mean(faithfulness_scores)
+        answer_relevancy = _mean(relevancy_scores)
+        no_answer_accuracy = _mean(rejection_scores)
+        final_score = 100 * (
+            answer_accuracy * 0.40
+            + faithfulness * 0.25
+            + answer_relevancy * 0.20
+            + no_answer_accuracy * 0.15
+        )
+        result = {
+            "dataset_name": payload.dataset.dataset_name,
+            "file_question_count": len(payload.dataset.cases),
+            "model_name": payload.model_name,
+            "summary": {
+                "total": len(case_results),
+                "answer_accuracy": answer_accuracy,
+                "average_answer_similarity": _mean(answer_scores),
+                "faithfulness": faithfulness,
+                "answer_relevancy": answer_relevancy,
+                "hallucination_rate": _mean([1.0 - score for score in faithfulness_scores]),
+                "no_answer_accuracy": no_answer_accuracy,
+                "average_latency_ms": _mean(latencies),
+                "total_output_tokens": sum(token_counts),
+                "average_output_tokens": _mean(token_counts),
+                "final_score": round(final_score, 1),
+                "instruction_following": None,
+                "completeness": None,
+            },
+            "cases": case_results,
+        }
+        with _llm_evaluation_lock:
+            _llm_evaluation_states[user.email] = {
+                "status": "completed", "current": len(case_results), "total": len(case_results),
+                "question_id": None, "model_name": payload.model_name, "result": result,
+            }
+        return result
+    except Exception as exc:
+        with _llm_evaluation_lock:
+            _llm_evaluation_states[user.email] = {
+                "status": "error", "current": len(case_results), "total": len(payload.dataset.cases),
+                "question_id": None, "model_name": payload.model_name, "error": str(exc),
+            }
+        raise
 
 
 @router.get("/evaluation/umap")

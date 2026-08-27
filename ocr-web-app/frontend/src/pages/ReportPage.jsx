@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
@@ -9,6 +9,7 @@ import '../style/ReportPage.scss';
 
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
 const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
+const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
 
 function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) {
   const metrics = useMemo(() => {
@@ -97,6 +98,123 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
     </section>
     {!evaluation && <p className="rag-report-empty">ChatPage에서 RAG 평가를 완료하면 실제 결과가 이 영역에 표시됩니다.</p>}
   </section>;
+}
+
+function RagLlmEvaluation() {
+  const fileRef = useRef(null);
+  const runningRef = useRef(false);
+  const [dataset, setDataset] = useState(null);
+  const [fileName, setFileName] = useState('');
+  const [models, setModels] = useState([]);
+  const [modelName, setModelName] = useState('');
+  const [status, setStatus] = useState({ status: 'idle', current: 0, total: 0, question_id: null });
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(RAG_LLM_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
+  });
+
+  useEffect(() => {
+    apiClient.get('/rag/evaluation/llm/models').then(({ data }) => {
+      const installed = Array.isArray(data.models) ? data.models : [];
+      setModels(installed);
+      setModelName(data.default_model || installed[0] || '');
+    }).catch((requestError) => setError(requestError.response?.data?.detail || 'Ollama 설치 모델을 조회할 수 없습니다.'));
+    apiClient.get('/rag/evaluation/llm/status').then(({ data }) => {
+      if (data.status === 'running') setStatus(data);
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (status.status !== 'running') return undefined;
+    const poller = window.setInterval(() => {
+      apiClient.get('/rag/evaluation/llm/status').then(({ data }) => {
+        setStatus(data);
+        if (data.status === 'completed' && data.result) {
+          setResult(data.result);
+          localStorage.setItem(RAG_LLM_EVALUATION_STORAGE_KEY, JSON.stringify(data.result));
+        }
+      }).catch(() => {});
+    }, 800);
+    return () => window.clearInterval(poller);
+  }, [status.status]);
+
+  const loadDataset = async (file) => {
+    if (runningRef.current) return;
+    setError('');
+    try {
+      if (!file || !/\.json$/i.test(file.name)) throw new Error('기존 RAG 평가 JSON 파일만 업로드할 수 있습니다.');
+      const parsed = JSON.parse(await file.text());
+      if (!parsed.dataset_name || !Array.isArray(parsed.cases) || !parsed.cases.length) throw new Error('dataset_name과 cases가 필요합니다.');
+      if (Number(parsed.question_count) !== parsed.cases.length) throw new Error('question_count와 cases 개수가 일치하지 않습니다.');
+      parsed.cases.forEach((item, index) => {
+        const label = item?.question_id || `${index + 1}번 문항`;
+        if (typeof item?.question !== 'string' || !item.question.trim()) throw new Error(`${label}: question이 필요합니다.`);
+        if (!Array.isArray(item.expected_documents)) throw new Error(`${label}: expected_documents 배열이 필요합니다.`);
+        if (typeof item.expected_answer !== 'string') throw new Error(`${label}: expected_answer가 필요합니다.`);
+        if (typeof item.answerable !== 'boolean') throw new Error(`${label}: answerable은 boolean이어야 합니다.`);
+      });
+      setDataset(parsed); setFileName(file.name); setStatus({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null });
+    } catch (loadError) {
+      setDataset(null); setFileName(''); setError(loadError.message || '평가 JSON을 읽을 수 없습니다.');
+      setStatus({ status: 'error', current: 0, total: 0, question_id: null });
+    }
+  };
+
+  const runEvaluation = async () => {
+    if (!dataset || !modelName || runningRef.current) return;
+    runningRef.current = true;
+    setError(''); setResult(null);
+    setStatus({ status: 'running', current: 0, total: dataset.cases.length, question_id: null });
+    try {
+      const { data } = await apiClient.post('/rag/evaluation/llm/run', { dataset, model_name: modelName }, { timeout: 3600000 });
+      const saved = { ...data, dataset_file_name: fileName };
+      setResult(saved); localStorage.setItem(RAG_LLM_EVALUATION_STORAGE_KEY, JSON.stringify(saved));
+      setStatus({ status: 'completed', current: data.summary.total, total: data.summary.total, question_id: null });
+    } catch (requestError) {
+      const detail = requestError.response?.data?.detail;
+      setError(typeof detail === 'string' ? detail : 'LLM 평가 실행에 실패했습니다.');
+      setStatus((current) => ({ ...current, status: 'error' }));
+    } finally {
+      runningRef.current = false;
+    }
+  };
+
+  const running = status.status === 'running';
+  const summary = result?.summary;
+  const metric = (value) => value == null ? '계산 불가' : `${(value * 100).toFixed(1)}%`;
+  const scoreComponents = summary ? [
+    { label: 'Answer Accuracy', value: summary.answer_accuracy, weight: 40 },
+    { label: 'Faithfulness', value: summary.faithfulness, weight: 25 },
+    { label: 'Answer Relevancy', value: summary.answer_relevancy, weight: 20 },
+    { label: 'No-answer Accuracy', value: summary.no_answer_accuracy, weight: 15 },
+  ] : [];
+  const stateLabel = { idle: '업로드 대기', ready: '평가 준비', running: '평가 실행 중', completed: '평가 완료', error: '오류' }[status.status] || status.status;
+  return <article className="report-card rag-llm-evaluation-card">
+    <header><div><h2>LLM 성능 평가</h2><p>동일한 RAG 검색·Context·Prompt 조건에서 설치된 Ollama 모델을 비교합니다.</p></div><span>{stateLabel}</span></header>
+    <div className="rag-llm-controls">
+      <input ref={fileRef} hidden type="file" accept=".json,application/json" disabled={running} onChange={(event) => { loadDataset(event.target.files?.[0]); event.target.value = ''; }} />
+      <button type="button" disabled={running} onClick={() => fileRef.current?.click()}>{running ? '업로드 잠김' : '정답 데이터 업로드'}</button>
+      <div className="rag-llm-file"><strong>{fileName || '선택된 파일 없음'}</strong><span>{dataset ? `${dataset.cases.length}문항 · 업로드 완료` : '기존 RAG 평가 JSON을 선택하세요.'}</span></div>
+      <label><span>평가 모델 선택</span><select value={modelName} disabled={running || !models.length} onChange={(event) => setModelName(event.target.value)}><option value="">설치 모델 없음</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+      <button type="button" className="run" disabled={!dataset || !modelName || running} onClick={runEvaluation}>{running ? '평가 실행 중...' : '평가 시작'}</button>
+    </div>
+    <div className="rag-llm-progress"><div><strong>{stateLabel}</strong><span>{running ? `${status.current} / ${status.total}${status.question_id ? ` · ${status.question_id}` : ''}` : `${status.current || 0} / ${status.total || dataset?.cases.length || 0}`}</span></div><i><b style={{ width: `${status.total ? Math.min(100, status.current / status.total * 100) : 0}%` }} /></i></div>
+    {error && <p className="rag-llm-error" role="alert">{error}</p>}
+    {summary && <>
+      <section className="rag-llm-summary"><div className="score"><span>최종 LLM 성능 점수</span><strong>{Number(summary.final_score).toFixed(1)}점</strong><small>Answer 40 · Faithfulness 25 · Relevancy 20 · No-answer 15</small></div>{[
+        ['Answer Accuracy', summary.answer_accuracy], ['Faithfulness', summary.faithfulness],
+        ['Answer Relevancy', summary.answer_relevancy], ['Hallucination Rate', summary.hallucination_rate],
+        ['No-answer Accuracy', summary.no_answer_accuracy],
+      ].map(([label, value]) => <div key={label}><span>{label}</span><strong>{metric(value)}</strong></div>)}</section>
+      <section className="rag-llm-score-breakdown">
+        <header><div><strong>종합점수 계산 내역</strong><span>각 지표의 원점수에 확정 가중치를 적용한 합계입니다.</span></div><b>{Number(summary.final_score).toFixed(1)}점</b></header>
+        <div>{scoreComponents.map((item) => <article key={item.label}><strong>{item.label}</strong><dl><div><dt>원점수</dt><dd>{metric(item.value)}</dd></div><div><dt>가중치</dt><dd>{item.weight}%</dd></div><div><dt>반영 점수</dt><dd>{(Number(item.value || 0) * item.weight).toFixed(1)}점</dd></div></dl></article>)}</div>
+        <footer>{scoreComponents.map((item) => `${(Number(item.value || 0) * 100).toFixed(1)}% × ${item.weight}%`).join(' + ')} = <strong>{Number(summary.final_score).toFixed(1)}점</strong></footer>
+      </section>
+      <div className="rag-llm-meta"><span>모델 <strong>{result.model_name}</strong></span><span>파일 <strong>{result.dataset_file_name || result.dataset_name}</strong></span><span>총 {summary.total}문항</span><span>평균 Latency <strong>{(summary.average_latency_ms / 1000).toFixed(2)}s</strong></span><span>Output Tokens <strong>{summary.total_output_tokens}</strong></span></div>
+      <div className="rag-llm-table-wrap"><div className="rag-llm-table"><div className="head"><span>문항</span><span>Answer Accuracy</span><span>Faithfulness</span><span>Relevancy</span><span>Hallucination</span><span>No-answer</span><span>Context Precision</span><span>Latency</span><span>Tokens</span></div>{result.cases.map((item) => <div key={item.question_id}><strong>{item.question_id}</strong><span>{metric(item.answer_accuracy)}</span><span>{metric(item.faithfulness)}</span><span>{metric(item.answer_relevancy)}</span><span>{metric(item.hallucination_rate)}</span><span>{item.no_answer_correct == null ? '—' : item.no_answer_correct ? '100.0%' : '0.0%'}</span><span>{metric(item.context_utilization)}</span><span>{(item.latency_ms / 1000).toFixed(2)}s</span><span>{item.output_token_count}</span></div>)}</div></div>
+    </>}
+  </article>;
 }
 
 function BusinessReport({ stats, loading }) {
@@ -418,6 +536,9 @@ export default function ReportPage() {
         {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard />}
       </> : <>
       <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
+      <RagLlmEvaluation />
+      {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
+      {false && <>
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>
@@ -436,6 +557,7 @@ export default function ReportPage() {
         <article className="report-card keyword-card"><header><div><h2>최다 검색 사내 키워드</h2><p>질문 분석 로그 연동 대기</p></div></header><div className="keyword-empty">실제 검색 로그가 쌓이면 Top 5 키워드가 표시됩니다.</div></article>
         <article className="report-card attention-card"><header><div><h2>주의 필요 문서</h2><p>OCR 신뢰도가 낮은 실제 평가 기록</p></div><span>{attentionRuns.length} DOCS</span></header><div className="attention-table"><div className="table-head"><span>문서명</span><span>OCR F1</span><span>처리 시간</span><span>상태</span></div>{attentionRuns.map((run) => <div key={run.id}><strong>{run.document_name}</strong><span>{percent(run.f1_score)}</span><span>{run.processing_time_ms == null ? '—' : `${(run.processing_time_ms / 1000).toFixed(1)}s`}</span><b className={Number(run.f1_score) < .8 ? 'danger' : 'review'}>{Number(run.f1_score) < .8 ? '주의' : '검토 필요'}</b></div>)}{!loading && !attentionRuns.length && <p className="empty-report-row">OCR 페이지에서 정답 평가를 저장하면 표시됩니다.</p>}</div></article>
       </section>
+      </>}
       </>}
     </main>
   </div>;

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
+from collections import OrderedDict
 from functools import lru_cache
+from threading import Lock
 from typing import Any
 
 from fastapi import HTTPException
@@ -17,7 +20,11 @@ RERANK_MODEL = settings.RAG_RERANK_MODEL
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
 TEXT_CHUNK_MAX_CHARS = settings.RAG_TEXT_CHUNK_MAX_CHARS
 TEXT_CHUNK_OVERLAP_CHARS = settings.RAG_TEXT_CHUNK_OVERLAP_CHARS
-ANSWERABILITY_THRESHOLD = settings.RAG_ANSWERABILITY_THRESHOLD
+
+_EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v1"
+_EMBEDDING_CACHE_MAX_SIZE = 2048
+_embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
+_embedding_cache_lock = Lock()
 
 
 @lru_cache(maxsize=1)
@@ -340,6 +347,49 @@ async def embed_texts(texts: list[str]) -> list[list[float]]:
         ) from exc
 
 
+def _embedding_cache_key(content: str) -> str:
+    material = f"{EMBEDDING_MODEL}\0{_EVIDENCE_NORMALIZATION_VERSION}\0{content}"
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+async def _embed_texts_cached(texts: list[str]) -> tuple[list[list[float]], dict[str, int]]:
+    if not texts:
+        return [], {"hits": 0, "misses": 0}
+
+    keys = [_embedding_cache_key(text) for text in texts]
+    vectors: list[list[float] | None] = [None] * len(texts)
+    missing_by_key: OrderedDict[str, str] = OrderedDict()
+    hits = 0
+    with _embedding_cache_lock:
+        for index, (key, text) in enumerate(zip(keys, texts)):
+            cached = _embedding_cache.get(key)
+            if cached is None:
+                missing_by_key.setdefault(key, text)
+                continue
+            _embedding_cache.move_to_end(key)
+            vectors[index] = cached
+            hits += 1
+
+    missing_keys = list(missing_by_key)
+    if missing_keys:
+        embedded = await embed_texts(list(missing_by_key.values()))
+        embedded_by_key = dict(zip(missing_keys, embedded))
+        with _embedding_cache_lock:
+            for key, vector in embedded_by_key.items():
+                _embedding_cache[key] = vector
+                _embedding_cache.move_to_end(key)
+            while len(_embedding_cache) > _EMBEDDING_CACHE_MAX_SIZE:
+                _embedding_cache.popitem(last=False)
+        for index, key in enumerate(keys):
+            if vectors[index] is None:
+                vectors[index] = embedded_by_key[key]
+
+    return [vector for vector in vectors if vector is not None], {
+        "hits": hits,
+        "misses": len(missing_keys),
+    }
+
+
 async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     if not candidates or not RERANK_MODEL:
         return candidates
@@ -366,10 +416,153 @@ async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> lis
         ) from exc
 
 
-def _has_sufficient_evidence(candidates: list[dict[str, Any]]) -> bool:
+_EVIDENCE_STOP_WORDS = {
+    "회사", "사내", "직원", "우리", "오늘", "무엇", "뭘", "몇", "어떻게", "얼마",
+    "하나요", "인가요", "되나요", "있나요", "해요", "해야", "가능", "최대", "진행",
+}
+_EVIDENCE_PREDICATE_ENDINGS = (
+    "하다", "한다", "하나요", "인가요", "되나요", "있나요", "해야", "해요", "해서",
+    "하려면", "되면", "내야", "쉬게", "넘게", "주나요", "가능한가요", "서", "게", "면", "해",
+)
+_KOREAN_DURATION_NORMALIZATION = {
+    "하루": "1일", "이틀": "2일", "사흘": "3일", "나흘": "4일",
+    "한 달": "1개월", "두 달": "2개월", "세 달": "3개월",
+}
+_EVIDENCE_SEMANTIC_THRESHOLD = 0.55
+
+
+def _normalize_evidence_text(value: str) -> str:
+    normalized = str(value or "").lower()
+    for source, replacement in _KOREAN_DURATION_NORMALIZATION.items():
+        normalized = normalized.replace(source, replacement)
+
+    def amount(match: re.Match[str]) -> str:
+        return f"{int(float(match.group(1).replace(',', '')) * 10_000)}원"
+
+    normalized = re.sub(r"(\d+(?:\.\d+)?)\s*만원", amount, normalized)
+    normalized = re.sub(r"(\d[\d,]*)\s*원", lambda match: f"{match.group(1).replace(',', '')}원", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
+
+
+def _evidence_sentences(candidates: list[dict[str, Any]]) -> list[str]:
+    units: list[str] = []
+    for candidate in candidates:
+        content = _normalize_evidence_text(str(candidate.get("content") or ""))
+        if not content:
+            continue
+        units.append(content)
+        sentences = [
+            sentence.strip()
+            for sentence in re.split(r"[\n.!?]+", content)
+            if len(sentence.strip()) >= 4
+        ]
+        units.extend(sentences[:2])
+    return list(dict.fromkeys(units))
+
+
+def _strip_korean_particle(token: str) -> str:
+    return re.sub(r"(으로|에서|에게|한테|까지|부터|처럼|보다|이나|나|은|는|이|가|을|를|의|와|과|도|에)$", "", token)
+
+
+def _extract_evidence_facets(query: str) -> dict[str, Any]:
+    normalized = _normalize_evidence_text(query)
+    raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", normalized)
+    tokens = []
+    for raw_token in raw_tokens:
+        token = _strip_korean_particle(raw_token)
+        if len(token) < 2 or token in _EVIDENCE_STOP_WORDS:
+            continue
+        if token.endswith(_EVIDENCE_PREDICATE_ENDINGS):
+            continue
+        tokens.append(token)
+    tokens = list(dict.fromkeys(tokens))
+    conditions = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", normalized)
+    strong_subjects = [
+        token for token in tokens
+        if len(token) >= 2 and not re.fullmatch(r"\d+(?:원|일|개월|시간|퍼센트|%)", token)
+        and not token.endswith(("아서", "어서", "려고", "짜리"))
+    ]
+    return {
+        "query": normalized,
+        "tokens": tokens,
+        "conditions": conditions,
+        "strong_subjects": strong_subjects,
+    }
+
+
+def _quantity(value: str) -> tuple[float, str] | None:
+    match = re.fullmatch(r"(\d+)(원|일|개월|시간|퍼센트|%)", value)
+    if not match:
+        return None
+    unit = "퍼센트" if match.group(2) == "%" else match.group(2)
+    return float(match.group(1)), unit
+
+
+def _condition_supported(condition: str, evidence: str) -> bool:
+    if condition in evidence:
+        return True
+    expected = _quantity(condition)
+    if not expected:
+        return False
+    values = [
+        quantity for raw in re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", evidence)
+        if (quantity := _quantity(raw)) and quantity[1] == expected[1]
+    ]
+    numbers = sorted({number for number, _unit in values})
+    return any(left <= expected[0] <= right for left, right in zip(numbers, numbers[1:]))
+
+
+async def _has_facet_evidence(
+    query: str,
+    candidates: list[dict[str, Any]],
+    *,
+    facets: dict[str, Any] | None = None,
+    facet_vectors: list[list[float]] | None = None,
+) -> bool:
     if not candidates:
         return False
-    return float(candidates[0].get("similarity") or 0.0) >= ANSWERABILITY_THRESHOLD
+    facets = facets or _extract_evidence_facets(query)
+    units = _evidence_sentences(candidates)
+    if not units:
+        return False
+    combined_evidence = "\n".join(units)
+    lexical_hits = [token for token in facets["tokens"] if token in combined_evidence]
+    strong_subjects = facets["strong_subjects"]
+    focus_subject = strong_subjects[0] if strong_subjects else ""
+
+    facet_texts = [facets["query"], *([focus_subject] if focus_subject else [])]
+    if facet_vectors is None:
+        facet_vectors, _ = await _embed_texts_cached(facet_texts)
+    unit_vectors, _ = await _embed_texts_cached(units)
+    query_scores = [
+        sum(left * right for left, right in zip(facet_vectors[0], unit_vector))
+        for unit_vector in unit_vectors
+    ]
+    if not query_scores or max(query_scores) < _EVIDENCE_SEMANTIC_THRESHOLD:
+        return False
+
+    if focus_subject:
+        subject_score = max(
+            sum(left * right for left, right in zip(facet_vectors[1], unit_vector))
+            for unit_vector in unit_vectors
+        )
+        if focus_subject not in combined_evidence and subject_score < 0.60:
+            return False
+
+    conditions = facets["conditions"]
+    if conditions:
+        linked = False
+        for unit, score in zip(units, query_scores):
+            if score < _EVIDENCE_SEMANTIC_THRESHOLD:
+                continue
+            if all(_condition_supported(condition, unit) for condition in conditions):
+                linked = True
+                break
+        if not linked:
+            return False
+
+    return bool(lexical_hits or conditions)
 
 
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
@@ -392,7 +585,13 @@ async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
 
 
 async def search(user_email: str, query: str, rag_document_id: str | None, limit: int) -> list[dict[str, Any]]:
-    embedding = (await embed_texts([query]))[0]
+    facets = _extract_evidence_facets(query)
+    strong_subjects = facets["strong_subjects"]
+    focus_subject = strong_subjects[0] if strong_subjects else ""
+    query_texts = [query, facets["query"], *([focus_subject] if focus_subject else [])]
+    query_vectors, _ = await _embed_texts_cached(query_texts)
+    embedding = query_vectors[0]
+    facet_vectors = query_vectors[1:]
     candidates = supabase_service.search_rag_chunks(
         user_email, embedding, rag_document_id, 4,
     )
@@ -459,7 +658,9 @@ async def search(user_email: str, query: str, rag_document_id: str | None, limit
                     "vector_similarity": 1.0, "source": document["file_name"],
                 })
     candidates = candidates[:limit]
-    return candidates if _has_sufficient_evidence(candidates) else []
+    return candidates if await _has_facet_evidence(
+        query, candidates, facets=facets, facet_vectors=facet_vectors,
+    ) else []
 
 
 rag_service = type("RagService", (), {"index_document": staticmethod(index_document), "search": staticmethod(search)})()

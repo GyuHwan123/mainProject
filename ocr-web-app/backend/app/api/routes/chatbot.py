@@ -131,8 +131,56 @@ async def generate(
     ) from last_error
 
 
-@router.post("/ask", response_model=ChatReply)
-async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_current_user)) -> ChatReply:
+async def generate_with_metadata(
+    prompt: str,
+    *,
+    model_name: str,
+    num_predict: int = 600,
+    question: str | None = None,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0.05,
+            "num_predict": num_predict,
+            "num_ctx": 8192,
+            "repeat_penalty": 1.08,
+        },
+    }
+    base_url = settings.OLLAMA_BASE_URL.rstrip("/")
+    try:
+        async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+            sequence = next(_ollama_call_sequence)
+            question_preview = " ".join((question or "").split())[:40]
+            logger.warning(
+                '[OLLAMA_EVALUATION_CALL] time=%s pid=%s seq=%s question="%s" model=%s',
+                datetime.now(timezone.utc).isoformat(), os.getpid(), sequence,
+                question_preview.replace('"', "'"), model_name,
+            )
+            response = await client.post("/api/generate", json=payload)
+            response.raise_for_status()
+            body = response.json()
+            answer = str(body.get("response") or "").strip()
+            if not answer:
+                raise ValueError("empty model response")
+            return {"response": answer, "eval_count": int(body.get("eval_count") or 0)}
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Ollama 모델 {model_name}에 연결할 수 없습니다.",
+        ) from exc
+
+
+async def _ask_chatbot(
+    payload: ChatMessage,
+    _user: User,
+    *,
+    evaluation_model: str | None = None,
+    evaluation_metadata: dict[str, Any] | None = None,
+) -> ChatReply:
     if is_sensitive_query(payload.message):
         return ChatReply(reply=PRIVACY_RESPONSE, model="privacy-policy")
     if not payload.context or not payload.context.strip():
@@ -163,7 +211,19 @@ async def ask_chatbot(payload: ChatMessage, _user: User = Depends(require_curren
 {payload.message}
 
 [답변]"""
+    if evaluation_model:
+        generated = await generate_with_metadata(
+            prompt, model_name=evaluation_model, question=payload.message,
+        )
+        if evaluation_metadata is not None:
+            evaluation_metadata.update(generated)
+        return ChatReply(reply=generated["response"], model=evaluation_model)
     return ChatReply(reply=await generate(prompt, question=payload.message))
+
+
+@router.post("/ask", response_model=ChatReply)
+async def ask_chatbot(payload: ChatMessage, user: User = Depends(require_current_user)) -> ChatReply:
+    return await _ask_chatbot(payload, user)
 
 
 @router.get("/sessions", response_model=list[StoredChatSession])

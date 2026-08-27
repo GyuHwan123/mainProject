@@ -39,6 +39,10 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
     def test_unknown_expense_category_falls_back_to_miscellaneous(self):
         self.assertEqual(_normalize_expense_category("취미소품"), "취미/소품")
+        self.assertEqual(_normalize_expense_category("생활/식비"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/생활"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/쇼핑"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/주류"), "식비/주류")
         self.assertEqual(_normalize_expense_category("모델이 만든 새 분류"), "기타")
         normalized = _normalize({"expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
         self.assertEqual(normalized["expense_category"], "기타")

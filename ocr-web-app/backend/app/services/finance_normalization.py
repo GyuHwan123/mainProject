@@ -11,6 +11,10 @@ def _compact(value: Any) -> str:
 CATEGORY_ALIASES = {
     "교통": "교통",
     "교통비": "교통",
+    "식비": "식비",
+    "생활식비": "식비",
+    "식비생활": "식비",
+    "식비쇼핑": "식비",
 }
 
 MERCHANT_ALIASES = {
@@ -42,4 +46,3 @@ def normalization_equivalent(field: str, expected: Any, actual: Any) -> bool:
     expected_normalized = semantic_normalized_value(field, expected)
     actual_normalized = semantic_normalized_value(field, actual)
     return bool(expected_normalized and expected_normalized == actual_normalized)
-

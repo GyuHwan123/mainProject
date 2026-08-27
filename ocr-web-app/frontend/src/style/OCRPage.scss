@@ -3181,3 +3181,349 @@
     }
   }
 }
+
+// Receipt workspace cards and responsive layout.
+// Kept after the generic OCR breakpoints so receipt mode has an explicit,
+// isolated cascade without changing the standard document OCR workspace.
+.ocr-app-shell.finance-page-shell .ocr-workspace {
+  .ocr-editor.receipt-workspace {
+    height: calc(100vh - 150px);
+    min-height: 620px;
+    padding: 0;
+    display: grid;
+    grid-template-columns:
+      minmax(280px, 0.85fr)
+      minmax(440px, 1.25fr)
+      minmax(260px, 0.7fr);
+    grid-template-areas: "preview sheet agent";
+    gap: 12px;
+    overflow: visible;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+
+    > .preview-panel,
+    > .text-panel,
+    > .receipt-agent-panel {
+      min-width: 0;
+      max-width: 100%;
+      min-height: 0;
+      overflow: hidden;
+      background: $surface-color;
+      border: 1px solid $border-color;
+      border-radius: 12px;
+      box-shadow: 0 8px 25px rgba($main-color, 0.045);
+    }
+
+    > .preview-panel {
+      grid-area: preview;
+    }
+
+    > .text-panel {
+      grid-area: sheet;
+      border: 1px solid $border-color;
+    }
+
+    > .receipt-agent-panel {
+      grid-area: agent;
+      border-left: 1px solid $border-color;
+      overflow-y: auto;
+    }
+
+    .preview-toolbar,
+    .receipt-upload-actions,
+    .receipt-evaluation-transfer {
+      flex-wrap: wrap;
+    }
+
+    .receipt-upload-actions {
+      > div {
+        flex: 1 1 190px;
+      }
+
+      nav {
+        max-width: 100%;
+        flex-wrap: wrap;
+      }
+    }
+
+    .receipt-evaluation-transfer {
+      > div {
+        flex: 1 1 240px;
+      }
+
+      small {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    }
+
+    .receipt-form-sheet {
+      min-width: 0;
+      max-width: 100%;
+      overflow: auto;
+    }
+
+    .receipt-form-title,
+    .receipt-form-meta,
+    .receipt-form-table,
+    .receipt-form-sheet > p {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .receipt-form-title {
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .receipt-form-meta {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+
+      span {
+        white-space: normal;
+        overflow-wrap: anywhere;
+      }
+    }
+
+    .receipt-form-table {
+      overflow-x: auto;
+
+      table {
+        min-width: 680px;
+      }
+    }
+
+    .financial-sheet {
+      max-width: 100%;
+      overflow: auto;
+    }
+
+    .saved-finance-panel,
+    .receipt-raw-result {
+      max-width: 100%;
+    }
+  }
+}
+
+@media (min-width: 1301px) and (max-width: 1600px) {
+  .ocr-app-shell.finance-page-shell .ocr-workspace {
+    .ocr-editor.receipt-workspace > .preview-panel {
+      .receipt-upload-actions {
+        height: auto;
+        min-height: 0;
+        padding: 9px 11px;
+        display: grid;
+        grid-template-columns: max-content minmax(0, 1fr);
+        grid-template-rows: auto auto;
+        align-items: start;
+        justify-content: flex-start;
+        gap: 8px 6px;
+        flex: 0 0 auto;
+
+        > div {
+          width: auto;
+          min-width: 0;
+          grid-column: 1 / -1;
+          grid-row: 1;
+        }
+
+        > div > span:last-child {
+          min-width: 0;
+          flex: 1;
+        }
+
+        > div strong,
+        > div small {
+          max-width: 100%;
+        }
+
+        > nav {
+          width: auto;
+          max-width: 100%;
+          grid-row: 2;
+          flex: none;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        > nav.batch-always-nav {
+          grid-column: 1;
+          margin-left: 0;
+        }
+
+        > nav:not(.batch-always-nav) {
+          grid-column: 2;
+        }
+
+        > nav button {
+          width: auto;
+          flex: 0 0 auto;
+          white-space: nowrap;
+        }
+      }
+
+      .receipt-evaluation-transfer {
+        height: auto;
+        flex: 0 0 auto;
+      }
+    }
+  }
+}
+
+@media (max-width: 1300px) {
+  .ocr-app-shell.finance-page-shell .ocr-workspace {
+    .ocr-editor.receipt-workspace {
+      height: auto;
+      min-height: 0;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-rows: minmax(620px, calc(100vh - 150px)) auto;
+      grid-template-areas:
+        "preview sheet"
+        "agent agent";
+      overflow: visible;
+
+      > .receipt-agent-panel {
+        min-height: 420px;
+        overflow: visible;
+      }
+    }
+  }
+}
+
+@media (max-width: 760px) {
+  .ocr-app-shell.finance-page-shell {
+    overflow-x: hidden;
+
+    .ocr-workspace {
+      max-width: 100%;
+      overflow-x: hidden;
+
+      .ocr-editor.receipt-workspace {
+        max-width: 100%;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto;
+        grid-template-areas:
+          "preview"
+          "sheet"
+          "agent";
+        gap: 10px;
+
+        > .preview-panel,
+        > .text-panel,
+        > .receipt-agent-panel {
+          width: 100%;
+          min-height: 0;
+        }
+
+        .preview-toolbar {
+          min-height: 0;
+          height: auto;
+          padding: 9px 11px;
+          display: grid;
+          grid-template-columns: auto auto;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px 12px;
+
+          > strong {
+            grid-column: 1 / -1;
+            grid-row: 1;
+            display: block;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          > div {
+            min-width: 0;
+            grid-row: 2;
+            flex-wrap: wrap;
+
+            &:last-child {
+              justify-content: flex-end;
+            }
+          }
+        }
+
+        .receipt-upload-actions,
+        .receipt-evaluation-transfer {
+          min-height: 0;
+          padding: 9px 11px;
+          align-items: flex-start;
+          flex-direction: row;
+          flex-wrap: wrap;
+          gap: 8px;
+
+          > div {
+            width: 100%;
+            flex: 1 1 100%;
+          }
+
+          nav {
+            width: auto;
+            max-width: 100%;
+            flex: 0 1 auto;
+            flex-wrap: wrap;
+            gap: 6px;
+
+            button {
+              width: auto;
+              flex: 0 1 auto;
+              padding-inline: 9px;
+            }
+          }
+        }
+
+        .receipt-upload-actions > nav.batch-always-nav {
+          margin-left: 0;
+        }
+
+        .receipt-batch-status,
+        .receipt-duplicate-notice {
+          min-height: 0;
+          padding: 8px 11px;
+          align-items: flex-start;
+
+          span {
+            min-width: 0;
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+        }
+
+        .preview-panel .preview-stage {
+          height: 320px;
+          min-height: 320px;
+          max-height: 55vh;
+          flex: 0 0 auto;
+          padding: 12px;
+        }
+
+        .receipt-raw-result {
+          min-height: 150px;
+          max-height: 190px;
+          flex: 0 0 auto;
+        }
+
+        > .text-panel,
+        > .receipt-agent-panel {
+          min-height: 0;
+        }
+
+        .receipt-document-empty {
+          min-height: 280px;
+          padding: 32px 18px;
+          flex: 0 0 auto;
+          justify-content: flex-start;
+        }
+
+        .receipt-form-meta {
+          grid-template-columns: minmax(0, 1fr);
+        }
+      }
+    }
+  }
+}

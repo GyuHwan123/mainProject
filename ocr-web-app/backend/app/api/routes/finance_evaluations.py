@@ -323,7 +323,7 @@ def evaluate_existing_finance_record(
     text = (document.get("extracted_text") or "").strip()
     truth = normalize_ground_truth(payload.ground_truth)
     prediction, structured = _prediction_from_finance_record(record)
-    score = score_fields(prediction, truth, structured)
+    score = score_fields(prediction, truth, structured, document.get("bounding_boxes") or [])
     pipeline_trace = _pipeline_trace(structured)
     error_analysis = analyze_finance_evaluation_failure(
         ocr_text=text,
@@ -403,24 +403,38 @@ def finalize_finance_evaluation_batch(
 @router.get("/runs")
 def list_saved_finance_evaluations(
     evaluation_mode: Literal["SINGLE", "BULK"] | None = None,
+    batch_id: str | None = None,
     limit: int = 30,
     user: User = Depends(require_developer),
 ) -> list[dict[str, Any]]:
     runs = []
-    for row in supabase_service.list_finance_record_evaluations(user.email):
+    for row in supabase_service.list_finance_record_evaluations(
+        user.email,
+        limit=limit,
+        evaluation_mode=evaluation_mode,
+        batch_id=batch_id,
+    ):
         item = row.get("finance_evaluation_items") or {}
         batch = row.get("finance_evaluation_batches") or {}
+        document = row.get("ocr_documents") or {}
         if isinstance(item, list):
             item = item[0] if item else {}
         if isinstance(batch, list):
             batch = batch[0] if batch else {}
+        if isinstance(document, list):
+            document = document[0] if document else {}
         row_mode = str(batch.get("evaluation_mode") or "SINGLE").upper()
         if evaluation_mode and row_mode != evaluation_mode:
             continue
-        try:
-            document = supabase_service.get_ocr_document(user.email, row["document_id"])
-        except HTTPException:
-            document = {}
+        prediction = row.get("prediction") or {}
+        normalized_truth = row.get("normalized_ground_truth") or row.get("ground_truth") or {}
+        pipeline_trace = row.get("pipeline_trace") or {}
+        llm_trace = pipeline_trace.get("llm") or {}
+        raw_prediction = {
+            **(llm_trace.get("summary_raw") or {}),
+            "items": llm_trace.get("items_raw") or prediction.get("items") or [],
+        }
+        replay_score = score_fields(prediction, normalized_truth, raw_prediction, document.get("bounding_boxes") or [])
         runs.append({
             "document_id": row["document_id"],
             "document_name": document.get("file_name") or "receipt",
@@ -428,10 +442,11 @@ def list_saved_finance_evaluations(
             "ocr_pages": document.get("bounding_boxes") or [],
             "ocr_diagnostics": _ocr_structure_diagnostics(document.get("bounding_boxes") or []),
             "ground_truth": row.get("ground_truth") or {},
-            "normalized_ground_truth": row.get("normalized_ground_truth") or {},
+            "normalized_ground_truth": normalized_truth,
             "evaluated_at": row.get("evaluated_at"),
             "batch_id": row.get("batch_id"),
             "evaluation_id": row.get("id"),
+            "record_id": row.get("finance_record_id"),
             "dataset_name": batch.get("dataset_name"),
             "evaluation_mode": row_mode,
             "dataset_index": item.get("dataset_index", 0),
@@ -442,8 +457,8 @@ def list_saved_finance_evaluations(
                 "latency_ms": row.get("latency_ms") or 0,
                 "error": row.get("error_message"),
                 "system": {
-                    "prediction": row.get("prediction") or {},
-                    "pipeline_trace": row.get("pipeline_trace") or {},
+                    "prediction": prediction,
+                    "pipeline_trace": pipeline_trace,
                     "error_analysis": row.get("error_analysis") or {},
                     "score": {
                         "fields": row.get("field_scores") or {},
@@ -451,13 +466,14 @@ def list_saved_finance_evaluations(
                         "evaluated_fields": row.get("evaluated_fields") or 0,
                         "field_accuracy": row.get("field_accuracy") or 0,
                         "complete_match": bool(row.get("complete_match")),
+                        "selection_rubric": replay_score.get("selection_rubric") or {},
                     },
                     "ocr_impact": row.get("ocr_impact") or {},
                     "workbook": row.get("workbook_result") or {},
                 },
             }],
         })
-    return sorted(runs, key=lambda run: str(run.get("evaluated_at") or ""), reverse=True)[:max(1, min(limit, 100))]
+    return runs
 
 
 @router.post("/run")

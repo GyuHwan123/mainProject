@@ -64,21 +64,6 @@ ITEM_IGNORED_TOKENS = {
 }
 MERCHANT_IGNORED_DESCRIPTORS = ("중고서점",)
 
-# Branch-qualified and bilingual renderings of the same merchant are equivalent
-# for evaluation. Keep this list explicit so unrelated branches (for example,
-# different Aladin stores) are not accidentally collapsed by fuzzy matching.
-MERCHANT_ALIASES = {
-    "교보문고": "kyobo_books",
-    "교보문고광화문점": "kyobo_books",
-    "신세계도곡점": "shinsegae_food_market_dogok",
-    "신세계foodmarket": "shinsegae_food_market_dogok",
-    "cos현대백화점": "cos_hyundai_trade_center",
-    "cos현대무역센터점": "cos_hyundai_trade_center",
-    "카페모마스광화문점": "cafe_momas_gwanghwamun",
-    "광화문점": "cafe_momas_gwanghwamun",
-}
-
-
 def _normalize_item_display_name(value: Any) -> str:
     """Remove receipt-only decorations without correcting OCR spelling."""
     text = " ".join(str(value or "").strip().split())
@@ -206,19 +191,39 @@ def _canonical(field: str, value: Any) -> Any:
         for descriptor in MERCHANT_IGNORED_DESCRIPTORS:
             text = text.replace(descriptor, "")
         compact = re.sub(r"[^0-9a-z가-힣]", "", text)
-        # OCR/model output can prepend a Latin brand rendering (e.g. KYOBO)
-        # while the ground truth uses the Korean branch-qualified name.
-        if "교보문고" in compact:
-            return MERCHANT_ALIASES["교보문고"]
-        if compact.startswith("유니클로"):
-            return "uniqlo"
-        return MERCHANT_ALIASES.get(compact, compact)
+        return compact
     if field == "card_number":
         return re.sub(r"[^0-9*]", "", text)
     return text
 
 
-def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
+def _merchant_box_state(expected_value: Any, pages: list[dict[str, Any]] | None) -> str:
+    expected = re.sub(r"[^0-9a-z가-힣]", "", str(expected_value or "").lower())
+    if not expected or not pages:
+        return "unknown"
+    box_texts = [
+        str(item.get("text") or "")
+        for page in pages if isinstance(page, dict)
+        for item in (page.get("items") or []) if isinstance(item, dict)
+    ]
+    compact_boxes = [re.sub(r"[^0-9a-z가-힣]", "", text.lower()) for text in box_texts]
+    if any(expected in box for box in compact_boxes):
+        return "single"
+    if expected in "".join(compact_boxes):
+        return "split"
+    tokens = [token for token in re.findall(r"[0-9A-Za-z가-힣]+", str(expected_value or "").lower()) if len(token) >= 2]
+    token_boxes = [{index for index, box in enumerate(compact_boxes) if re.sub(r"[^0-9a-z가-힣]", "", token) in box} for token in tokens]
+    if tokens and all(indexes for indexes in token_boxes) and len(set().union(*token_boxes)) > 1:
+        return "split"
+    return "unknown"
+
+
+def _values_match(
+    field: str,
+    expected_value: Any,
+    actual_value: Any,
+    ocr_pages: list[dict[str, Any]] | None = None,
+) -> bool:
     expected = _canonical(field, expected_value)
     actual = _canonical(field, actual_value)
     if expected == actual:
@@ -229,17 +234,11 @@ def _values_match(field: str, expected_value: Any, actual_value: Any) -> bool:
         expected_pattern = "".join("." if char == "*" else re.escape(char) for char in str(expected))
         return re.fullmatch(expected_pattern, str(actual)) is not None
     if field == "merchant" and expected and actual:
-        # A bare parent brand and its branch-qualified rendering identify the
-        # same merchant. Do not apply this to two conflicting explicit branch
-        # names (e.g. 공차 역삼점 vs 공차 선릉중앙점).
-        for brand in ("현대백화점", "유니클로"):
-            if (expected == brand and str(actual).startswith(brand)) or (
-                actual == brand and str(expected).startswith(brand)
-            ):
-                return True
+        if _merchant_box_state(expected_value, ocr_pages) != "split":
+            return False
         if min(len(str(expected)), len(str(actual))) < 4:
             return False
-        return SequenceMatcher(None, str(expected), str(actual)).ratio() >= 0.78
+        return expected in actual or actual in expected or SequenceMatcher(None, str(expected), str(actual)).ratio() >= 0.78
     if field != "name" or not expected or not actual:
         return False
     expected_tokens = _item_tokens(expected_value)
@@ -291,6 +290,7 @@ def _empty(value: Any) -> bool:
 
 def _selection_rubric(
     prediction: dict[str, Any], truth: dict[str, Any], raw_prediction: dict[str, Any] | None,
+    ocr_pages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     expected_items = truth.get("items") if isinstance(truth.get("items"), list) else []
     predicted_items = prediction.get("items") if isinstance(prediction.get("items"), list) else []
@@ -323,7 +323,7 @@ def _selection_rubric(
         actual = prediction.get(field)
         if field == "discount_amount" and _empty(expected):
             return 1.0 if _empty(actual) else 0.0
-        return float(_values_match(field, expected, actual))
+        return float(_values_match(field, expected, actual, ocr_pages))
 
     components = {
         "merchant": {"score": field_accuracy("merchant"), "weight": 5},
@@ -382,6 +382,7 @@ def _selection_rubric(
 
 def score_fields(
     prediction: dict[str, Any], truth: dict[str, Any], raw_prediction: dict[str, Any] | None = None,
+    ocr_pages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     details = {}
     evaluated = 0
@@ -389,7 +390,7 @@ def score_fields(
     for field in CORE_FIELDS:
         if field not in truth:
             continue
-        matched = _values_match(field, truth.get(field), prediction.get(field))
+        matched = _values_match(field, truth.get(field), prediction.get(field), ocr_pages)
         details[field] = {"expected": truth.get(field), "actual": prediction.get(field), "correct": matched}
         evaluated += 1
         correct += int(matched)
@@ -427,7 +428,7 @@ def score_fields(
         "field_accuracy": correct / evaluated if evaluated else 0,
         "complete_match": bool(evaluated) and correct == evaluated,
         "fields": details,
-        "selection_rubric": _selection_rubric(prediction, truth, raw_prediction),
+        "selection_rubric": _selection_rubric(prediction, truth, raw_prediction, ocr_pages),
     }
 
 
@@ -564,7 +565,7 @@ async def evaluate_models(
             )
             system_prediction["discount_amount"] = structured.get("discount_amount")
             system_prediction["card_number"] = structured.get("card_number")
-            system_score = score_fields(system_prediction, truth, pure)
+            system_score = score_fields(system_prediction, truth, pure, pages)
             structured_trace = structured.get("item_extraction_diagnostics") or {}
             pipeline_trace = {
                 "llm": structured.get("llm_trace") or {},

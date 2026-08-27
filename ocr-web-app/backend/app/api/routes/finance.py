@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 EXPENSE_CATEGORIES = (
     "기타", "교통", "교통비", "주유/교통", "숙박비", "일비/식대",
-    "식비", "생활/식비", "식비/생활", "식비/쇼핑", "식비/주류",
+    "식비", "식비/주류",
     "도서", "교육비", "의료", "복리후생", "문화", "레저",
     "미용", "미용/생활", "전자제품", "전자제품/문구", "사무용품",
     "소프트웨어", "취미/쇼핑", "취미/소품",
@@ -42,6 +42,8 @@ def _normalize_expense_category(value: Any) -> str:
     if not raw:
         return "기타"
     compact = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
+    if compact in {"생활식비", "식비생활", "식비쇼핑"}:
+        return "식비"
     by_compact = {re.sub(r"[^0-9A-Za-z가-힣]", "", category).lower(): category for category in EXPENSE_CATEGORIES}
     return by_compact.get(compact, "기타")
 
@@ -419,10 +421,10 @@ def _normalize_merchant(value: Any, text: str) -> str | None:
     for canonical, aliases in tenant_aliases.items():
         if not any(alias in compact_text for alias in aliases):
             continue
-        is_same_tenant = any(alias in compact_merchant for alias in aliases)
         is_host_facility = any(host in compact_merchant for host in host_facilities)
-        if not merchant or is_same_tenant or is_host_facility:
+        if not merchant or is_host_facility:
             return canonical
+    merchant = re.sub(r"\s*\((?:과세|면세)\)\s*$", "", merchant, flags=re.IGNORECASE).strip()
     return merchant[:200] or None
 
 

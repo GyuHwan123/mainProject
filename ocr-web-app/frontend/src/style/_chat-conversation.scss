@@ -1,0 +1,161 @@
+@use "./variables" as *;
+
+.messages-rag {
+  padding: 17px;
+}
+.rag-message {
+  margin-bottom: 17px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  .avatar {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    flex: none;
+    color: $all;
+    background: $main-color;
+    border-radius: 7px;
+    font-size: 9px;
+    font-weight: 800;
+  }
+  > div {
+    max-width: 82%;
+  }
+  small {
+    color: rgba($bgd, 0.44);
+    font-size: 9px;
+  }
+  p {
+    margin: 4px 0 0;
+    padding: 10px 12px;
+    color: $bgd;
+    background: $bg-app;
+    border-radius: 3px 10px 10px 10px;
+    font-size: 11px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  &.user {
+    flex-direction: row-reverse;
+    .avatar {
+      background: $sub-color;
+    }
+    > div {
+      text-align: right;
+    }
+    p {
+      color: $all;
+      background: $midel-color;
+      border-radius: 10px 3px 10px 10px;
+      text-align: left;
+    }
+  }
+  .cited {
+    margin-top: 4px;
+    color: $midel-color;
+    background: transparent;
+    border: 0;
+    font-size: 9px;
+    cursor: pointer;
+  }
+}
+.message-actions {
+  margin-top: 5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.scrap-answer {
+  padding: 3px 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #5145cd;
+  background: transparent;
+  border: 0;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.scrap-answer:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.scrap-error {
+  display: block;
+  margin-top: 5px;
+  color: #b23f4b !important;
+}
+.context-panel.evidence-flash {
+  animation: evidence-panel-flash 0.85s ease-out;
+}
+@keyframes evidence-panel-flash {
+  0%,
+  35% {
+    box-shadow:
+      0 0 0 3px rgba(55, 91, 220, 0.45),
+      0 10px 28px rgba(18, 68, 112, 0.12);
+  }
+}
+.typing i {
+  width: 5px;
+  height: 5px;
+  margin: 0 2px;
+  display: inline-block;
+  background: $midel-color;
+  border-radius: 50%;
+  animation: chat-dot 0.8s infinite alternate;
+}
+@keyframes chat-dot {
+  to {
+    opacity: 0.25;
+    transform: translateY(-2px);
+  }
+}
+.chat-workspace .chat-composer {
+  margin: 0 14px;
+  padding: 6px;
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  border: 1px solid rgba($line, 0.55);
+  border-radius: 9px;
+  textarea {
+    flex: 1;
+    height: 40px;
+    padding: 10px 3px;
+    resize: none;
+    color: $bgd;
+    background: transparent;
+    border: 0;
+    outline: 0;
+    font: inherit;
+    font-size: 11px;
+  }
+  button {
+    width: 31px;
+    height: 31px;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .attach-button {
+    color: $main-color;
+    background: $bg-app;
+  }
+  .send-button {
+    color: $all;
+    background: $main-color;
+    &:disabled {
+      opacity: 0.35;
+    }
+  }
+}
+.composer-note {
+  margin: 7px 14px 12px;
+  color: rgba($bgd, 0.38);
+  text-align: center;
+  font-size: 8px;
+}

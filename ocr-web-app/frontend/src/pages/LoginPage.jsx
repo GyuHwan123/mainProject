@@ -100,7 +100,7 @@ export default function LoginPage() {
 
         <div className="login-panel">
             <h1>
-                <img src="/DocAI.png" alt="DOCUNEX AI" />
+                <img src="/DocAI.png" alt="DocAI" />
                 환영합니다.
             </h1>
 
@@ -159,7 +159,7 @@ export default function LoginPage() {
           <p className="hint-text">
             {mode === 'login'
               ? '등록되지 않은 이메일은 회원가입 후 바로 사용할 수 있습니다.'
-              : '새 계정을 만들고 PicToText를 시작해 보세요.'}
+              : '새 계정을 만들고 DocAI를 시작해 보세요.'}
           </p>
 
           <button

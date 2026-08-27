@@ -33,7 +33,7 @@
     }
     span {
       color: $midel-color;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.1em;
     }
@@ -45,7 +45,7 @@
     p {
       margin: 0;
       color: rgba($bgd, 0.48);
-      font-size: 10px;
+      font-size: 13px;
     }
   }
 
@@ -59,7 +59,7 @@
     text-align: right;
     small {
       color: rgba($bgd, 0.44);
-      font-size: 9px;
+      font-size: 12px;
     }
     strong {
       color: $main-color;
@@ -95,7 +95,7 @@
     }
     span {
       color: rgba($bgd, 0.42);
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 500;
       letter-spacing: 0;
     }
@@ -113,7 +113,7 @@
         background: rgba($sub-color, 0.12);
         border: 1px solid rgba($sub-color, 0.32);
         border-radius: 5px;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 700;
         cursor: pointer;
         &:disabled {
@@ -167,7 +167,7 @@
     background: $bg-app;
     span {
       color: rgba($bgd, 0.5);
-      font-size: 9px;
+      font-size: 12px;
       letter-spacing: 0;
       &.success {
         color: #278057;
@@ -184,7 +184,7 @@
       background: $main-color;
       border: 0;
       border-radius: 6px;
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       &:disabled {
@@ -389,7 +389,7 @@
       }
       small {
         color: rgba($bgd, 0.52);
-        font-size: 10px;
+        font-size: 13px;
         font-weight: 650;
       }
       strong {
@@ -422,11 +422,11 @@
 
         span {
           color: rgba($bgd, 0.55);
-          font-size: 9px;
+          font-size: 12px;
           font-weight: 700;
         }
         strong {
-          font-size: 10px;
+          font-size: 13px;
         }
         &.receipt {
           color: #8a5a12;
@@ -453,7 +453,7 @@
         }
         small {
           color: rgba($bgd, 0.5);
-          font-size: 10px;
+          font-size: 13px;
           font-weight: 500;
         }
       }
@@ -498,7 +498,7 @@
         span {
           flex: none;
           color: $main-color;
-          font-size: 10px;
+          font-size: 13px;
           font-weight: 700;
         }
 
@@ -516,7 +516,7 @@
           background: $all;
           border: 1px solid rgba($main-color, 0.28);
           border-radius: 4px;
-          font-size: 10px;
+          font-size: 13px;
           cursor: pointer;
         }
 
@@ -686,14 +686,14 @@
       > header small {
         margin-top: 3px;
         color: #8a95a5;
-        font-size: 9px;
+        font-size: 12px;
       }
       > header > span {
         border-radius: 12px;
         padding: 4px 7px;
         color: #32698f;
         background: #edf5fa;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 750;
       }
       > div {
@@ -713,7 +713,7 @@
         border-radius: 5px;
         color: #56667a;
         background: #f8fafc;
-        font-size: 9px;
+        font-size: 12px;
         text-overflow: ellipsis;
         white-space: nowrap;
         cursor: pointer;
@@ -727,7 +727,7 @@
         width: 100%;
         margin: auto;
         color: #909bab;
-        font-size: 10px;
+        font-size: 13px;
         text-align: center;
       }
     }
@@ -761,7 +761,7 @@
       }
       > p {
         margin: 8px 0 19px;
-        font-size: 10px;
+        font-size: 13px;
         line-height: 1.7;
       }
       > div {
@@ -773,7 +773,7 @@
         padding: 8px 12px;
         background: #fff;
         color: #6f7d8f;
-        font-size: 9px;
+        font-size: 12px;
       }
       > div b {
         display: grid;
@@ -783,7 +783,7 @@
         border-radius: 50%;
         color: #fff;
         background: #2b70a3;
-        font-size: 7px;
+        font-size: 11px;
       }
       > div i {
         color: #9aa5b3;
@@ -805,7 +805,7 @@
       border-radius: 7px;
       color: #285f8b;
       background: #f5f9fc;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
 
       &::after {
@@ -817,7 +817,7 @@
         border-radius: 9px;
         color: #fff;
         background: #2b70a3;
-        font-size: 7px;
+        font-size: 11px;
         text-align: center;
       }
       &.open {
@@ -855,7 +855,7 @@
       > header small {
         margin-top: 4px;
         color: #8793a3;
-        font-size: 9px;
+        font-size: 12px;
       }
       > header button {
         width: 29px;
@@ -887,7 +887,7 @@
         border: 0;
         outline: 0;
         background: transparent;
-        font-size: 10px;
+        font-size: 13px;
       }
     }
 
@@ -926,7 +926,7 @@
         border-radius: 6px;
         color: #19734a;
         background: #e5f5ed;
-        font-size: 7px;
+        font-size: 11px;
         font-weight: 850;
         text-align: center;
       }
@@ -942,19 +942,19 @@
       }
       strong {
         color: #31465b;
-        font-size: 10px;
+        font-size: 13px;
       }
       small {
         margin-top: 4px;
         color: #8995a5;
-        font-size: 8px;
+        font-size: 11px;
       }
       em {
         border-radius: 12px;
         padding: 5px 7px;
         color: #345f82;
         background: #eaf3fa;
-        font-size: 7px;
+        font-size: 11px;
         font-style: normal;
         font-weight: 800;
         white-space: nowrap;
@@ -980,7 +980,7 @@
       > p {
         margin: 60px 0;
         color: #8a96a6;
-        font-size: 10px;
+        font-size: 13px;
         text-align: center;
       }
     }
@@ -999,7 +999,7 @@
       }
       > header > span {
         color: #2c6eab;
-        font-size: 9px;
+        font-size: 12px;
         font-weight: 800;
         letter-spacing: 0.13em;
       }
@@ -1064,7 +1064,7 @@
         margin-top: 3px;
         overflow: hidden;
         color: #8792a2;
-        font-size: 10px;
+        font-size: 13px;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
@@ -1083,7 +1083,7 @@
         padding: 5px 9px;
         background: #fff1cf;
         color: #8a5900;
-        font-size: 10px;
+        font-size: 13px;
         font-weight: 800;
       }
       .agent-status.confirmed {
@@ -1145,7 +1145,7 @@
       > p {
         margin: 10px 0 0;
         color: #8893a2;
-        font-size: 9px;
+        font-size: 12px;
         line-height: 1.5;
       }
     }
@@ -1164,7 +1164,7 @@
       }
       p {
         margin: 7px 0 0;
-        font-size: 10px;
+        font-size: 13px;
         line-height: 1.55;
       }
     }
@@ -1236,7 +1236,7 @@
           background: transparent;
           border: 1px solid transparent;
           border-radius: 7px;
-          font-size: 9px;
+          font-size: 12px;
           cursor: pointer;
 
           &:hover,
@@ -1314,7 +1314,7 @@
               padding: 0 7px;
               border: 0;
               background: transparent;
-              font-size: 9px;
+              font-size: 12px;
             }
             button.active {
               color: $all;
@@ -1542,7 +1542,7 @@
               }
               small {
                 color: #7a8798;
-                font-size: 10px;
+                font-size: 13px;
               }
               nav {
                 display: flex;
@@ -1554,7 +1554,7 @@
                 background: #fff;
                 border: 1px solid #b9c8d8;
                 border-radius: 5px;
-                font-size: 10px;
+                font-size: 13px;
                 cursor: pointer;
               }
               button.download {
@@ -1748,13 +1748,13 @@
             gap: 7px;
             > span {
               color: #64748b;
-              font-size: 9px;
+              font-size: 12px;
               font-weight: 700;
             }
             button {
               width: auto;
               padding: 0 8px;
-              font-size: 8px;
+              font-size: 11px;
               font-weight: 700;
             }
             .create-document-button {
@@ -1920,7 +1920,7 @@
               min-height: 31px;
               padding: 8px 7px;
               border-right: 1px solid #cfd7e2;
-              font-size: 9px;
+              font-size: 12px;
               text-align: center;
             }
           }
@@ -1942,7 +1942,7 @@
               color: #788396;
               background: #f0f3f7;
               border-right: 1px solid #d7dee7;
-              font-size: 10px;
+              font-size: 13px;
               text-align: center;
             }
             input {
@@ -1954,7 +1954,7 @@
               border: 0;
               border-right: 1px solid #e1e6ed;
               outline: 0;
-              font-size: 10px;
+              font-size: 13px;
               &:focus {
                 position: relative;
                 box-shadow: inset 0 0 0 2px #2f78de;
@@ -1967,7 +1967,7 @@
             > span {
               padding: 9px 6px;
               border-right: 1px solid #e1e6ed;
-              font-size: 9px;
+              font-size: 12px;
               text-align: center;
             }
             > span.negative {
@@ -1994,7 +1994,7 @@
               background: rgba($sub-color, 0.1);
               border: 1px solid rgba($sub-color, 0.35);
               border-radius: 4px;
-              font-size: 8px;
+              font-size: 11px;
               cursor: pointer;
               &:disabled {
                 color: #a7aebb;
@@ -2010,7 +2010,7 @@
               border: 0;
               border-right: 1px solid #d7dee7;
               border-radius: 0;
-              font-size: 10px;
+              font-size: 13px;
               cursor: ns-resize;
             }
             &.selected > .row-selector {
@@ -2040,7 +2040,7 @@
             }
             p {
               margin: 0;
-              font-size: 10px;
+              font-size: 13px;
             }
           }
         }
@@ -2061,7 +2061,7 @@
               background: $all;
               border: 1px solid rgba($line, 0.55);
               border-radius: 5px;
-              font-size: 8px;
+              font-size: 11px;
               cursor: pointer;
             }
           }
@@ -2071,7 +2071,7 @@
             color: #315d4a;
             background: #eaf7f0;
             border-radius: 5px;
-            font-size: 9px;
+            font-size: 12px;
             line-height: 1.45;
           }
           form {
@@ -2092,7 +2092,7 @@
               color: $all;
               background: $main-color;
               border-radius: 5px;
-              font-size: 8px;
+              font-size: 11px;
               font-weight: 800;
             }
             input {
@@ -2100,7 +2100,7 @@
               padding: 9px 6px;
               border: 0;
               outline: 0;
-              font-size: 10px;
+              font-size: 13px;
             }
             button {
               align-self: stretch;
@@ -2108,7 +2108,7 @@
               color: $all;
               background: $main-color;
               border: 0;
-              font-size: 9px;
+              font-size: 12px;
               font-weight: 750;
               cursor: pointer;
             }
@@ -2125,17 +2125,17 @@
           background: #edf9f3;
           border-bottom: 1px solid #ccebdd;
           strong {
-            font-size: 10px;
+            font-size: 13px;
           }
           span {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            font-size: 9px;
+            font-size: 12px;
           }
           small {
             color: #4f806c;
-            font-size: 9px;
+            font-size: 12px;
           }
         }
 
@@ -2231,7 +2231,7 @@
           }
           > small {
             color: #a34a4a;
-            font-size: 10px;
+            font-size: 13px;
             line-height: 1.5;
             &.success {
               color: #278057;
@@ -2394,7 +2394,7 @@
   }
   > header span {
     color: #2c6eab;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 850;
     letter-spacing: 0.13em;
   }
@@ -2440,7 +2440,7 @@
   }
   label > span {
     color: #40566a;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 800;
   }
   input,
@@ -2477,7 +2477,7 @@
     border-radius: 9px;
     color: #55677a;
     background: #f4f7fa;
-    font-size: 10px;
+    font-size: 13px;
   }
   .finance-review-check strong {
     color: #284a67;
@@ -2551,7 +2551,7 @@
         font-size: 19px;
       }
       .header-title p {
-        font-size: 10px;
+        font-size: 13px;
       }
       .extract-method,
       .developer-jump-button,
@@ -2639,7 +2639,7 @@
       }
       .text-panel .text-meta span {
         padding: 3px 6px;
-        font-size: 9px;
+        font-size: 12px;
       }
       .text-panel .text-note {
         display: none;
@@ -2710,9 +2710,9 @@
   width: min(340px, calc(100vw - 92px));
   display: flex;
   flex-direction: column;
-  color: #172033;
+  color: $text-color;
   background: #fff;
-  border-right: 1px solid #dfe5ec;
+  border-right: 1px solid $border-color;
   box-shadow: 14px 0 36px rgba(18, 68, 112, 0.14);
   transform: translateX(-105%);
   visibility: hidden;
@@ -2769,14 +2769,14 @@
   align-items: center;
   gap: 8px;
   color: #8491a3;
-  background: #f6f8fb;
+  background: $page-background;
   border: 1px solid #e1e7ee;
   border-radius: 10px;
 
   input {
     width: 100%;
     min-width: 0;
-    color: #172033;
+    color: $text-color;
     background: transparent;
     border: 0;
     outline: 0;
@@ -2830,11 +2830,11 @@
   }
   small {
     color: #8491a3;
-    font-size: 10px;
+    font-size: 13px;
   }
   em {
     color: #21845e;
-    font-size: 9px;
+    font-size: 12px;
     font-style: normal;
     font-weight: 800;
   }
@@ -2883,7 +2883,7 @@
   place-items: center;
   flex: none;
   color: #124470;
-  background: #edf5fb;
+  background: $hover-background;
   border: 1px solid #d5e5f1;
   border-radius: 11px;
   font-size: 21px;
@@ -2985,11 +2985,11 @@
     }
     > div strong {
       color: #243b51;
-      font-size: 10px;
+      font-size: 13px;
     }
     > div small {
       color: #8995a5;
-      font-size: 8px;
+      font-size: 11px;
     }
     .pdf-badge {
       width: auto;
@@ -3002,7 +3002,7 @@
       border-radius: 6px;
       color: #fff;
       background: #205c8d;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 850;
     }
     nav {
@@ -3030,7 +3030,7 @@
       border-radius: 6px;
       color: #285b83;
       background: #fff;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 800;
       cursor: pointer;
     }
@@ -3054,12 +3054,12 @@
     color: #315a7c;
     background: #f2f8fd;
     border-bottom: 1px solid #dce7f2;
-    font-size: 8px;
+    font-size: 11px;
 
     strong {
       flex: none;
       color: #174f7d;
-      font-size: 8px;
+      font-size: 11px;
     }
     span {
       overflow: hidden;
@@ -3085,12 +3085,12 @@
     }
     strong {
       color: #174b78;
-      font-size: 10px;
+      font-size: 13px;
     }
     small {
       overflow: hidden;
       color: #7b8da2;
-      font-size: 8px;
+      font-size: 11px;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
@@ -3106,7 +3106,7 @@
       background: #fff;
       border: 1px solid #bdd1e3;
       border-radius: 6px;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 750;
       cursor: pointer;
     }
@@ -3130,7 +3130,7 @@
     border-bottom: 1px solid #efd7a5;
     color: #795318;
     background: #fff8e9;
-    font-size: 8px;
+    font-size: 11px;
 
     strong {
       flex: none;
@@ -3138,7 +3138,7 @@
       padding: 4px 7px;
       color: #fff;
       background: #bf7c16;
-      font-size: 7px;
+      font-size: 11px;
     }
     span {
       line-height: 1.45;

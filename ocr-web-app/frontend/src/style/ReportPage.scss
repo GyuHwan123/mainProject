@@ -18,7 +18,7 @@
   background: #fff0f0;
   border: 1px solid #efcaca;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 13px;
 }
 .report-header {
   min-height: 70px;
@@ -35,7 +35,7 @@
   p {
     margin: 0 0 3px;
     color: #75b5ef;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
     letter-spacing: 0.14em;
   }
@@ -47,7 +47,7 @@
     display: block;
     margin-top: 4px;
     color: #9eafc7;
-    font-size: 10px;
+    font-size: 13px;
   }
   button {
     min-height: 34px;
@@ -59,7 +59,7 @@
     background: $midel-color;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 7px;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 750;
     cursor: pointer;
     &:disabled {
@@ -174,7 +174,7 @@
   p {
     margin: 0 0 4px;
     color: #1767df;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 850;
     letter-spacing: 0.12em;
   }
@@ -187,7 +187,7 @@
     display: block;
     margin-top: 5px;
     color: #687991;
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 .receipt-monitoring-filters {
@@ -204,7 +204,7 @@
     border: 1px solid #dce4ed;
     border-radius: 7px;
     box-shadow: 0 2px 7px rgba(25, 54, 91, 0.05);
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 700;
   }
   button,
@@ -264,7 +264,7 @@
   h3 {
     margin: 0;
     color: #263a55;
-    font-size: 9px;
+    font-size: 12px;
   }
   strong {
     display: block;
@@ -289,7 +289,7 @@
     border: 1px solid #8b9caf;
     border-radius: 50%;
     font-family: Arial, sans-serif;
-    font-size: 7px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 800;
     line-height: 1;
@@ -307,7 +307,7 @@
   background: #17243a;
   border-radius: 6px;
   box-shadow: 0 5px 15px rgba(18, 35, 58, 0.2);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 500;
   line-height: 1.5;
   opacity: 0;
@@ -359,7 +359,7 @@
     position: absolute;
     top: 15px;
     right: 0;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
     white-space: nowrap;
   }
@@ -378,7 +378,7 @@
     top: 31px;
     right: 0;
     color: #75859b;
-    font-size: 7px;
+    font-size: 11px;
     white-space: nowrap;
   }
 }
@@ -432,7 +432,7 @@
   }
   header span {
     color: #8794a5;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .empty-monitoring-box {
@@ -443,7 +443,7 @@
   font-size: 18px;
 }
 .empty-monitoring-box span {
-  font-size: 9px;
+  font-size: 12px;
 }
 .daily-performance-chart {
   padding: 10px 13px 8px;
@@ -460,7 +460,7 @@
   }
   svg text {
     fill: #73839a;
-    font-size: 7px;
+    font-size: 11px;
     text-anchor: end;
   }
   .date-label {
@@ -479,7 +479,7 @@
   flex-wrap: wrap;
   gap: 13px;
   color: #5f7188;
-  font-size: 7px;
+  font-size: 11px;
   span {
     display: inline-flex;
     align-items: center;
@@ -522,7 +522,7 @@
     flex-direction: column;
     gap: 2px;
     color: #75859a;
-    font-size: 7px;
+    font-size: 11px;
     line-height: 1.15;
     text-align: center;
     white-space: nowrap;
@@ -543,7 +543,7 @@
     align-items: center;
     gap: 5px;
     color: #65768c;
-    font-size: 7px;
+    font-size: 11px;
   }
   i {
     width: 6px;
@@ -557,7 +557,7 @@
   }
   strong {
     color: #34465e;
-    font-size: 7px;
+    font-size: 11px;
     white-space: nowrap;
   }
 }
@@ -572,11 +572,11 @@
     align-items: center;
     gap: 5px;
     color: #52647c;
-    font-size: 7px;
+    font-size: 11px;
   }
   strong {
     color: #2f4057;
-    font-size: 8px;
+    font-size: 11px;
     text-align: right;
   }
   i {
@@ -592,7 +592,7 @@
     border-radius: inherit;
   }
   em {
-    font-size: 6px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 800;
     text-align: right;
@@ -620,11 +620,11 @@
     gap: 8px;
     border-bottom: 1px solid #edf1f5;
     color: #607188;
-    font-size: 7px;
+    font-size: 11px;
   }
   strong {
     color: #263a55;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .receipt-monitoring-bottom {
@@ -656,7 +656,7 @@
   justify-content: space-between;
   span {
     color: #8794a5;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .recent-runs-scroll {
@@ -674,7 +674,7 @@
     gap: 7px;
     border-bottom: 1px solid #edf1f5;
     color: #54667e;
-    font-size: 7px;
+    font-size: 11px;
   }
   > div > span {
     overflow: hidden;
@@ -694,7 +694,7 @@
     margin: 0;
     padding: 55px 20px;
     color: #9aa6b5;
-    font-size: 8px;
+    font-size: 11px;
     text-align: center;
   }
 }
@@ -722,7 +722,7 @@
   }
   small {
     color: #5c6e87;
-    font-size: 10px;
+    font-size: 13px;
   }
   strong {
     color: $main-color;
@@ -738,7 +738,7 @@
   p {
     margin: 0;
     color: rgba($bgd, 0.4);
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .business-main-grid {
@@ -762,7 +762,7 @@
   span,
   strong {
     color: #53667f;
-    font-size: 10px;
+    font-size: 13px;
   }
   strong {
     text-align: right;
@@ -801,7 +801,7 @@
     span {
       margin-top: 9px;
       color: #728198;
-      font-size: 9px;
+      font-size: 12px;
     }
   }
   ul {
@@ -815,7 +815,7 @@
     justify-content: space-between;
     border-bottom: 1px solid rgba($line, 0.2);
     color: #62738a;
-    font-size: 9px;
+    font-size: 12px;
   }
   b {
     color: $main-color;
@@ -834,7 +834,7 @@
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid rgba($line, 0.2);
-  font-size: 9px;
+  font-size: 12px;
 }
 .recent-business-docs strong {
   overflow: hidden;
@@ -855,7 +855,7 @@
   display: grid;
   gap: 18px;
   color: #53657d;
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.55;
 }
 .business-guide li::marker {
@@ -894,7 +894,7 @@
   article > span {
     padding: 5px 8px;
     border-radius: 7px;
-    font-size: 8px;
+    font-size: 11px;
     white-space: nowrap;
   }
   .positive {
@@ -935,14 +935,14 @@
     p {
       margin: 3px 0 0;
       color: rgba($bgd, 0.45);
-      font-size: 9px;
+      font-size: 12px;
     }
     > span {
       padding: 4px 7px;
       color: $midel-color;
       background: rgba($sub-color, 0.11);
       border-radius: 8px;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 800;
     }
   }
@@ -968,7 +968,7 @@
   }
   span {
     color: #75849a;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
   }
@@ -981,7 +981,7 @@
   }
   small {
     color: #8793a5;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .rag-metric-columns {
@@ -1012,7 +1012,7 @@
   }
   span {
     color: #718198;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
   }
   strong {
@@ -1026,7 +1026,7 @@
 .rag-metric-card > footer {
   margin: -5px 16px 15px;
   color: #69798e;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.5;
 }
 .rag-umap-card > div {
@@ -1043,7 +1043,7 @@
   p {
     margin: 9px 0 0;
     color: #78879b;
-    font-size: 8px;
+    font-size: 11px;
     text-align: center;
   }
 }
@@ -1053,7 +1053,7 @@
   color: #6c7c91;
   background: #eef4f9;
   border-radius: 8px;
-  font-size: 9px;
+  font-size: 12px;
   text-align: center;
 }
 .rag-type-card {
@@ -1080,14 +1080,14 @@
   strong {
     overflow: hidden;
     color: #3b4d65;
-    font-size: 9px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   span,
   small {
     color: #8491a3;
-    font-size: 7px;
+    font-size: 11px;
   }
   i {
     height: 12px;
@@ -1104,7 +1104,7 @@
   }
   em {
     color: #245e9d;
-    font-size: 10px;
+    font-size: 13px;
     font-style: normal;
     font-weight: 800;
     text-align: right;
@@ -1161,7 +1161,7 @@
   position: absolute;
   inset: 0;
   color: #556982;
-  font-size: 8px;
+  font-size: 11px;
   span {
     position: absolute;
     transform: translate(-50%, -50%);
@@ -1195,7 +1195,7 @@
     display: grid;
     gap: 9px;
     color: #5f7088;
-    font-size: 9px;
+    font-size: 12px;
   }
   .legend span::before {
     content: "";
@@ -1214,7 +1214,7 @@
     display: grid;
     gap: 13px;
     color: #3e4c61;
-    font-size: 10px;
+    font-size: 13px;
   }
   b {
     color: #1d65d9;
@@ -1240,7 +1240,7 @@
   }
   span {
     color: #75849a;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
   }
@@ -1253,7 +1253,7 @@
   }
   small {
     color: #8793a5;
-    font-size: 8px;
+    font-size: 11px;
   }
   > p {
     grid-column: 1 / -1;
@@ -1262,7 +1262,7 @@
     color: #5f7088;
     background: #edf4fa;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     text-align: center;
   }
 }
@@ -1284,7 +1284,7 @@
   }
   strong {
     color: #354258;
-    font-size: 10px;
+    font-size: 13px;
   }
   .latency-track {
     height: 18px;
@@ -1301,7 +1301,7 @@
   }
   .latency-list b {
     color: #536682;
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 .latency-card > footer {
@@ -1311,7 +1311,7 @@
   background: #eef3f8;
   border: 1px solid #dde5ee;
   border-radius: 8px;
-  font-size: 9px;
+  font-size: 12px;
   strong {
     margin-left: 6px;
     color: $main-color;
@@ -1326,7 +1326,7 @@
   color: #27364d;
   background: #e9eef5;
   border-radius: 8px;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 700;
 }
 .comparison-grid {
@@ -1342,7 +1342,7 @@
     color: #596b83;
     border: 1px solid #dce4ed;
     border-radius: 9px;
-    font-size: 9px;
+    font-size: 12px;
   }
   small {
     color: #637995;
@@ -1379,7 +1379,7 @@
   }
   p {
     margin: 8px 0 0;
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 .keyword-empty {
@@ -1388,7 +1388,7 @@
   display: grid;
   place-items: center;
   color: #8995a7;
-  font-size: 9px;
+  font-size: 12px;
 }
 .rag-llm-evaluation-card {
   margin-bottom: 14px;
@@ -1407,7 +1407,7 @@
     background: #edf5ff;
     border: 1px solid #bcd5f3;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
     cursor: pointer;
   }
@@ -1429,12 +1429,12 @@
   label > span,
   .rag-llm-file span {
     color: #77869a;
-    font-size: 8px;
+    font-size: 11px;
   }
   .rag-llm-file strong {
     overflow: hidden;
     color: #34475f;
-    font-size: 10px;
+    font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1445,7 +1445,7 @@
     background: #fff;
     border: 1px solid #ccd7e3;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 .rag-llm-progress {
@@ -1457,7 +1457,7 @@
     display: flex;
     justify-content: space-between;
     color: #65768b;
-    font-size: 8px;
+    font-size: 11px;
   }
   strong {
     color: #31465f;
@@ -1483,7 +1483,7 @@
   color: #bd3941;
   background: #fff0f1;
   border-radius: 7px;
-  font-size: 9px;
+  font-size: 12px;
 }
 .rag-llm-summary {
   padding: 15px 17px;
@@ -1502,7 +1502,7 @@
   }
   span {
     color: #748398;
-    font-size: 8px;
+    font-size: 11px;
   }
   strong {
     color: #195da8;
@@ -1518,7 +1518,7 @@
   }
   small {
     color: #75869c;
-    font-size: 7px;
+    font-size: 11px;
     line-height: 1.4;
   }
 }
@@ -1547,7 +1547,7 @@
   }
   header span {
     color: #78879a;
-    font-size: 8px;
+    font-size: 11px;
   }
   header > b {
     color: #1254a2;
@@ -1570,7 +1570,7 @@
     display: block;
     margin-bottom: 8px;
     color: #37506b;
-    font-size: 9px;
+    font-size: 12px;
   }
   dl {
     margin: 0;
@@ -1585,12 +1585,12 @@
   }
   dt {
     color: #8190a2;
-    font-size: 7px;
+    font-size: 11px;
   }
   dd {
     margin: 0;
     color: #315c8e;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
   }
   > footer {
@@ -1598,12 +1598,12 @@
     color: #62748b;
     background: #edf3f9;
     border-top: 1px solid #dce5ef;
-    font-size: 8px;
+    font-size: 11px;
     text-align: center;
   }
   footer strong {
     color: #1254a2;
-    font-size: 10px;
+    font-size: 13px;
   }
 }
 .rag-llm-meta {
@@ -1615,7 +1615,7 @@
   color: #75849a;
   background: #f2f5f8;
   border-radius: 7px;
-  font-size: 8px;
+  font-size: 11px;
   strong {
     color: #354960;
   }
@@ -1636,7 +1636,7 @@
     gap: 7px;
     color: #596b82;
     border-bottom: 1px solid #edf1f5;
-    font-size: 8px;
+    font-size: 11px;
   }
   .head {
     position: sticky;
@@ -1667,7 +1667,7 @@
     background: #f2f6fa;
     border: 1px solid #cbd8e6;
     border-radius: 6px;
-    font-size: 9px;
+    font-size: 12px;
     text-align: center;
   }
 }
@@ -1683,7 +1683,7 @@
     gap: 9px;
     border-bottom: 1px solid rgba($line, 0.22);
     color: #5f6f86;
-    font-size: 9px;
+    font-size: 12px;
   }
   .table-head {
     min-height: 34px;
@@ -1717,7 +1717,7 @@
   display: block !important;
   color: rgba($bgd, 0.4);
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
 }
 
 @media (max-width: 1180px) {

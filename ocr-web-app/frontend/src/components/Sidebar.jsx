@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
-import { IoDocumentTextOutline, IoLogOutOutline, IoPersonOutline, IoSettingsOutline } from 'react-icons/io5';
+import { IoLogOutOutline, IoPersonOutline, IoSettingsOutline } from 'react-icons/io5';
 import { RiUser3Fill } from "react-icons/ri";
-import { MdHomeFilled } from "react-icons/md";
-import { GrCatalogOption } from "react-icons/gr";
+import { MdHomeFilled, MdOutlineChat } from "react-icons/md";
+import { CiReceipt } from "react-icons/ci";
+import { TbReportAnalytics } from "react-icons/tb";
 import { clearAppSession } from '../features/appSession';
 import { getAppUser } from '../features/appSession';
 import { supabase } from '../lib/supabase';
@@ -13,9 +14,9 @@ import '../style/Sidebar.scss';
 
 const items = [
   { label: '대시보드', icon: <MdHomeFilled />, path: '/dashboard' },
-  { label: 'PDF 추출', icon: <IoDocumentTextOutline />, path: '/ocr' },
-  { label: 'AI 채팅', icon: '✦', path: '/chat' },
-  { label: '리포트', icon: <GrCatalogOption />, path: '/reports' },
+  { label: '영수증 자동 문서화', icon: <CiReceipt />, path: '/ocr' },
+  { label: 'AI 문서 채팅', icon: <MdOutlineChat />, path: '/chat' },
+  { label: '리포트', icon: <TbReportAnalytics />, path: '/reports' },
   { label: '내 정보', icon: <RiUser3Fill />, path: '/mypage' },
 ];
 
@@ -56,7 +57,7 @@ export default function Sidebar() {
   };
 
   return <aside className="sidebar">
-    <div className="brand-wrap"><div className="brand-mark">P</div><div className="brand-name">PicToText</div></div>
+    <div className="brand-wrap"><picture className="brand-logo"><source media="(max-width: 1120px)" srcSet="/DocAI.png" /><img src="/DocAI_p-02.png" alt="DocAI" /></picture><div className="brand-name">DocAI</div></div>
     <nav className="sidebar-nav">{visibleItems.map((item) => {
       const opensReceiptReport = item.path === '/reports' && location.pathname === '/ocr' && isDeveloper;
       const destination = opensReceiptReport ? '/reports?view=developer&developerReport=receipt&receiptTab=experiment' : item.path;

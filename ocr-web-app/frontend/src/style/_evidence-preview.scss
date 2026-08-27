@@ -14,7 +14,7 @@
   color: #a43f4a;
   background: #fff1f2;
   border-bottom: 1px solid #f0cbd0;
-  font-size: 9px;
+  font-size: 12px;
 }
 .evidence-preview {
   min-width: 0;
@@ -98,14 +98,14 @@
   }
   p {
     margin: 0;
-    font-size: 10px;
+    font-size: 13px;
   }
   small {
     padding: 5px 9px;
     color: rgba($bgd, 0.48);
     background: #fff;
     border-radius: 12px;
-    font-size: 8px;
+    font-size: 11px;
   }
   &:hover {
     background: #e7eff9;
@@ -123,7 +123,7 @@
   justify-content: space-between;
   gap: 8px;
   color: rgba($bgd, 0.62);
-  font-size: 9px;
+  font-size: 12px;
   > span {
     min-width: 0;
     overflow: hidden;
@@ -175,11 +175,11 @@
     display: block;
     margin-bottom: 4px;
     color: $main-color;
-    font-size: 9px;
+    font-size: 12px;
   }
   p {
     margin: 0;
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.55;
     white-space: pre-wrap;
   }
@@ -211,7 +211,7 @@
     font-weight: 800;
   }
   small {
-    font-size: 6px;
+    font-size: 11px;
     letter-spacing: 0.08em;
   }
   > button.active {
@@ -263,7 +263,7 @@
     color: $main-color;
     background: #eaf1f8;
     border-radius: 5px;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 800;
   }
   table {
@@ -272,7 +272,7 @@
     table-layout: auto;
     color: $bgd;
     background: #fff;
-    font-size: 10px;
+    font-size: 13px;
   }
   th {
     position: sticky;
@@ -320,7 +320,7 @@
   gap: 9px;
   color: rgba($bgd, 0.58);
   background: #eef1f6;
-  font-size: 9px;
+  font-size: 12px;
   i {
     width: 24px;
     height: 24px;
@@ -356,9 +356,9 @@
   place-items: center;
   overflow: hidden;
   color: #fff;
-  background: #172033;
+  background: $text-color;
   border-radius: 2px;
-  font-size: 7px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.04em;
   pointer-events: none;
@@ -387,7 +387,7 @@
     font-size: 11px;
   }
   p {
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.55;
   }
   button {
@@ -414,12 +414,12 @@
     border-bottom: 1px solid rgba($line, 0.3);
     strong {
       color: $main-color;
-      font-size: 9px;
+      font-size: 12px;
       letter-spacing: 0.06em;
     }
     span {
       color: rgba($bgd, 0.45);
-      font-size: 8px;
+      font-size: 11px;
     }
   }
   .source-list {

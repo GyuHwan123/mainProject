@@ -21,11 +21,11 @@
     p {
       margin: 0;
       color: rgba($bgd, 0.5);
-      font-size: 10px;
+      font-size: 13px;
     }
     small {
       color: $midel-color;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 800;
       letter-spacing: 0.12em;
     }
@@ -35,7 +35,7 @@
     color: #8a6418;
     background: #fff7df;
     border-radius: 12px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
     &.complete {
       color: #207a51;
@@ -62,7 +62,7 @@
     }
     small {
       color: rgba($bgd, 0.48);
-      font-size: 9px;
+      font-size: 12px;
     }
     button {
       padding: 8px 11px;
@@ -70,7 +70,7 @@
       background: #fff;
       border: 1px solid rgba($line, 0.65);
       border-radius: 6px;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
       cursor: pointer;
     }
@@ -90,7 +90,7 @@
     color: #a43f4a;
     background: #fff1f2;
     border-radius: 6px;
-    font-size: 9px;
+    font-size: 12px;
   }
   .evaluation-metrics {
     margin-top: 12px;
@@ -107,7 +107,7 @@
     }
     span {
       color: rgba($bgd, 0.48);
-      font-size: 8px;
+      font-size: 11px;
     }
     strong {
       color: $main-color;
@@ -117,7 +117,7 @@
   > footer {
     margin-top: 10px;
     color: rgba($bgd, 0.45);
-    font-size: 8px;
+    font-size: 11px;
     text-align: right;
   }
 }

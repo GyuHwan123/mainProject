@@ -1,3 +1,5 @@
+@use "./variables" as *;
+
 $blue: #1f5f94;
 .image-mini,
 .ocr-sheet-mini,
@@ -36,18 +38,18 @@ $blue: #1f5f94;
   }
   > header strong {
     color: #30455f;
-    font-size: 9px;
+    font-size: 12px;
   }
   > header span {
     padding: 2px 5px;
     color: #a45e00;
     background: #fff2d9;
     border-radius: 999px;
-    font-size: 7px;
+    font-size: 11px;
   }
   > header small {
     color: #718198;
-    font-size: 7px;
+    font-size: 11px;
   }
 }
 .candidate-trace-flow {
@@ -67,20 +69,20 @@ $blue: #1f5f94;
   }
   small {
     color: #7d8b9d;
-    font-size: 7px;
+    font-size: 11px;
     font-weight: 800;
   }
   code {
     overflow: hidden;
     color: #344961;
     font-family: inherit;
-    font-size: 8px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   > b {
     color: #8da0b4;
-    font-size: 10px;
+    font-size: 13px;
   }
 }
 .candidate-trace-grid {
@@ -100,13 +102,13 @@ $blue: #1f5f94;
   h4 {
     margin: 0 0 5px;
     color: #52667f;
-    font-size: 8px;
+    font-size: 11px;
   }
   p,
   ul {
     margin: 0;
     color: #6d7c90;
-    font-size: 7px;
+    font-size: 11px;
     line-height: 1.5;
   }
   ul {
@@ -145,7 +147,7 @@ $blue: #1f5f94;
   p {
     margin: 0 0 4px;
     color: $blue;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 850;
     letter-spacing: 0.12em;
   }
@@ -157,7 +159,7 @@ $blue: #1f5f94;
     display: block;
     margin-top: 5px;
     color: #7b899d;
-    font-size: 9px;
+    font-size: 12px;
   }
   button {
     display: flex;
@@ -189,7 +191,7 @@ $blue: #1f5f94;
     color: #66778d !important;
     background: transparent !important;
     border-radius: 7px !important;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 800;
     &.active {
       color: white !important;
@@ -216,7 +218,7 @@ $blue: #1f5f94;
     display: grid;
     gap: 6px;
     span {
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 800;
     }
     input,
@@ -228,14 +230,14 @@ $blue: #1f5f94;
     }
     small {
       color: #73839a;
-      font-size: 9px;
+      font-size: 12px;
     }
   }
   > p {
     grid-column: 1 / -1;
     margin: 0;
     color: #62758e;
-    font-size: 10px;
+    font-size: 13px;
   }
 }
 .model-selector > div {
@@ -257,7 +259,7 @@ $blue: #1f5f94;
   border-radius: 8px;
   color: $blue;
   background: #f5f9fd;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -289,11 +291,11 @@ $blue: #1f5f94;
   }
   strong {
     color: #34506d;
-    font-size: 10px;
+    font-size: 13px;
   }
   span {
     color: $blue;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 850;
   }
   > i {
@@ -312,7 +314,7 @@ $blue: #1f5f94;
   small {
     overflow: hidden;
     color: #72839a;
-    font-size: 8px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -336,7 +338,7 @@ $blue: #1f5f94;
     p {
       margin: 4px 0 0;
       color: #8190a3;
-      font-size: 9px;
+      font-size: 12px;
     }
     span {
       color: $blue;
@@ -358,7 +360,7 @@ $blue: #1f5f94;
   padding: 18px;
   color: #8b98a9;
   background: white;
-  font-size: 9px;
+  font-size: 12px;
   text-align: center;
 }
 .pending-receipt-evaluations {
@@ -382,11 +384,11 @@ $blue: #1f5f94;
     p {
       margin: 4px 0 0;
       color: #8b7d62;
-      font-size: 9px;
+      font-size: 12px;
     }
     span {
       color: #b06d00;
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 800;
     }
   }
@@ -422,7 +424,7 @@ $blue: #1f5f94;
     span {
       padding: 8px;
       color: #9098a4;
-      font-size: 9px;
+      font-size: 12px;
       text-align: center;
     }
   }
@@ -433,7 +435,7 @@ $blue: #1f5f94;
     gap: 5px;
     small {
       color: #b06d00;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 850;
     }
     h3 {
@@ -451,13 +453,13 @@ $blue: #1f5f94;
     }
     em {
       color: #7e8795;
-      font-size: 9px;
+      font-size: 12px;
       font-style: normal;
       line-height: 1.45;
     }
     strong {
       color: $blue;
-      font-size: 9px;
+      font-size: 12px;
     }
   }
 }
@@ -474,7 +476,7 @@ $blue: #1f5f94;
     margin-bottom: 12px;
     small {
       color: $blue;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
     }
     h2 {
@@ -491,7 +493,7 @@ $blue: #1f5f94;
       }
       dt {
         color: #8190a3;
-        font-size: 8px;
+        font-size: 11px;
       }
       dd {
         margin: 0;
@@ -505,7 +507,7 @@ $blue: #1f5f94;
     margin-top: 11px;
     summary {
       color: $blue;
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 750;
       cursor: pointer;
     }
@@ -516,7 +518,7 @@ $blue: #1f5f94;
   color: $blue;
   background: #edf5fc;
   border-radius: 999px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 .pipeline-loader {
@@ -540,7 +542,7 @@ $blue: #1f5f94;
     font-size: 11px;
   }
   span {
-    font-size: 9px;
+    font-size: 12px;
   }
 }
 @keyframes finance-eval-spin {
@@ -564,7 +566,7 @@ $blue: #1f5f94;
       color: #52657d;
       background: #eef3f8;
       border-bottom: 1px solid #e1e8f0;
-      font-size: 9px;
+      font-size: 12px;
     }
   }
 }
@@ -627,7 +629,7 @@ $blue: #1f5f94;
     color: white;
     background: rgba(22, 53, 82, 0.76);
     border-radius: 4px;
-    font-size: 8px;
+    font-size: 11px;
     font-style: normal;
     line-height: 1;
   }
@@ -639,7 +641,7 @@ $blue: #1f5f94;
     min-width: 420px;
     width: 100%;
     border-collapse: collapse;
-    font-size: 8px;
+    font-size: 11px;
   }
   th,
   td {
@@ -679,14 +681,14 @@ $blue: #1f5f94;
   strong {
     overflow: hidden;
     color: #1f5f94;
-    font-size: 9px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   span {
     flex: none;
     color: #14835b;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .excel-sheet-tabs {
@@ -701,7 +703,7 @@ $blue: #1f5f94;
     background: #eef3f8;
     border: 1px solid #d8e2ec;
     border-radius: 4px;
-    font-size: 8px;
+    font-size: 11px;
     cursor: pointer;
     &.active {
       color: white;
@@ -716,7 +718,7 @@ $blue: #1f5f94;
     min-width: 720px;
     width: 100%;
     border-collapse: collapse;
-    font-size: 8px;
+    font-size: 11px;
   }
   th,
   td {
@@ -739,7 +741,7 @@ $blue: #1f5f94;
   height: 100%;
   place-items: center;
   color: #8b98a9;
-  font-size: 9px;
+  font-size: 12px;
   text-align: center;
 }
 .pipeline-match-details {
@@ -755,7 +757,7 @@ $blue: #1f5f94;
     padding: 6px 8px;
     background: #f7f9fc;
     border-radius: 5px;
-    font-size: 9px;
+    font-size: 12px;
     em {
       color: #8290a3;
       font-style: normal;
@@ -781,7 +783,7 @@ $blue: #1f5f94;
     border-radius: 4px;
     color: #607188;
     background: white;
-    font-size: 8px;
+    font-size: 11px;
     cursor: pointer;
     &.active {
       color: white;
@@ -798,7 +800,7 @@ $blue: #1f5f94;
   color: #607188;
   border-bottom: 1px solid #e5ebf2;
   background: #f5f8fb;
-  font-size: 7px;
+  font-size: 11px;
   white-space: nowrap;
   span {
     font-weight: 700;
@@ -842,7 +844,7 @@ $blue: #1f5f94;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 10px;
+      font-size: 13px;
     }
     > div {
       max-height: 260px;
@@ -859,12 +861,12 @@ $blue: #1f5f94;
       align-items: center;
       background: white;
       border-radius: 5px;
-      font-size: 9px;
+      font-size: 12px;
     }
     > div > em {
       padding: 10px;
       color: #8996a8;
-      font-size: 9px;
+      font-size: 12px;
       font-style: normal;
       text-align: center;
     }
@@ -906,7 +908,7 @@ $blue: #1f5f94;
   gap: 5px;
   small {
     color: #9aa4b1;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .error-tag {
@@ -918,7 +920,7 @@ $blue: #1f5f94;
   border: 1px solid #d9e1eb;
   border-radius: 999px;
   background: #f5f7fa;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1;
   b {
     color: #3d5069;
@@ -930,7 +932,7 @@ $blue: #1f5f94;
   }
   em {
     color: #8190a2 !important;
-    font-size: 7px;
+    font-size: 11px;
     font-style: normal;
   }
 }
@@ -970,7 +972,7 @@ $blue: #1f5f94;
     justify-content: space-between;
     color: #40536c;
     border-bottom: 1px solid #e2e8ef;
-    font-size: 9px;
+    font-size: 12px;
     span {
       color: #7b899b;
     }
@@ -1026,7 +1028,7 @@ $blue: #1f5f94;
     right: 10px;
     bottom: 10px;
     padding: 6px 8px;
-    font-size: 10px;
+    font-size: 13px;
   }
 }
 .eval-summary-grid {
@@ -1038,7 +1040,7 @@ $blue: #1f5f94;
     padding: 16px;
     small {
       color: $blue;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
     }
     h2 {
@@ -1055,7 +1057,7 @@ $blue: #1f5f94;
     > p {
       margin: 3px 0 12px;
       color: #8996a8;
-      font-size: 9px;
+      font-size: 12px;
     }
     dl {
       margin: 0;
@@ -1064,7 +1066,7 @@ $blue: #1f5f94;
       div {
         display: flex;
         justify-content: space-between;
-        font-size: 9px;
+        font-size: 12px;
       }
       dt {
         color: #7c899c;
@@ -1105,11 +1107,11 @@ $blue: #1f5f94;
     p {
       margin: 3px 0 0;
       color: #8190a3;
-      font-size: 8px;
+      font-size: 11px;
     }
     > span {
       color: $blue;
-      font-size: 9px;
+      font-size: 12px;
       font-weight: 800;
     }
   }
@@ -1142,7 +1144,7 @@ $blue: #1f5f94;
     align-items: center;
     gap: 3px 8px;
     border-bottom: 1px solid #edf1f5;
-    font-size: 8px;
+    font-size: 11px;
     &.active {
       background: #eef6fd;
     }
@@ -1158,12 +1160,12 @@ $blue: #1f5f94;
     }
     strong {
       color: #344860;
-      font-size: 9px;
+      font-size: 12px;
     }
     small {
       margin-top: 3px;
       color: #8a97a8;
-      font-size: 7px;
+      font-size: 11px;
     }
     > span {
       color: $blue;
@@ -1172,7 +1174,7 @@ $blue: #1f5f94;
     > em {
       grid-column: 2;
       color: #718198;
-      font-size: 7px;
+      font-size: 11px;
       font-style: normal;
     }
   }
@@ -1207,7 +1209,7 @@ $blue: #1f5f94;
   }
   small {
     color: #8b98a8;
-    font-size: 7px;
+    font-size: 11px;
   }
 }
 .batch-error-chart ul {
@@ -1222,7 +1224,7 @@ $blue: #1f5f94;
     align-items: center;
     gap: 6px;
     color: #5f7088;
-    font-size: 8px;
+    font-size: 11px;
   }
   li > i {
     width: 7px;
@@ -1231,7 +1233,7 @@ $blue: #1f5f94;
   }
   b {
     color: #344860;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .batch-field-chart > div {
@@ -1246,7 +1248,7 @@ $blue: #1f5f94;
     grid-template-columns: 105px 1fr 42px;
     align-items: center;
     gap: 7px;
-    font-size: 8px;
+    font-size: 11px;
   }
   span {
     overflow: hidden;
@@ -1268,7 +1270,7 @@ $blue: #1f5f94;
   }
   strong {
     color: #344860;
-    font-size: 8px;
+    font-size: 11px;
     text-align: right;
   }
 }
@@ -1292,7 +1294,7 @@ $blue: #1f5f94;
     p {
       margin: 4px 0 0;
       color: #8190a3;
-      font-size: 9px;
+      font-size: 12px;
     }
     > span {
       color: #c9474f;
@@ -1318,7 +1320,7 @@ $blue: #1f5f94;
   gap: 10px;
   border-bottom: 1px solid #edf1f5;
   color: #43536a;
-  font-size: 9px;
+  font-size: 12px;
   > span {
     min-width: 0;
     overflow: hidden;
@@ -1330,13 +1332,13 @@ $blue: #1f5f94;
     margin-top: 3px;
     overflow: hidden;
     color: #8a97a8;
-    font-size: 7px;
+    font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   strong {
     color: #273b55;
-    font-size: 9px;
+    font-size: 12px;
   }
   > span:nth-child(5) {
     color: #98545a;
@@ -1361,7 +1363,7 @@ $blue: #1f5f94;
   white-space: normal !important;
   em {
     color: #9aa5b3;
-    font-size: 8px;
+    font-size: 11px;
     font-style: normal;
   }
 }
@@ -1376,7 +1378,7 @@ $blue: #1f5f94;
   background: #f7f9fc;
   border: 1px solid #dce5ee;
   border-radius: 6px;
-  font-size: 7px;
+  font-size: 11px;
   cursor: zoom-in;
   img {
     width: 100%;
@@ -1406,14 +1408,14 @@ $blue: #1f5f94;
     }
     small {
       color: #72839a;
-      font-size: 9px;
+      font-size: 12px;
     }
     strong {
       font-size: 11px;
     }
     span {
       color: #8b98a8;
-      font-size: 9px;
+      font-size: 12px;
     }
     em {
       font-size: 19px;
@@ -1437,7 +1439,7 @@ $blue: #1f5f94;
     p {
       margin: 4px 0 0;
       color: #8190a3;
-      font-size: 9px;
+      font-size: 12px;
     }
     > span {
       color: $blue;
@@ -1457,7 +1459,7 @@ $blue: #1f5f94;
   grid-template-columns: 1.45fr 1.1fr 0.65fr 0.65fr 1.15fr 0.7fr 0.65fr;
   gap: 10px;
   border-bottom: 1px solid #edf1f5;
-  font-size: 10px;
+  font-size: 13px;
   align-items: center;
   > span:first-child {
     overflow: hidden;
@@ -1467,7 +1469,7 @@ $blue: #1f5f94;
       display: block;
       margin-top: 2px;
       color: #8b98aa;
-      font-size: 8px;
+      font-size: 11px;
     }
   }
   details {
@@ -1608,7 +1610,7 @@ $blue: #1f5f94;
     background: $blue;
     border: 0;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
     cursor: pointer;
     white-space: nowrap;

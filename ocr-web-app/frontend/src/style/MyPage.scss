@@ -23,7 +23,7 @@
   p {
     margin: 0 0 4px;
     color: $midel-color;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 850;
     letter-spacing: 0.14em;
   }
@@ -48,7 +48,7 @@
     background: #fff;
     border: 1px solid #dce4ed;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 750;
     cursor: pointer;
     &:disabled {
@@ -63,7 +63,7 @@
   background: #fff0f1;
   border: 1px solid #f0cdd1;
   border-radius: 7px;
-  font-size: 9px;
+  font-size: 12px;
 }
 .profile-overview {
   margin-bottom: 13px;
@@ -103,7 +103,7 @@
   flex: 1;
   span {
     color: $midel-color;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.08em;
   }
@@ -116,7 +116,7 @@
     margin: 0;
     overflow: hidden;
     color: #7c899c;
-    font-size: 10px;
+    font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -129,7 +129,7 @@
   color: #20805c;
   background: #eaf7f1;
   border-radius: 14px;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 750;
   i {
     width: 6px;
@@ -147,7 +147,7 @@
   border: 0;
   small {
     color: #8fc5ef;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
     letter-spacing: 0.1em;
   }
@@ -159,7 +159,7 @@
     max-width: 380px;
     margin: 0;
     color: rgba(255, 255, 255, 0.62);
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.55;
   }
 }
@@ -174,7 +174,7 @@
     background: rgba(255, 255, 255, 0.09);
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 10px;
-    font-size: 7px;
+    font-size: 11px;
     font-weight: 700;
   }
 }
@@ -188,7 +188,7 @@
     background: rgba(54, 187, 137, 0.17);
     border: 1px solid rgba(114, 222, 181, 0.25);
     border-radius: 12px;
-    font-size: 8px;
+    font-size: 11px;
   }
   button {
     padding: 8px 13px;
@@ -196,7 +196,7 @@
     background: #fff;
     border: 0;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 850;
     cursor: pointer;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.13);
@@ -245,7 +245,7 @@
   }
   small {
     color: #718096;
-    font-size: 9px;
+    font-size: 12px;
   }
   strong {
     color: $main-color;
@@ -254,7 +254,7 @@
   p {
     margin: 0;
     color: rgba($bgd, 0.38);
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .mypage-content-grid {
@@ -284,7 +284,7 @@
     p {
       margin: 3px 0 0;
       color: rgba($bgd, 0.43);
-      font-size: 9px;
+      font-size: 12px;
     }
     button {
       padding: 6px 9px;
@@ -292,7 +292,7 @@
       background: #edf4fa;
       border: 0;
       border-radius: 6px;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 750;
       cursor: pointer;
     }
@@ -317,14 +317,14 @@
   min-height: 35px;
   color: #8a96a7;
   background: #f7f9fc;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 800;
 }
 .finance-history-row {
   min-height: 62px;
   border-top: 1px solid rgba($line, 0.22);
   color: #65748a;
-  font-size: 9px;
+  font-size: 12px;
   > b {
     color: #31445b;
     text-align: right;
@@ -348,7 +348,7 @@
     color: #19734a;
     background: #e5f5ed;
     border-radius: 5px;
-    font-size: 7px;
+    font-size: 11px;
     font-style: normal;
     font-weight: 850;
   }
@@ -364,12 +364,12 @@
   }
   strong {
     color: #34465c;
-    font-size: 9px;
+    font-size: 12px;
   }
   small {
     margin-top: 3px;
     color: #8a95a5;
-    font-size: 8px;
+    font-size: 11px;
   }
 }
 .finance-pending,
@@ -377,7 +377,7 @@
   justify-self: start;
   border-radius: 12px;
   padding: 5px 8px;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 800;
 }
 .finance-pending {
@@ -401,7 +401,7 @@
     border-radius: 6px;
     color: #285f8b;
     background: #fff;
-    font-size: 9px;
+    font-size: 12px;
     cursor: pointer;
   }
   .finance-confirm-button {
@@ -436,7 +436,7 @@
     border-bottom: 1px solid #e6ebf1;
     small {
       color: $midel-color;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 850;
       letter-spacing: 0.12em;
     }
@@ -448,7 +448,7 @@
     p {
       margin: 0;
       color: #7e8b9e;
-      font-size: 9px;
+      font-size: 12px;
     }
     > button {
       width: 32px;
@@ -477,7 +477,7 @@
   border-radius: 12px;
   .plan-choice-title > span {
     color: #74849a;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 800;
   }
   .plan-choice-title h3 {
@@ -489,7 +489,7 @@
     min-height: 31px;
     margin: 0;
     color: #748298;
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.5;
   }
   .plan-price {
@@ -503,13 +503,13 @@
     }
     > span {
       margin-left: 3px;
-      font-size: 10px;
+      font-size: 13px;
     }
     small {
       width: 100%;
       margin-top: 4px;
       color: #8b96a7;
-      font-size: 8px;
+      font-size: 11px;
     }
   }
   > button {
@@ -519,7 +519,7 @@
     background: $main-color;
     border: 0;
     border-radius: 20px;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 850;
     cursor: pointer;
     &:disabled {
@@ -540,7 +540,7 @@
     align-items: flex-start;
     gap: 8px;
     color: #4e617b;
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.5;
   }
   li svg {
@@ -563,7 +563,7 @@
     color: #fff;
     background: #1260d8;
     border-radius: 10px;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 850;
   }
 }
@@ -574,7 +574,7 @@
   background: #fff7e9;
   border: 1px solid #f1d8ad;
   border-radius: 7px;
-  font-size: 9px;
+  font-size: 12px;
 }
 .all-benefits-toggle {
   margin: 3px auto 15px;
@@ -586,7 +586,7 @@
   background: transparent;
   border: 0;
   cursor: pointer;
-  font-size: 10px;
+  font-size: 13px;
   font-weight: 750;
   svg {
     transition: transform 0.2s;
@@ -618,11 +618,11 @@
   }
   strong {
     color: #34465e;
-    font-size: 9px;
+    font-size: 12px;
   }
   small {
     color: #7c899b;
-    font-size: 8px;
+    font-size: 11px;
     line-height: 1.5;
   }
 }
@@ -638,12 +638,12 @@
   border-radius: 9px;
   strong {
     color: #495971;
-    font-size: 9px;
+    font-size: 12px;
   }
   p {
     margin: 5px 0 0;
     color: #7d899b;
-    font-size: 8px;
+    font-size: 11px;
   }
   > button {
     flex: none;
@@ -652,7 +652,7 @@
     background: #fff;
     border: 1px solid #e7c7cb;
     border-radius: 6px;
-    font-size: 8px;
+    font-size: 11px;
     cursor: pointer;
   }
   > span {
@@ -661,7 +661,7 @@
     color: #a46a1e;
     background: #fff2df;
     border-radius: 6px;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
   }
 }
@@ -682,14 +682,14 @@
     padding-left: 18px;
     display: grid;
     gap: 5px;
-    font-size: 8px;
+    font-size: 11px;
     line-height: 1.5;
   }
   label {
     display: grid;
     gap: 5px;
     color: #6d788a;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
   }
   select {
@@ -699,7 +699,7 @@
     border: 1px solid #d9dfe7;
     border-radius: 6px;
     outline: 0;
-    font-size: 9px;
+    font-size: 12px;
   }
   > div {
     margin-top: 14px;
@@ -713,7 +713,7 @@
     background: #fff;
     border: 1px solid #d9e0e8;
     border-radius: 6px;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
     cursor: pointer;
   }
@@ -743,14 +743,14 @@
   min-height: 35px;
   color: #8a96a7;
   background: #f7f9fc;
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 800;
 }
 .account-doc-table > button {
   color: #66758b;
   background: transparent;
   cursor: pointer;
-  font-size: 9px;
+  font-size: 12px;
   &:hover {
     background: #f9fbfd;
   }
@@ -769,12 +769,12 @@
     color: $midel-color;
     background: #eaf2fa;
     border-radius: 4px;
-    font-size: 6px;
+    font-size: 11px;
     font-style: normal;
   }
   span {
     color: #21805c;
-    font-size: 8px;
+    font-size: 11px;
   }
   small {
     color: #8995a7;
@@ -784,7 +784,7 @@
   padding: 45px;
   color: #929cac;
   text-align: center;
-  font-size: 9px;
+  font-size: 12px;
 }
 .mypage-side-column {
   display: grid;
@@ -800,7 +800,7 @@
   grid-template-columns: 75px 1fr;
   align-items: center;
   border-bottom: 1px solid rgba($line, 0.2);
-  font-size: 9px;
+  font-size: 12px;
 }
 dt {
   color: #8490a2;
@@ -825,12 +825,12 @@ dd {
   padding: 17px;
   strong {
     color: #35445b;
-    font-size: 10px;
+    font-size: 13px;
   }
   p {
     margin: 8px 0 14px;
     color: #738197;
-    font-size: 9px;
+    font-size: 12px;
     line-height: 1.6;
   }
   button {
@@ -839,7 +839,7 @@ dd {
     background: $main-color;
     border: 0;
     border-radius: 6px;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
     cursor: pointer;
   }

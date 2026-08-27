@@ -15,7 +15,7 @@
     background: #f7f9fc;
   }
   > header strong {
-    font-size: 9px;
+    font-size: 12px;
     letter-spacing: 0.04em;
   }
   > header span {
@@ -24,7 +24,7 @@
     color: $midel-color;
     background: rgba($sub-color, 0.13);
     border-radius: 9px;
-    font-size: 8px;
+    font-size: 11px;
     text-align: center;
   }
   > div {
@@ -34,7 +34,7 @@
   > div > p {
     padding: 14px 9px;
     color: rgba($bgd, 0.38);
-    font-size: 9px;
+    font-size: 12px;
     text-align: center;
   }
 }
@@ -70,11 +70,11 @@
     white-space: nowrap;
   }
   strong {
-    font-size: 9px;
+    font-size: 12px;
   }
   small {
     color: rgba($bgd, 0.43);
-    font-size: 7px;
+    font-size: 11px;
   }
   &:hover,
   &.active {
@@ -116,7 +116,7 @@
   }
   small {
     color: rgba($bgd, 0.45);
-    font-size: 8px;
+    font-size: 11px;
   }
   .delete-session {
     width: 25px;
@@ -153,7 +153,7 @@
   span,
   small {
     color: rgba($bgd, 0.45);
-    font-size: 9px;
+    font-size: 12px;
   }
   strong {
     color: $main-color;
@@ -165,7 +165,7 @@
   color: $midel-color;
   background: rgba($sub-color, 0.12);
   border-radius: 9px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
 }
 .source-list {
@@ -182,19 +182,19 @@
     display: flex;
     justify-content: space-between;
     color: $midel-color;
-    font-size: 9px;
+    font-size: 12px;
   }
   p {
     margin: 8px 0;
     color: rgba($bgd, 0.72);
-    font-size: 10px;
+    font-size: 13px;
     line-height: 1.55;
   }
   footer {
     display: flex;
     justify-content: space-between;
     color: rgba($bgd, 0.42);
-    font-size: 9px;
+    font-size: 12px;
   }
   footer button {
     color: $midel-color;
@@ -221,7 +221,7 @@
     background: $main-color;
     border: 0;
     border-radius: 6px;
-    font-size: 8px;
+    font-size: 11px;
     font-weight: 750;
     cursor: pointer;
   }
@@ -235,7 +235,7 @@
   background: $main-color;
   border: 0;
   border-radius: 6px;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
   cursor: pointer;

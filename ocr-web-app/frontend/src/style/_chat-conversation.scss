@@ -17,7 +17,7 @@
     color: $all;
     background: $main-color;
     border-radius: 7px;
-    font-size: 9px;
+    font-size: 12px;
     font-weight: 800;
   }
   > div {
@@ -25,7 +25,7 @@
   }
   small {
     color: rgba($bgd, 0.44);
-    font-size: 9px;
+    font-size: 12px;
   }
   p {
     margin: 4px 0 0;
@@ -57,7 +57,7 @@
     color: $midel-color;
     background: transparent;
     border: 0;
-    font-size: 9px;
+    font-size: 12px;
     cursor: pointer;
   }
 }
@@ -75,7 +75,7 @@
   color: #5145cd;
   background: transparent;
   border: 0;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 750;
   cursor: pointer;
 }
@@ -157,5 +157,5 @@
   margin: 7px 14px 12px;
   color: rgba($bgd, 0.38);
   text-align: center;
-  font-size: 8px;
+  font-size: 11px;
 }

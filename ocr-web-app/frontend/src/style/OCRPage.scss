@@ -3192,9 +3192,9 @@
     padding: 0;
     display: grid;
     grid-template-columns:
-      minmax(280px, 0.85fr)
-      minmax(440px, 1.25fr)
-      minmax(260px, 0.7fr);
+      minmax(300px, 0.88fr)
+      minmax(440px, 1.1fr)
+      minmax(240px, 0.65fr);
     grid-template-areas: "preview sheet agent";
     gap: 12px;
     overflow: visible;
@@ -3218,11 +3218,66 @@
 
     > .preview-panel {
       grid-area: preview;
+
+      .preview-stage {
+        flex: 1 1 auto;
+        min-height: 0;
+      }
     }
 
     > .text-panel {
       grid-area: sheet;
       border: 1px solid $border-color;
+
+      .receipt-raw-result {
+        min-height: 170px;
+        max-height: 250px;
+        margin: 0;
+        flex: 0 1 30%;
+        border: 0;
+        border-top: 1px solid $border-color;
+        border-radius: 0;
+        background: $surface-color;
+
+        > header {
+          min-height: 58px;
+          padding: 10px 18px;
+          color: $surface-color;
+          background: #1f4e78;
+          border-bottom: 0;
+        }
+
+        > header strong {
+          color: inherit;
+          font-size: 18px;
+          font-weight: 800;
+          letter-spacing: 0.03em;
+        }
+
+        > header small {
+          color: inherit;
+          opacity: 0.72;
+        }
+
+        > header > span {
+          color: #1f4e78;
+          background: rgba($surface-color, 0.9);
+        }
+
+        > div {
+          padding: 14px 18px 16px;
+          gap: 7px;
+        }
+
+        > div button {
+          padding: 6px 8px;
+          line-height: 1.35;
+        }
+      }
+
+      .text-header {
+        border-top: 1px solid $border-color;
+      }
     }
 
     > .receipt-agent-panel {
@@ -3276,6 +3331,7 @@
     .receipt-form-title {
       flex-wrap: wrap;
       gap: 8px;
+      padding: 16px 18px;
     }
 
     .receipt-form-meta {
@@ -3288,10 +3344,16 @@
     }
 
     .receipt-form-table {
+      padding: 16px;
       overflow-x: auto;
 
       table {
         min-width: 680px;
+      }
+
+      th,
+      td {
+        padding: 10px 9px;
       }
     }
 
@@ -3502,9 +3564,10 @@
           padding: 12px;
         }
 
-        .receipt-raw-result {
+        > .text-panel .receipt-raw-result {
           min-height: 150px;
           max-height: 190px;
+          margin: 0;
           flex: 0 0 auto;
         }
 

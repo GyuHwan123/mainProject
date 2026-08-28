@@ -18,13 +18,14 @@
     font-size: 12px;
     letter-spacing: 0.04em;
   }
-  > header span {
+  > header span,
+  .history-header-actions > span {
     min-width: 20px;
-    padding: 2px 5px;
+    padding: 1px;
     color: $midel-color;
     background: rgba($sub-color, 0.13);
-    border-radius: 9px;
-    font-size: 11px;
+    border-radius: 4px;
+    font-size: 10px;
     text-align: center;
   }
   > div {
@@ -39,8 +40,38 @@
     text-align: center;
   }
 }
+.history-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0px;
+
+  > button {
+    padding: 3px 5px;
+    color: #a74652;
+    background: transparent;
+    border: 0;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      color: #8f2f3c;
+      background: rgba(#c54d5b, 0.1);
+    }
+
+    &:disabled {
+      opacity: $disabled-opacity;
+      cursor: default;
+    }
+  }
+}
 .rag-document-history {
   flex: 0 0 39%;
+
+  > div {
+    padding: 8px;
+  }
 }
 .chat-history-section {
   flex: 1;
@@ -49,20 +80,20 @@
   overflow: hidden;
 }
 .history-pagination {
-  min-height: 36px;
-  padding: 4px 8px;
+  min-height: 24px;
+  padding: 4px 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex: none;
-  gap: 4px;
+  gap: 3px;
   overflow: hidden;
   border-top: 1px solid rgba($line, 0.24);
   background: $surface-color;
 
   button {
-    width: 27px;
-    height: 27px;
+    width: 24px;
+    height: 24px;
     display: grid;
     place-items: center;
     flex: none;
@@ -71,7 +102,7 @@
     border: 1px solid transparent;
     border-radius: 5px;
     font-size: 12px;
-    font-weight: 750;
+    font-weight: 650;
     cursor: pointer;
 
     &:hover:not(:disabled) {
@@ -94,11 +125,11 @@
 }
 .rag-history-row {
   width: 100%;
-  min-height: 45px;
-  padding: 7px 9px;
+  min-height: 35px;
+  padding: 5px;
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   color: $bgd;
   background: transparent;
   border: 0;
@@ -107,8 +138,9 @@
   cursor: pointer;
   > div {
     min-width: 0;
+    flex: 1;
     display: grid;
-    gap: 3px;
+    gap: 7px;
   }
   strong,
   small {
@@ -118,18 +150,21 @@
   }
   strong {
     font-size: 12px;
+    font-weight: 500;
   }
   small {
-    color: rgba($bgd, 0.43);
+    color: rgba($bgd, 0.45);
     font-size: 11px;
+    line-height: 11px;
   }
   &:hover {
-    color: $main-color;
-    background: rgba($sub-color, 0.08);
+    background: rgba($sub-color, 0.13);
   }
   &.active {
-    color: $main-color;
     background: rgba($sub-color, 0.13);
+  }
+  .delete-session {
+    flex: none;
   }
 }
 .chat-session-row {
@@ -143,7 +178,7 @@
   > button:first-child {
     min-width: 0;
     flex: 1;
-    padding: 9px;
+    padding: 5px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -156,13 +191,14 @@
   > button:first-child div {
     min-width: 0;
     display: grid;
-    gap: 2px;
+    gap: 1px;
   }
   strong {
     overflow: hidden;
-    font-size: 11px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 500;
   }
   small {
     color: rgba($bgd, 0.45);
@@ -176,6 +212,131 @@
     background: transparent;
     border: 0;
     cursor: pointer;
+  }
+}
+.chat-session-row + .chat-session-row {
+  margin-top: 10px;
+}
+.delete-session {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #b75a64;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: #8f2f3c;
+    background: rgba(#c54d5b, 0.12);
+  }
+
+  &:disabled {
+    opacity: $disabled-opacity;
+    cursor: default;
+  }
+}
+.delete-confirm-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  background: rgba(#111827, 0.46);
+  backdrop-filter: blur(2px);
+}
+.delete-confirm-dialog {
+  width: min(400px, 100%);
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  color: $bgd;
+  background: $surface-color;
+  border: 1px solid rgba($line, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(#111827, 0.2);
+
+  .delete-confirm-icon {
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    color: #a74652;
+    background: rgba(#c54d5b, 0.12);
+    border-radius: 50%;
+    font-size: 19px;
+  }
+
+  small {
+    color: #a74652;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  h2 {
+    margin: 5px 0 7px;
+    font-size: 17px;
+    line-height: 1.4;
+  }
+
+  p {
+    margin: 0;
+    color: $secondary-text-color;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+
+  .delete-confirm-error {
+    grid-column: 1 / -1;
+    padding: 9px 10px;
+    color: #8f2f3c;
+    background: rgba(#c54d5b, 0.09);
+    border-radius: 6px;
+  }
+
+  footer {
+    grid-column: 1 / -1;
+    margin-top: 7px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+
+    button {
+      min-width: 72px;
+      min-height: 36px;
+      padding: 7px 13px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: $disabled-opacity;
+      cursor: wait;
+    }
+
+    .cancel-delete {
+      color: $secondary-text-color;
+      background: $surface-color;
+      border: 1px solid rgba($line, 0.7);
+    }
+
+    .confirm-delete {
+      color: #fff;
+      background: #b5414f;
+      border: 1px solid #b5414f;
+
+      &:hover:not(:disabled) {
+        background: #963440;
+        border-color: #963440;
+      }
+    }
   }
 }
 .history-file-icon {

@@ -222,7 +222,7 @@ function SpreadsheetEvidencePage({ page, bbox }) {
   </div>;
 }
 
-function DocumentSummaryPreview({ document }) {
+function DocumentSummaryPreview({ document, summary, loading, error, onRetry, onRegenerate }) {
   if (!document) return <div className="document-summary-empty">
     <strong>요약할 문서를 선택해 주세요.</strong>
     <p>RAG 문서를 선택하면 AI 문서 요약을 확인할 수 있습니다.</p>
@@ -231,12 +231,11 @@ function DocumentSummaryPreview({ document }) {
   return <section className="document-summary-preview" aria-labelledby="document-summary-title">
     <header>
       <div><small>DOCUMENT SUMMARY</small><h2 id="document-summary-title">AI 문서 요약</h2></div>
-      <span title={document.name}>{document.name}</span>
+      <div className="document-summary-actions"><span title={document.name}>{document.name}</span>{summary && <button type="button" disabled={loading} onClick={onRegenerate}>{loading ? '다시 요약 중...' : '다시 요약'}</button>}</div>
     </header>
-    <div className="document-summary-placeholder">
-      <strong>문서 요약을 준비할 수 있습니다.</strong>
-      <p>현재는 요약 API가 연결되지 않아 문서 요약 내용이 표시되지 않습니다.</p>
-    </div>
+    {loading && !summary && <div className="document-summary-placeholder summary-loading"><i /><strong>AI가 문서를 요약하고 있습니다...</strong><p>문서 길이에 따라 잠시 시간이 걸릴 수 있습니다.</p></div>}
+    {!loading && error && !summary && <div className="document-summary-placeholder summary-error"><strong>문서 요약에 실패했습니다.</strong><p>{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
+    {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}{summary}</div>}
   </section>;
 }
 
@@ -362,6 +361,9 @@ function ChatPageContent() {
   const [busy, setBusy] = useState(false);
   const [uploadMode, setUploadMode] = useState(false);
   const [documentViewMode, setDocumentViewMode] = useState('viewer');
+  const [documentSummaries, setDocumentSummaries] = useState({});
+  const [summaryLoadingId, setSummaryLoadingId] = useState(null);
+  const [summaryErrors, setSummaryErrors] = useState({});
   const [scrapbookOpen, setScrapbookOpen] = useState(false);
   const [scrapSaving, setScrapSaving] = useState(false);
   const [scrapError, setScrapError] = useState('');
@@ -386,6 +388,7 @@ function ChatPageContent() {
   const evaluationFileRef = useRef(null);
   const evaluationRunningRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
+  const summaryRequestsRef = useRef(new Set());
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const previewSource = selectedSource || (activeDoc ? {
@@ -399,6 +402,29 @@ function ChatPageContent() {
   const pagedDocuments = useMemo(() => documents.slice((ragHistoryPage - 1) * HISTORY_PAGE_SIZE, ragHistoryPage * HISTORY_PAGE_SIZE), [documents, ragHistoryPage]);
   const pagedSessions = useMemo(() => sessions.slice((chatHistoryPage - 1) * HISTORY_PAGE_SIZE, chatHistoryPage * HISTORY_PAGE_SIZE), [sessions, chatHistoryPage]);
 
+  const loadDocumentSummary = async (documentId, { retry = false, forceRegenerate = false } = {}) => {
+    if (!documentId || summaryRequestsRef.current.has(documentId)) return;
+    if (!retry && !forceRegenerate && Object.prototype.hasOwnProperty.call(documentSummaries, documentId)) return;
+    summaryRequestsRef.current.add(documentId);
+    setSummaryLoadingId(documentId);
+    setSummaryErrors((current) => ({ ...current, [documentId]: '' }));
+    try {
+      const { data } = await apiClient.post(`/rag/documents/${encodeURIComponent(documentId)}/summary`, null, {
+        params: forceRegenerate ? { force_regenerate: true } : undefined,
+        timeout: 600000,
+      });
+      setDocumentSummaries((current) => ({ ...current, [documentId]: data.summary || '' }));
+    } catch (error) {
+      setSummaryErrors((current) => ({
+        ...current,
+        [documentId]: error.response?.data?.detail || '잠시 후 다시 시도해 주세요.',
+      }));
+    } finally {
+      summaryRequestsRef.current.delete(documentId);
+      setSummaryLoadingId((current) => current === documentId ? null : current);
+    }
+  };
+
   useEffect(() => {
     setRagHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(documents.length / HISTORY_PAGE_SIZE))));
   }, [documents.length]);
@@ -410,6 +436,10 @@ function ChatPageContent() {
   useEffect(() => {
     if (!activeId) setDocumentViewMode('viewer');
   }, [activeId]);
+
+  useEffect(() => {
+    if (documentViewMode === 'summary' && activeDoc?.id) loadDocumentSummary(activeDoc.id);
+  }, [documentViewMode, activeDoc?.id]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -776,7 +806,14 @@ function ChatPageContent() {
               <div className="document-view-content">
                 {documentViewMode === 'viewer'
                   ? <EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />
-                  : <DocumentSummaryPreview document={activeDoc} />}
+                  : <DocumentSummaryPreview
+                    document={activeDoc}
+                    summary={activeDoc ? documentSummaries[activeDoc.id] : ''}
+                    loading={summaryLoadingId === activeDoc?.id}
+                    error={activeDoc ? summaryErrors[activeDoc.id] : ''}
+                    onRetry={() => activeDoc && loadDocumentSummary(activeDoc.id, { retry: true })}
+                    onRegenerate={() => activeDoc && loadDocumentSummary(activeDoc.id, { forceRegenerate: true })}
+                  />}
                 {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
               </div>
             </div>

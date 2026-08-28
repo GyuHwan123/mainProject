@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser, saveAppUser } from '../features/appSession';
+import '../style/DashboardPage.scss';
 
 export default function DashboardPage() {
   const [history, setHistory] = useState([]);

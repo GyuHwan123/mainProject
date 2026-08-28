@@ -44,6 +44,13 @@ def list_documents(user: User = Depends(require_current_user)) -> list[dict[str,
     return supabase_service.list_rag_documents(user.email)
 
 
+@router.delete("/documents/{rag_document_id}", status_code=204)
+def delete_document(
+    rag_document_id: str, user: User = Depends(require_current_user),
+) -> None:
+    supabase_service.delete_rag_document(user.email, rag_document_id)
+
+
 @router.get("/company-documents/{doc_id}/file")
 def get_company_document_file(
     doc_id: str, _user: User = Depends(require_current_user),

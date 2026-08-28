@@ -1,0 +1,154 @@
+@use "./variables" as *;
+
+.chat-app-shell {
+  min-height: 100vh;
+  background: #f7f9fc;
+  color: $bgd;
+}
+.chat-workspace {
+  flex: 1;
+  min-width: 0;
+  padding: 25px 28px;
+  overflow: auto;
+}
+.chat-page-header {
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  p {
+    margin: 0 0 4px;
+    color: $midel-color;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.13em;
+  }
+  h1 {
+    margin: 0;
+    color: $main-color;
+    font-size: 27px;
+  }
+  span {
+    display: block;
+    margin-top: 5px;
+    color: rgba($bgd, 0.52);
+    font-size: 12px;
+  }
+}
+.chat-model-status {
+  padding: 9px 13px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: $main-color;
+  background: $all;
+  border: 1px solid rgba($line, 0.45);
+  border-radius: 18px;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgba(18, 68, 112, 0.06);
+  i {
+    width: 8px;
+    height: 8px;
+    background: #36b878;
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px rgba(54, 184, 120, 0.13);
+  }
+}
+.chat-workspace .rag-grid {
+  height: calc(100vh - 135px);
+  min-height: 580px;
+  display: grid;
+  grid-template-columns: 215px minmax(650px, 1.8fr) minmax(330px, 0.85fr);
+  gap: 12px;
+}
+.chat-workspace .history-panel,
+.chat-workspace .context-panel,
+.chat-workspace .conversation-panel {
+  min-width: 0;
+  min-height: 0;
+  background: #fff;
+  border: 1px solid #e1e7ee;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(18, 68, 112, 0.045);
+  overflow: hidden;
+}
+.chat-workspace .rag-panel-title {
+  min-height: 57px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba($line, 0.32);
+  > div {
+    display: grid;
+    gap: 2px;
+  }
+  strong {
+    color: $main-color;
+    font-size: 13px;
+  }
+  small {
+    color: rgba($bgd, 0.45);
+    font-size: 13px;
+  }
+  > button {
+    width: 29px;
+    height: 29px;
+    color: $all;
+    background: $main-color;
+    border: 0;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+}
+.chat-workspace .history-panel,
+.chat-workspace .context-panel,
+.chat-workspace .conversation-panel {
+  display: flex;
+  flex-direction: column;
+}
+.chat-workspace .history-list-rag,
+.chat-workspace .source-list,
+.chat-workspace .messages-rag {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.chat-workspace .history-list-rag {
+  padding: 8px;
+}
+.chat-workspace .history-doc {
+  width: 100%;
+  padding: 9px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: $bgd;
+  background: transparent;
+  border: 0;
+  border-radius: 7px;
+  text-align: left;
+  cursor: pointer;
+  > div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+  }
+  strong {
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  small {
+    color: rgba($bgd, 0.45);
+    font-size: 12px;
+  }
+  &.active,
+  &:hover {
+    background: rgba($sub-color, 0.13);
+    color: $main-color;
+  }
+}

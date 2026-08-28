@@ -81,6 +81,8 @@ create extension if not exists vector;
 -- 기존 함수가 old rag_chunks 구조를 참조할 수 있으므로 테이블보다 먼저 제거합니다.
 -- vector의 차원(768/1024)은 PostgreSQL 함수 식별자에 포함되지 않습니다.
 drop function if exists public.match_rag_chunks(vector, uuid, uuid, double precision, integer);
+drop function if exists public.match_rag_chunks(vector, double precision, integer);
+drop function if exists public.match_rag_chunks(vector, uuid[], double precision, integer);
 
 -- ------------------------------------------------------------
 -- 3. Remove old tables
@@ -145,6 +147,7 @@ create index idx_rag_chunks_embedding_hnsw
 -- match_threshold는 0~1 범위의 유사도 기준입니다.
 create or replace function public.match_rag_chunks(
   query_embedding vector(1024),
+  allowed_document_ids uuid[],
   match_threshold double precision default 0.35,
   match_count integer default 5
 )
@@ -187,7 +190,8 @@ as $$
   from public.rag_chunks as chunk
   join public.rag_documents as document
     on document.id = chunk.document_id
-  where (1 - (chunk.embedding <=> query_embedding)) >= match_threshold
+  where chunk.document_id = any(allowed_document_ids)
+    and (1 - (chunk.embedding <=> query_embedding)) >= match_threshold
   order by chunk.embedding <=> query_embedding
   limit least(greatest(match_count, 1), 100);
 $$;
@@ -200,6 +204,7 @@ commit;
 `public.match_rag_chunks()`는 다음 입력을 받습니다.
 
 - `query_embedding`: 검색 질의의 BGE-M3 `vector(1024)` 임베딩
+- `allowed_document_ids`: 검색 권한이 확인된 `rag_documents.id` UUID 배열
 - `match_threshold`: 반환할 최소 cosine similarity. 기본값 `0.35`
 - `match_count`: 반환 개수. 최소 1개, 최대 100개로 제한
 
@@ -217,6 +222,7 @@ cosine similarity = 1 - cosine distance
 select *
 from public.match_rag_chunks(
   query_embedding => '[0.01, 0.02, ...]'::vector(1024),
+  allowed_document_ids => array['00000000-0000-0000-0000-000000000001']::uuid[],
   match_threshold => 0.35,
   match_count => 5
 );

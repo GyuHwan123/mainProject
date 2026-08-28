@@ -1,7 +1,8 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoBookmarkOutline, IoCloseOutline, IoCloudUploadOutline, IoTrashOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoCloseOutline, IoTrashOutline } from 'react-icons/io5';
+import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
@@ -11,7 +12,33 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
+const HISTORY_PAGE_SIZE = 5;
 const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
+
+function HistoryPagination({ page, totalItems, onChange, label }) {
+  const totalPages = Math.ceil(totalItems / HISTORY_PAGE_SIZE);
+  if (totalPages <= 1) return null;
+  return <nav className="history-pagination" aria-label={`${label} 페이지`}>
+    <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="이전 페이지">‹</button>
+    {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => <button type="button" key={number} className={page === number ? 'active' : ''} aria-current={page === number ? 'page' : undefined} onClick={() => onChange(number)}>{number}</button>)}
+    <button type="button" disabled={page >= totalPages} onClick={() => onChange(page + 1)} aria-label="다음 페이지">›</button>
+  </nav>;
+}
+
+function DeleteConfirmDialog({ request, deleting, error, onCancel, onConfirm }) {
+  if (!request) return null;
+  const isAll = request.mode === 'all';
+  const target = request.target === 'rag' ? '기록보관함' : '채팅이력';
+  const title = isAll ? `${target}을 전체 삭제하시겠습니까?` : '이 기록을 삭제하시겠습니까?';
+  return <div className="delete-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) onCancel(); }}>
+    <section className="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-description">
+      <span className="delete-confirm-icon"><IoTrashOutline /></span>
+      <div><small>{target} {isAll ? '전체삭제' : '기록 삭제'}</small><h2 id="delete-confirm-title">{title}</h2><p id="delete-confirm-description">삭제한 기록은 복구할 수 없습니다.</p></div>
+      {error && <p className="delete-confirm-error" role="alert">{error}</p>}
+      <footer><button type="button" className="cancel-delete" disabled={deleting} onClick={onCancel}>취소</button><button type="button" className="confirm-delete" disabled={deleting} onClick={onConfirm}>{deleting ? '삭제 중...' : (isAll ? '전체삭제' : '삭제')}</button></footer>
+    </section>
+  </div>;
+}
 
 class ChatErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { failed: false, message: '' }; }
@@ -44,9 +71,52 @@ function bboxPoints(value) {
   return [];
 }
 
-function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
+function normalizeEvidenceText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function findEvidenceItemIndices(items, sourceContent) {
+  const normalizedSource = normalizeEvidenceText(sourceContent);
+  if (!normalizedSource) return [];
+
+  const characters = [];
+  items.forEach((item, itemIndex) => {
+    for (const character of String(item?.str || '')) characters.push({ character, itemIndex });
+    if (item?.hasEOL) characters.push({ character: ' ', itemIndex });
+  });
+
+  let normalizedPage = '';
+  const itemIndexByCharacter = [];
+  let pendingSpaceItem = null;
+  characters.forEach(({ character, itemIndex }) => {
+    if (/\s/.test(character)) {
+      if (normalizedPage && !normalizedPage.endsWith(' ')) pendingSpaceItem = itemIndex;
+      return;
+    }
+    if (pendingSpaceItem !== null) {
+      normalizedPage += ' ';
+      itemIndexByCharacter.push(pendingSpaceItem);
+      pendingSpaceItem = null;
+    }
+    normalizedPage += character;
+    itemIndexByCharacter.push(itemIndex);
+  });
+
+  const candidates = [normalizedSource];
+  [240, 160, 100, 60, 40].forEach((length) => {
+    if (normalizedSource.length > length) candidates.push(normalizedSource.slice(0, length).trim());
+  });
+  const match = candidates.find((candidate, index) => candidate.length >= (index === 0 ? 24 : 40) && normalizedPage.includes(candidate));
+  if (!match) return [];
+
+  const start = normalizedPage.indexOf(match);
+  return [...new Set(itemIndexByCharacter.slice(start, start + match.length))];
+}
+
+function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [], sourceContent = '' }) {
   const canvasRef = useRef(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, scale: 1 });
+  const [evidenceHighlights, setEvidenceHighlights] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +135,38 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     return () => { active = false; try { renderTask?.cancel(); } catch { /* 이미 종료된 렌더 작업 */ } };
   }, [pdf, pageNumber]);
 
+  useEffect(() => {
+    let active = true;
+    setEvidenceHighlights([]);
+    if (!sourceContent) return () => { active = false; };
+
+    pdf.getPage(pageNumber).then(async (page) => {
+      const viewport = page.getViewport({ scale: 1.05 });
+      const textContent = await page.getTextContent();
+      if (!active) return;
+      const items = Array.isArray(textContent?.items) ? textContent.items : [];
+      const matchedIndices = findEvidenceItemIndices(items, sourceContent);
+      const highlights = matchedIndices.map((itemIndex) => {
+        const item = items[itemIndex];
+        if (!item?.transform) return null;
+        const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const fontHeight = Math.hypot(transform[2], transform[3]);
+        const width = Math.max(2, Number(item.width || 0) * viewport.scale);
+        if (!fontHeight || !width) return null;
+        return {
+          left: transform[4],
+          top: transform[5] - fontHeight,
+          width,
+          height: fontHeight,
+          transform: `rotate(${Math.atan2(transform[1], transform[0])}rad)`,
+        };
+      }).filter(Boolean);
+      setEvidenceHighlights(highlights);
+    }).catch(() => {});
+
+    return () => { active = false; };
+  }, [pdf, pageNumber, sourceContent]);
+
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
     if (!points.length || !pageSize.width) return null;
@@ -80,7 +182,7 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
     return xs.length && ys.length ? { left: Math.min(...xs) * pageSize.scale, top: Math.min(...ys) * pageSize.scale, width: (Math.max(...xs) - Math.min(...xs)) * pageSize.scale, height: (Math.max(...ys) - Math.min(...ys)) * pageSize.scale } : null;
   }).filter(Boolean);
-  return <div className="evidence-pdf-page"><canvas ref={canvasRef} />{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
+  return <div className="evidence-pdf-page"><canvas ref={canvasRef} /><div className="rag-evidence-highlight-layer" aria-hidden="true">{evidenceHighlights.map((style, index) => <span className="rag-evidence-highlight" style={style} key={index} />)}</div>{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
 }
 
 function SpreadsheetEvidencePage({ page, bbox }) {
@@ -197,14 +299,14 @@ function EvidencePreview({ source, onUpload, uploading }) {
     return xs.length && ys.length ? { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: (Math.max(...xs) - Math.min(...xs)) * preview.scale, height: (Math.max(...ys) - Math.min(...ys)) * preview.scale } : null;
   }).filter(Boolean);
 
-  if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><IoCloudUploadOutline /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
+  if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><RiFileUploadLine /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
   const pageCount = Math.max(1, preview.pageCount || 1);
   return <div className="evidence-preview"><div className="evidence-preview-label"><span>{source.source}</span><div className="evidence-page-controls"><button disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>‹</button><b>{currentPage} / {pageCount}</b><button disabled={currentPage >= pageCount} onClick={() => setCurrentPage((page) => page + 1)}>›</button></div></div><div className="evidence-preview-body">
     {['pdf', 'spreadsheet'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
     <div className="evidence-document-stage">
     {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
     {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
-    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} />}
+    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} sourceContent={Number(source?.pageNumber || 1) === currentPage ? source?.content : ''} />}
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
     {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
     {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
@@ -226,6 +328,11 @@ function ChatPageContent() {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [ragHistoryPage, setRagHistoryPage] = useState(1);
+  const [chatHistoryPage, setChatHistoryPage] = useState(1);
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [activeSessionId, setActiveSessionId] = useState(restoredChatState.activeSessionId ?? null);
   const [activeId, setActiveId] = useState(restoredChatState.activeId ?? null);
   const [messages, setMessages] = useState(() => Array.isArray(restoredChatState.messages) && restoredChatState.messages.length
@@ -270,6 +377,16 @@ function ChatPageContent() {
     isDocumentPreview: true,
   } : null);
   const totalChunks = useMemo(() => documents.reduce((sum, item) => sum + (item.chunkCount || 0), 0), [documents]);
+  const pagedDocuments = useMemo(() => documents.slice((ragHistoryPage - 1) * HISTORY_PAGE_SIZE, ragHistoryPage * HISTORY_PAGE_SIZE), [documents, ragHistoryPage]);
+  const pagedSessions = useMemo(() => sessions.slice((chatHistoryPage - 1) * HISTORY_PAGE_SIZE, chatHistoryPage * HISTORY_PAGE_SIZE), [sessions, chatHistoryPage]);
+
+  useEffect(() => {
+    setRagHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(documents.length / HISTORY_PAGE_SIZE))));
+  }, [documents.length]);
+
+  useEffect(() => {
+    setChatHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE))));
+  }, [sessions.length]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -376,6 +493,14 @@ function ChatPageContent() {
     setSelectedSource(null);
   };
 
+  const clearActiveDocument = () => {
+    setActiveId(null);
+    setSelectedSource(null);
+    setSources([]);
+    setEvidenceFlash(false);
+    setUploadMode(false);
+  };
+
   const uploadFiles = async (files) => {
     setRagError('');
     try {
@@ -470,10 +595,54 @@ function ChatPageContent() {
     } finally { setBusy(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20); }
   };
 
-  const removeSession = async (id) => {
-    await apiClient.delete(`/chatbot/sessions/${id}`);
-    if (activeSessionId === id) startNewChat();
-    refreshSessions();
+  const requestDelete = (target, mode, id = null) => {
+    setDeleteError('');
+    setDeleteRequest({ target, mode, id });
+  };
+
+  const closeDeleteConfirm = () => {
+    if (deleting) return;
+    setDeleteRequest(null);
+    setDeleteError('');
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteRequest || deleting) return;
+    const { target, mode, id } = deleteRequest;
+    const items = target === 'rag' ? documents : sessions;
+    const ids = mode === 'all' ? items.map((item) => item.id) : [id];
+    const endpoint = target === 'rag' ? '/rag/documents' : '/chatbot/sessions';
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const results = await Promise.allSettled(ids.map((itemId) => apiClient.delete(`${endpoint}/${itemId}`)));
+      const deletedIds = ids.filter((_, index) => results[index].status === 'fulfilled');
+      const failedCount = results.length - deletedIds.length;
+
+      if (target === 'rag') {
+        if (deletedIds.includes(activeId)) {
+          setActiveId(null);
+          setUploadMode(false);
+          startNewChat();
+        }
+        if (deletedIds.length) setDocuments((current) => current.filter((item) => !deletedIds.includes(item.id)));
+        if (mode === 'all' && !failedCount) setRagHistoryPage(1);
+      } else {
+        if (deletedIds.includes(activeSessionId)) startNewChat();
+        if (deletedIds.length) setSessions((current) => current.filter((item) => !deletedIds.includes(item.id)));
+        if (mode === 'all' && !failedCount) setChatHistoryPage(1);
+      }
+
+      if (failedCount) {
+        setDeleteError(`${failedCount}개 기록을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.`);
+        return;
+      }
+      setDeleteRequest(null);
+    } catch (error) {
+      setDeleteError(error.response?.data?.detail || '기록을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const saveToScrapbook = async (message, index) => {
@@ -557,7 +726,7 @@ function ChatPageContent() {
   };
 
   return <div className="app-shell chat-app-shell"><Sidebar />
-    <main className="chat-workspace">
+    <main className="chat-workspace page-enter">
       <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
       <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
       {isDeveloper && <input ref={evaluationFileRef} hidden disabled={evaluationRunning} type="file" accept=".json,application/json" onChange={(event) => { loadEvaluationDataset(event.target.files?.[0]); event.target.value = ''; }} />}
@@ -565,16 +734,16 @@ function ChatPageContent() {
       <section className="rag-grid">
         <aside className="history-panel">
           <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
-          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><span>{documents.length}</span></header><div>{documents.map((document) => <button key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div></button>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div></section>
-          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><span>{sessions.length}</span></header><div className="history-list-rag">{sessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button className="delete-session" onClick={() => removeSession(session.id)} title="대화 삭제"><IoTrashOutline /></button></div>)}
-          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div></section>
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveId(document.id); setUploadMode(false); startNewChat(); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoTrashOutline /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
+          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><div className="history-header-actions"><button type="button" disabled={!sessions.length || deleting} onClick={() => requestDelete('chat', 'all')}>전체삭제</button><span>{sessions.length}</span></div></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('chat', 'single', session.id); }} title="대화 삭제" aria-label={`${session.title} 대화 삭제`}><IoTrashOutline /></button></div>)}
+          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div><HistoryPagination page={chatHistoryPage} totalItems={sessions.length} onChange={setChatHistoryPage} label="채팅 이력" /></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
         </aside>
 
         <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
-          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span><button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><IoCloudUploadOutline /> 문서 추가</button></div></div>
+          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>{activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}<button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><RiFileUploadLine /> 문서 추가</button></div></div>
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
-          <div className="evidence-workspace"><div className="preview-slot"><EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />{uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><IoCloudUploadOutline /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}</div><div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div></div>
+          <div className="evidence-workspace"><div className="preview-slot"><EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />{uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}</div><div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div></div>
         </section>
 
         <section className="conversation-panel">
@@ -598,6 +767,7 @@ function ChatPageContent() {
 
       <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
       {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}
+      <DeleteConfirmDialog request={deleteRequest} deleting={deleting} error={deleteError} onCancel={closeDeleteConfirm} onConfirm={confirmDelete} />
     </main>
   </div>;
 }

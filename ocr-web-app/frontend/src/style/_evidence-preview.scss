@@ -82,7 +82,7 @@
   color: rgba($bgd, 0.52);
   background: $upload-background;
   border: 1px solid $upload-border-color;
-  /* border-radius: 8px 0 0 8px; */
+  border-radius:  0 0 0 10px;
   cursor: pointer;
   transition:
     background-color 0.18s ease,

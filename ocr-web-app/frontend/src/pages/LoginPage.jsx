@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import '../style/LoginPage.scss';
 import { RiGoogleFill } from "react-icons/ri";
 import { RiKakaoTalkFill } from "react-icons/ri";
+import LoginLoading from '../components/LoginLoading';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -22,17 +23,21 @@ export default function LoginPage() {
       return;
     }
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-        queryParams: provider === 'google'
-          ? { prompt: 'select_account' }
-          : undefined,
-      },
-    });
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider,
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: provider === 'google'
+            ? { prompt: 'select_account' }
+            : undefined,
+        },
+      });
 
-    if (error) {
+      if (error) throw error;
+    } catch (error) {
+      setLoading(false);
       alert(error.message);
     }
   };
@@ -99,6 +104,7 @@ export default function LoginPage() {
         </div>
 
         <div className="login-panel">
+          {loading && <LoginLoading overlay />}
             <h1>
                 <img src="/DocAI.png" alt="DocAI" />
                 환영합니다.
@@ -165,6 +171,7 @@ export default function LoginPage() {
           <button
             className="social-button google"
             type="button"
+            disabled={loading}
             onClick={() => handleSupabaseSocialLogin('google')}
           >
             <RiGoogleFill className='googleIcon'/>Google 계정 계속하기
@@ -172,6 +179,7 @@ export default function LoginPage() {
           <button
             className="social-button apple"
             type="button"
+            disabled={loading}
             onClick={() => handleSupabaseSocialLogin('apple')}
           >
             Apple 계정 계속하기
@@ -179,6 +187,7 @@ export default function LoginPage() {
           <button
             className="social-button kakao"
             type="button"
+            disabled={loading}
             onClick={() => handleSupabaseSocialLogin("kakao")}
            >
             <RiKakaoTalkFill className='kakaoIcon'/> Kakao 계정 계속하기

@@ -54,7 +54,7 @@ export default function DashboardPage() {
   };
 
   return <div className="app-shell dashboard-shell"><Sidebar />
-    <main className="home-dashboard">
+    <main className="home-dashboard page-enter">
       <header className="home-header"><div><p className="eyebrow">GOOD MORNING</p><h1>문서 작업을 시작해 볼까요?</h1><p>최근 작업을 이어가거나 새로운 문서를 처리하세요.</p></div><div className="home-profile"><span>{initials}</span><div><strong>{user.name || '사용자'} 님</strong><small>{user.email || '로그인 정보를 불러오는 중'}</small></div></div></header>
 
       <section className="recent-section">

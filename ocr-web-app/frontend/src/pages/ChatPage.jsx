@@ -726,7 +726,7 @@ function ChatPageContent() {
   };
 
   return <div className="app-shell chat-app-shell"><Sidebar />
-    <main className="chat-workspace">
+    <main className="chat-workspace page-enter">
       <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
       <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
       {isDeveloper && <input ref={evaluationFileRef} hidden disabled={evaluationRunning} type="file" accept=".json,application/json" onChange={(event) => { loadEvaluationDataset(event.target.files?.[0]); event.target.value = ''; }} />}

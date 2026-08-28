@@ -1307,7 +1307,7 @@ export default function OCRPage() {
           )) : <div className="ocr-history-empty">{historySearch ? '검색 결과가 없습니다.' : '저장된 OCR 처리 기록이 없습니다.'}</div>}
         </div>
       </aside>
-      <main className="ocr-workspace">
+      <main className="ocr-workspace page-enter">
         <header className="ocr-header">
           <div className="header-title">
             {processingMode !== 'receipt' && <button className="history-menu-button" type="button" onClick={openHistory} aria-label="OCR 처리 기록 열기" aria-expanded={historyOpen}><IoMenuOutline /></button>}

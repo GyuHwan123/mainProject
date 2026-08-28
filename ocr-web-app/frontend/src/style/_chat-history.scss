@@ -436,6 +436,11 @@
     font-weight: 750;
     cursor: pointer;
   }
+  > button.clear-document-selection {
+    color: $main-color;
+    background: #fff;
+    border: 1px solid rgba($midel-color, 0.34);
+  }
 }
 .chat-workspace .rag-panel-title > .new-chat-button {
   width: auto;

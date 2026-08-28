@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline } from 'react-icons/io5';
+import { RiFileUploadLine } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
@@ -1393,8 +1394,8 @@ export default function OCRPage() {
                   <button type="button" onClick={runExtraction} disabled={loading}>OCR 텍스트 추출</button>
                 </div>
               ) : (
-                <button className="dropzone" onClick={() => inputRef.current?.click()}>
-                  <span className="drop-icon">⇧</span><strong>{processingMode === 'receipt' ? '영수증 업로드' : 'PDF를 여기에 놓아주세요'}</strong><small>{processingMode === 'receipt' ? '사진 또는 PDF를 놓거나 클릭해서 선택하세요' : '또는 클릭해서 파일을 선택하세요'}</small>
+                <button className={`dropzone ${processingMode === 'receipt' ? 'receipt-upload-dropzone' : ''}`} onClick={() => inputRef.current?.click()}>
+                  <span className="drop-icon">{processingMode === 'receipt' ? <RiFileUploadLine /> : '⇧'}</span><strong>{processingMode === 'receipt' ? '영수증 업로드' : 'PDF를 여기에 놓아주세요'}</strong><small>{processingMode === 'receipt' ? '사진 또는 PDF를 놓거나 클릭해서 선택하세요' : '또는 클릭해서 파일을 선택하세요'}</small>{processingMode === 'receipt' && <em className="upload-format-pill">사진 · PDF</em>}
                 </button>
               )}
               {error && <div className="ocr-error">{error}</div>}

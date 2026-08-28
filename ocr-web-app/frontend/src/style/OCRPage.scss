@@ -1343,6 +1343,23 @@
           justify-content: flex-start;
           overflow: auto;
 
+          &:has(> .receipt-upload-dropzone) {
+            padding: 0;
+            overflow: hidden;
+            background: $upload-background;
+            border: 1px solid $upload-border-color;
+            /* border-radius: 8px; */
+            cursor: pointer;
+            transition:
+              background-color 0.18s ease,
+              border-color 0.18s ease;
+
+            &:hover {
+              background: $upload-hover-background;
+              border-color: $upload-border-hover-color;
+            }
+          }
+
           .pdf-preview-wrap {
             position: relative;
             flex: none;
@@ -1633,6 +1650,46 @@
               background: rgba($sub-color, 0.18);
               border-radius: 50%;
               font-size: 21px;
+            }
+            &.receipt-upload-dropzone {
+              position: absolute;
+              inset: 0;
+              width: 100%;
+              height: 100%;
+              min-height: 0;
+              margin: 0;
+              background: transparent;
+              border: 0;
+              border-radius: inherit;
+              box-shadow: none;
+              strong {
+                color: $main-color;
+                font-size: 15px;
+                font-weight: 800;
+              }
+              small {
+                color: rgba($bgd, 0.52);
+                font-size: 13px;
+                line-height: 1.5;
+              }
+              .drop-icon {
+                width: 28px;
+                height: 28px;
+                color: $midel-color;
+                background: transparent;
+                border-radius: 0;
+                font-size: 28px;
+              }
+              .upload-format-pill {
+                padding: 5px 9px;
+                color: rgba($bgd, 0.48);
+                background: #fff;
+                border: 1px solid rgba($midel-color, 0.16);
+                border-radius: 12px;
+                font-size: 11px;
+                font-style: normal;
+                line-height: 1;
+              }
             }
           }
 

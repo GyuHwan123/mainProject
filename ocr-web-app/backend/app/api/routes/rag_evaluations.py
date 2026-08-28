@@ -135,7 +135,10 @@ async def evaluate_rag(
     case_results: list[dict[str, Any]] = []
 
     for case in dataset.cases:
-        sources = await rag_service.search(user.email, case.question, None, top_k)
+        sources = await rag_service.search(
+            user.email, case.question, None, top_k,
+            user_role=user.role, subscription_tier=user.subscription_tier,
+        )
         retrieved_documents = _retrieved_document_ids(sources, filename_to_id, title_to_id)
         expected = set(case.expected_documents)
         matched = expected.intersection(retrieved_documents)
@@ -320,7 +323,10 @@ async def run_rag_llm_evaluation(
                     current=index - 1, question_id=case.question_id,
                 )
 
-            sources = await rag_service.search(user.email, case.question, None, settings.RAG_TOP_K)
+            sources = await rag_service.search(
+                user.email, case.question, None, settings.RAG_TOP_K,
+                user_role=user.role, subscription_tier=user.subscription_tier,
+            )
             context = "\n\n".join(
                 f"[근거 {source_index + 1} · {source.get('source', '문서')} · "
                 f"{source.get('page_number', 1)}페이지 · Chunk {source.get('chunk_index', 0) + 1}] "

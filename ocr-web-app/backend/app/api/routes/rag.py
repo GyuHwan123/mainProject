@@ -77,4 +77,7 @@ async def index_document(document_id: str, user: User = Depends(require_current_
 async def search(payload: RagSearchRequest, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     if is_sensitive_query(payload.query):
         raise HTTPException(status_code=403, detail=PRIVACY_RESPONSE)
-    return await rag_service.search(user.email, payload.query.strip(), payload.rag_document_id, payload.limit)
+    return await rag_service.search(
+        user.email, payload.query.strip(), payload.rag_document_id, payload.limit,
+        user_role=user.role, subscription_tier=user.subscription_tier,
+    )

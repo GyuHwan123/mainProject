@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IoDownloadOutline } from 'react-icons/io5';
+import { IoDownloadOutline, IoInformationCircleOutline } from 'react-icons/io5';
 
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
@@ -401,6 +401,22 @@ function evaluatedTime(value) {
   return new Date(value).toLocaleString('ko-KR');
 }
 
+const SPEED_RUBRIC_VERSION = 'absolute-latency-v1';
+
+function percentile(values, rate) {
+  if (!values.length) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.max(0, Math.ceil(rate * sorted.length) - 1)];
+}
+
+function absoluteSpeedScore(averageLatencyMs, p95LatencyMs) {
+  if (!(Number(averageLatencyMs) > 0)) return null;
+  const averageSeconds = Number(averageLatencyMs) / 1000;
+  let score = Math.max(0, Math.min(3, (120 - averageSeconds) / 30));
+  if (Number(p95LatencyMs) > 180000) score = Math.min(score, 1);
+  return score;
+}
+
 function summarize(runs, model) {
   const rows = runs.flatMap((run) => run.results || []).filter((result) => result.model_name === model);
   const measuredRows = rows.filter((result) => Number(result.latency_ms) > 0);
@@ -412,12 +428,14 @@ function summarize(runs, model) {
   const extractionScore = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.extraction_score || 0), 0) / rubrics.length : 0;
   const schemaRate = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.schema_rate || 0), 0) / rubrics.length : 0;
   const totalAmountRate = rubrics.length ? rubrics.filter((rubric) => rubric.total_amount_correct).length / rubrics.length : 0;
+  const latencies = measuredRows.map((row) => Number(row.latency_ms));
   return {
     documents: rows.length,
     success: rows.filter((row) => row.success).length,
     accuracy: evaluated ? correct / evaluated : 0,
     complete: scores.filter((score) => score.complete_match).length,
     latency: measuredRows.length ? measuredRows.reduce((sum, row) => sum + Number(row.latency_ms), 0) / measuredRows.length : null,
+    p95Latency: percentile(latencies, .95),
     measuredDocuments: measuredRows.length,
     workbookSuccess: rows.filter((row) => row.system?.workbook?.success).length,
     sheets,
@@ -492,10 +510,8 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   }, [batchRuns, runs]);
   const summaries = useMemo(() => models.map((model) => ({ model, ...summarize(batchRuns, model) })), [batchRuns, models]);
   const scoredSummaries = useMemo(() => {
-    const measured = summaries.filter((summary) => summary.latency != null);
-    const fastest = measured.length ? Math.min(...measured.map((summary) => summary.latency)) : 0;
     return summaries.map((summary) => {
-      const speedScore = fastest && summary.latency != null ? 3 * fastest / summary.latency : null;
+      const speedScore = absoluteSpeedScore(summary.latency, summary.p95Latency);
       const costScore = summary.documents ? 2 : 0;
       return {
         ...summary,
@@ -830,11 +846,17 @@ export default function FinanceEvaluationPage({ embedded = false }) {
         });
       });
     }));
-    const modelStatistics = (isBatchExport ? scoredSummaries : models.map((model) => ({ model, ...summarize(selectedRuns, model) })))
+    const modelStatistics = (isBatchExport ? scoredSummaries : models.map((model) => {
+      const summary = { model, ...summarize(selectedRuns, model) };
+      const speedScore = absoluteSpeedScore(summary.latency, summary.p95Latency);
+      const costScore = summary.documents ? 2 : 0;
+      return { ...summary, speedScore, costScore, finalScore: summary.extractionScore + (speedScore || 0) + costScore };
+    }))
       .map((summary) => ({
         model: summary.model, evaluated_documents: summary.documents, successful_documents: summary.success,
         extraction_score_95: summary.extractionScore, schema_success_rate: summary.schemaRate,
         total_amount_accuracy: summary.totalAmountRate, average_latency_ms: summary.latency,
+        p95_latency_ms: summary.p95Latency, speed_rubric_version: SPEED_RUBRIC_VERSION,
         speed_score_3: summary.speedScore, speed_measured_documents: summary.measuredDocuments,
         local_cost_score_2: summary.costScore ?? null,
         final_score_100: summary.finalScore ?? null, quality_gate_passed: summary.qualityGate ?? null,
@@ -878,7 +900,7 @@ export default function FinanceEvaluationPage({ embedded = false }) {
     {evaluationMode === 'batch' && <section className="batch-insight-grid">
       <article className="batch-history-card"><header><div><h2>일괄 평가 이력</h2><p>클릭하면 DB에 저장된 평가 결과를 다시 봅니다.</p></div><span>{batchHistory.length}회</span></header><div>{batchHistory.map((batch) => <section className={batch.id === activeBatchId ? 'active' : ''} key={batch.id} role="button" tabIndex="0" onClick={() => replayBatchEvaluation(batch)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') replayBatchEvaluation(batch); }}><div><strong>{batch.batch_name}</strong><small>{batch.created_at ? new Date(batch.created_at).toLocaleString('ko-KR') : '-'}</small></div><span>{batch.completed_items ?? 0}/{batch.total_items ?? 0}</span><em>{batch.status}</em></section>)}{!batchHistory.length && <p className="eval-empty">저장된 일괄 평가가 없습니다.</p>}</div></article>
       <section className="eval-summary-grid batch-selection-metrics">{batchInsightsReady && scoredSummaries.map((summary) => <article key={summary.model}>
-        <small>TEST01~TEST20 선정 지표</small><h2 title={summary.model}>{summary.model}</h2>
+        <span className="selection-metric-title"><small>TEST01~TEST20 선정 지표</small><button type="button" aria-label="선정 지표 점수 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>선정 점수 기준</strong><b>총점 100점 = 추출 정확도 95 + 속도 3 + 로컬 비용 2</b><span>추출 정확도(95점): 상호 5 · 날짜 5 · 총수량 4 · 할인액 4 · 총액 10 · 결제수단 3 · 카드번호 4 · 품목명 12 · 단가 8 · 수량 7 · 품목금액 8 · 카테고리 10 · JSON 스키마 10 · 환각 방지 5</span><span>절대 속도(3점): 평균 30초 이하 3점 · 60초 2점 · 90초 1점 · 120초 이상 0점, 구간별 선형 계산</span><span>P95가 120초를 넘으면 장시간 지연 경고, 180초를 넘으면 속도점수 최대 1점</span><span>로컬 비용(2점): 평가 결과가 있으면 2점</span><em>품질 게이트: 스키마 성공률 98% 이상이면서 총 결제액 정확도 95% 이상</em></span></span><h2 title={summary.model}>{summary.model}</h2>
         <strong>{summary.finalScore.toFixed(1)}점</strong><p>총점 100 · {summary.qualityGate ? '품질 게이트 통과' : '품질 게이트 재검토'}</p>
         <dl>
           <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 95</dd></div>
@@ -886,7 +908,8 @@ export default function FinanceEvaluationPage({ embedded = false }) {
           <div><dt>스키마 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
           <div><dt>총 결제액 정확도</dt><dd>{(summary.totalAmountRate * 100).toFixed(1)}%</dd></div>
           <div><dt>평균 응답시간</dt><dd>{summary.latency == null ? '미측정' : `${(summary.latency / 1000).toFixed(1)}초`}</dd></div>
-          <div><dt>속도점수</dt><dd>{summary.speedScore == null ? '재평가 필요' : `${summary.speedScore.toFixed(2)} / 3`}</dd></div>
+          <div><dt>P95 응답시간</dt><dd className={summary.p95Latency > 120000 ? 'bad' : ''}>{summary.p95Latency == null ? '미측정' : `${(summary.p95Latency / 1000).toFixed(1)}초${summary.p95Latency > 120000 ? ' · 장시간 지연' : ''}`}</dd></div>
+          <div><dt>절대 속도점수</dt><dd>{summary.speedScore == null ? '재평가 필요' : `${summary.speedScore.toFixed(2)} / 3`}</dd></div>
           <div><dt>로컬 비용점수</dt><dd>{summary.costScore.toFixed(1)} / 2</dd></div>
         </dl>
       </article>)}{!batchInsightsReady && <article className="batch-insight-empty"><small>선정 지표</small><h2>평가 결과 대기</h2><p>일괄 평가를 진행하면 선정 지표가 생성됩니다.</p></article>}</section>

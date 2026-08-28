@@ -6,6 +6,7 @@ import logging
 import re
 from datetime import date, datetime, timezone
 from io import BytesIO
+from time import perf_counter
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +30,7 @@ EXPENSE_CATEGORIES = (
     "미용", "미용/생활", "전자제품", "전자제품/문구", "사무용품",
     "소프트웨어", "취미/쇼핑", "취미/소품",
 )
-FINANCE_PROMPT_VERSION = "receipt-v4-fixed-expense-categories"
+FINANCE_PROMPT_VERSION = "receipt-v6-semantic-compact"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 _ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
@@ -749,6 +750,257 @@ def _receipt_table_hint(pages: list[dict[str, Any]] | None) -> str:
     return json.dumps(tables, ensure_ascii=False) if tables else "없음"
 
 
+SEMANTIC_SECTIONS = (
+    "issuer", "business_info", "transaction", "items", "service_detail",
+    "adjustments", "tax_summary", "settlement", "payment", "auxiliary", "unknown",
+)
+
+
+def _compact_evidence_text(value: Any) -> str:
+    return re.sub(r"[^0-9A-Za-z가-힣]", "", str(value or "")).lower()
+
+
+_NON_ITEM_EVIDENCE = re.compile(
+    r"카드\s*번호|승인\s*번호|거래\s*(?:일시|번호)|판매\s*(?:일시|번호)|주문\s*번호|"
+    r"영수증\s*번호|승차권\s*번호|발행\s*일시|사업자|주소|소재지|대표자|TEL\b|FAX\b|"
+    r"전화|합계|소계|결제|공급가액|부가세|세액|할인|쿠폰|포인트|플랫폼|에누리|증정|"
+    r"매출전표|신용매출|SSGPAY|안내|법\s*제\d+조",
+    re.IGNORECASE,
+)
+
+
+def _annotate_candidate_reliability(
+    candidates: list[dict[str, Any]], hints: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Attach compact, explainable reliability grades without verbose prose."""
+    hints = hints or {}
+    stated_count = _clean_number(hints.get("stated_item_count"))
+    hinted_total = _clean_number(hints.get("total_amount")) or _clean_number(hints.get("stated_total_amount"))
+    candidate_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in candidates)
+    count_matches = bool(stated_count and len(candidates) == int(stated_count))
+    total_matches = bool(hinted_total >= 100 and abs(candidate_total - hinted_total) < .01)
+    annotated: list[dict[str, Any]] = []
+    for candidate in candidates:
+        source = str(candidate.get("source") or "")
+        quantity = _clean_number(candidate.get("quantity_candidate"))
+        unit_price = _clean_number(candidate.get("unit_price_candidate"))
+        amount = _clean_number(candidate.get("amount_candidate"))
+        reasons: list[str] = []
+        if source in {"table", "discounted_item_block", "single_amount_item_row"}:
+            reasons.append("T")
+        if source == "item_region":
+            reasons.append("R")
+        if quantity > 0 and unit_price > 0 and amount > 0 and abs(quantity * unit_price - amount) < .01:
+            reasons.append("A")
+        if count_matches:
+            reasons.append("C")
+        if total_matches:
+            reasons.append("S")
+        high = bool((("T" in reasons or "R" in reasons) and "A" in reasons) or "C" in reasons or "S" in reasons)
+        annotated.append({**candidate, "rel": "H" if high else "M", "why": reasons or ["E"]})
+    return annotated
+
+
+def _reliable_item_candidates(
+    candidates: list[dict[str, Any]], hints: dict[str, Any] | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep only product-like OCR rows before grounding or prompting the model."""
+    accepted: list[dict[str, Any]] = []
+    rejected: list[dict[str, Any]] = []
+    seen: set[tuple[str, float, float, float, str]] = set()
+    for candidate in candidates:
+        name = str(candidate.get("name_candidate") or "").strip()
+        amount = _clean_number(candidate.get("amount_candidate"))
+        quantity = _clean_number(candidate.get("quantity_candidate"))
+        unit_price = _clean_number(candidate.get("unit_price_candidate"))
+        source = str(candidate.get("source") or "")
+        raw = " ".join(str(cell or "") for cell in candidate.get("raw_cells") or [])
+        arithmetic = bool(
+            quantity > 0 and unit_price > 0 and amount > 0
+            and abs(quantity * unit_price - amount) < .01
+        )
+        structured_source = source in {"table", "item_region", "discounted_item_block", "single_amount_item_row"}
+        compact_name = _compact_evidence_text(name)
+        looks_like_location = bool(re.search(
+            r"(?:서울|경기|인천|부산|대구|광주|대전|울산|세종|충북|충남|전북|전남|경북|경남|강원|제주|광역시|특별시)(?:\s|$)|(?:로|길)\s*\d+",
+            name,
+        ))
+        looks_like_short_amount_label = len(compact_name) <= 4 and compact_name.endswith("금")
+        reliable = bool(
+            name and compact_name not in {"수", "금", "계"} and len(compact_name) >= 1 and amount >= 100
+            and not _NON_ITEM_EVIDENCE.search(f"{name} {raw}")
+            and not looks_like_location and not looks_like_short_amount_label
+            and (structured_source or arithmetic)
+        )
+        if source == "single_amount_item_row" and (amount < 1000 or re.search(r"행복을\s*만나다|가맹점|매장", name)):
+            reliable = False
+        if source == "single_amount_item_row" and any(str(cell or "").strip().startswith("-") for cell in candidate.get("raw_cells") or []):
+            reliable = False
+        if source == "ocr_line_unscoped" and not arithmetic:
+            reliable = False
+        if not reliable:
+            rejected.append({**candidate, "rel": "L", "why": ["X"]})
+            continue
+        key = (_compact_evidence_text(name), quantity, unit_price, amount, _compact_evidence_text(raw))
+        if key in seen:
+            rejected.append({**candidate, "rel": "L", "why": ["D"], "rejection_reason": "duplicate_candidate"})
+            continue
+        accepted.append(candidate)
+        seen.add(key)
+    return _annotate_candidate_reliability(accepted, hints), rejected
+
+
+def _ocr_line_registry(text: str, pages: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Build one canonical line dictionary so prompts can reference IDs instead of copying text."""
+    lines: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def append_line(value: Any, page: Any = None, bbox: Any = None, *, deduplicate: bool = True) -> None:
+        line_text = " ".join(str(value or "").strip().split())
+        key = _compact_evidence_text(line_text)
+        if not key or (deduplicate and key in seen):
+            return
+        entry: dict[str, Any] = {"id": f"L{len(lines) + 1:03d}", "text": line_text}
+        if page is not None:
+            entry["page"] = page
+        if bbox:
+            entry["bbox"] = bbox
+        lines.append(entry)
+        seen.add(key)
+
+    for page in pages or []:
+        page_items = [item for item in (page.get("items") or []) if item.get("text")]
+        if page_items:
+            ordered = sorted(page_items, key=lambda item: (
+                (item.get("bbox") or [[0, 0], [0, 0]])[0][1],
+                (item.get("bbox") or [[0, 0], [0, 0]])[0][0],
+            ))
+            heights = [
+                max((item.get("bbox") or [[0, 0], [0, 0]])[1][1] - (item.get("bbox") or [[0, 0], [0, 0]])[0][1], 1)
+                for item in ordered
+            ]
+            tolerance = (sorted(heights)[len(heights) // 2] if heights else 10) * .45
+            grouped: list[list[dict[str, Any]]] = []
+            for item in ordered:
+                bbox = item.get("bbox") or [[0, 0], [0, 0]]
+                center_y = (bbox[0][1] + bbox[1][1]) / 2
+                target = next((group for group in reversed(grouped[-3:]) if abs(
+                    center_y - sum(((member.get("bbox") or [[0, 0], [0, 0]])[0][1] + (member.get("bbox") or [[0, 0], [0, 0]])[1][1]) / 2 for member in group) / len(group)
+                ) <= tolerance), None)
+                if target is None:
+                    grouped.append([item])
+                else:
+                    target.append(item)
+            for group in grouped:
+                group.sort(key=lambda item: (item.get("bbox") or [[0, 0], [0, 0]])[0][0])
+                boxes = [item.get("bbox") or [[0, 0], [0, 0]] for item in group]
+                append_line(
+                    " ".join(str(item.get("text") or "").strip() for item in group),
+                    page.get("page"),
+                    [[min(box[0][0] for box in boxes), min(box[0][1] for box in boxes)],
+                     [max(box[1][0] for box in boxes), max(box[1][1] for box in boxes)]],
+                    deduplicate=False,
+                )
+        else:
+            for raw_line in str(page.get("text") or "").splitlines():
+                append_line(raw_line, page.get("page"), deduplicate=False)
+
+    # Use one representation only. Mixing box-grouped lines with flattened OCR
+    # lines makes the same product appear to the model as multiple purchases.
+    if not lines:
+        for raw_line in str(text or "").splitlines():
+            append_line(raw_line, deduplicate=False)
+    return lines
+
+
+def _semantic_receipt_evidence(
+    text: str, pages: list[dict[str, Any]] | None = None,
+    candidates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Assign conservative, multi-label semantic roles before either LLM call."""
+    lines = _ocr_line_registry(text, pages)
+    item_candidates = candidates if candidates is not None else _receipt_item_candidates(pages)
+    sections: dict[str, list[str]] = {section: [] for section in SEMANTIC_SECTIONS}
+
+    patterns = {
+        "business_info": re.compile(r"사업자|사업자\s*(?:등록)?번호|대표자|주소|소재지|대표전화|전화번호|TEL\b", re.I),
+        "transaction": re.compile(r"거래\s*(?:일시|일자|번호)|판매\s*(?:일시|일자|번호)|주문번호|영수증번호|승차권\s*번호|발행일시|POS\b|테이블\s*번호", re.I),
+        "service_detail": re.compile(r"KTX|SRT|열차|승차|출발|도착|좌석|호차|입석|객실|숙박|체크인|체크아웃|진료|처방|환자", re.I),
+        "adjustments": re.compile(r"할인|쿠폰|적립금|포인트|배송비|봉투|봉사료|서비스료", re.I),
+        "tax_summary": re.compile(r"공급가액|부가세|부가가치세|과세|면세|세액", re.I),
+        "settlement": re.compile(r"최종\s*결제|결제금액|받을\s*금액|청구금액|승인금액|상품합계|총\s*합계|합계금액|소계|반환금액|환불금액|반환수수료|거스름돈", re.I),
+        "payment": re.compile(r"신용카드|체크카드|현금|간편결제|카드번호|승인번호|승인일자|할부|일시불|결제수단|카드사", re.I),
+        "auxiliary": re.compile(r"교환|환불\s*안내|유효기간|이벤트|설문|홈페이지|https?://|www\.|QR|바코드", re.I),
+    }
+    explicit_issuer = re.compile(r"(?:상호|상호명|가맹점|매장명|판매자|발행자)\s*[:：]?", re.I)
+    candidate_tokens = []
+    for candidate in item_candidates:
+        name_token = _compact_evidence_text(candidate.get("name_candidate"))
+        raw_token = _compact_evidence_text(" ".join(str(cell or "") for cell in candidate.get("raw_cells") or []))
+        # Never use isolated quantity/price cells as text anchors. A product
+        # name or a complete source row is specific enough to avoid tagging
+        # every date/payment line as an item.
+        candidate_tokens.extend(token for token in (name_token, raw_token) if len(token) >= 2)
+
+    for line_index, line in enumerate(lines):
+        line_id, line_text = line["id"], line["text"]
+        compact = _compact_evidence_text(line_text)
+        labels = [name for name, pattern in patterns.items() if pattern.search(line_text)]
+        if explicit_issuer.search(line_text):
+            labels.append("issuer")
+        # A business-registration line identifies the issuer as well as carrying legal details.
+        if re.search(r"사업자", line_text, re.I) and re.search(r"[A-Za-z가-힣]{2,}", line_text):
+            labels.append("issuer")
+        if any(token and (token in compact or compact in token) for token in candidate_tokens):
+            labels.append("items")
+        if (
+            line_index < 6 and not labels and re.search(r"[A-Za-z가-힣]{2,}", line_text)
+            and len(re.findall(r"\d{1,3}(?:[.,]\d{3})+|\d+", line_text)) <= 1
+        ):
+            # Keep short top-of-receipt names visible to the merchant pass even
+            # when OCR omitted an explicit 상호/매장명 label.
+            labels.append("issuer")
+        if not labels:
+            labels.append("unknown")
+        for label in dict.fromkeys(labels):
+            sections[label].append(line_id)
+
+    return {
+        "lines": lines,
+        "sections": {key: value for key, value in sections.items() if value},
+        "item_summary": {
+            "candidate_count": len(item_candidates),
+            "candidate_amount_sum": sum(_clean_number(item.get("amount_candidate")) for item in item_candidates) or None,
+        },
+    }
+
+
+def _semantic_prompt_payload(
+    text: str, pages: list[dict[str, Any]] | None, candidates: list[dict[str, Any]], *, item_pass: bool,
+) -> dict[str, Any]:
+    evidence = _semantic_receipt_evidence(text, pages, candidates)
+    sections = evidence["sections"]
+    wanted = {"items", "adjustments", "settlement", "tax_summary"} if item_pass else set(SEMANTIC_SECTIONS) - {"items"}
+    referenced_ids = {
+        line_id for section, line_ids in sections.items() if section in wanted for line_id in line_ids
+    }
+    payload: dict[str, Any] = {
+        # Coordinates remain in semantic_evidence for diagnostics but do not
+        # consume model context. Meaning selection needs only stable IDs/text.
+        "lines": [
+            {"id": line["id"], "text": line["text"]}
+            for line in evidence["lines"] if line["id"] in referenced_ids
+        ],
+        "sections": {section: ids for section, ids in sections.items() if section in wanted and ids},
+    }
+    if item_pass:
+        payload["item_candidates"] = candidates
+        payload["item_summary"] = evidence["item_summary"]
+    else:
+        payload["item_summary"] = evidence["item_summary"]
+    return payload
+
+
 def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     """Create compact item candidates without assuming physical column order."""
     summary_labels = re.compile(
@@ -1168,14 +1420,13 @@ def _reconcile_items_with_candidates(
 
 def _receipt_prompt(text: str, filename: str, pages: list[dict[str, Any]] | None = None) -> str:
     hints = _receipt_hints(text, filename)
+    candidates, _ = _reliable_item_candidates(_receipt_item_candidates(pages), hints)
+    semantic_evidence = _semantic_prompt_payload(text, pages, candidates, item_pass=False)
     return f"""OCR 영수증의 요약 정보만 JSON 객체 하나로 반환하세요. items는 추출하지 마세요.
 OCR에 없는 값은 추측하지 말고 null로 작성하세요.
 
-doc_type은 다음 중 하나입니다.
-- EXPENSE_REPORT: 일반 경비
-- TRAVEL_EXPENSE: 출장·교통·숙박
-- PURCHASE_REQUEST: 물품·장비·소프트웨어 구매
-- WELFARE_BENEFIT: 도서·교육·의료·복리후생
+doc_type: EXPENSE_REPORT(일반 경비), TRAVEL_EXPENSE(출장·교통·숙박),
+PURCHASE_REQUEST(물품·장비·소프트웨어), WELFARE_BENEFIT(도서·교육·의료·복리후생) 중 하나.
 
 반환 키: image, doc_type, expense_category, merchant, transaction_date, supply_amount,
 tax_amount, discount_amount, total_amount, payment_method, card_number, description.
@@ -1184,13 +1435,11 @@ expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선�
 {json.dumps(EXPENSE_CATEGORIES, ensure_ascii=False)}
 
 판단 규칙:
-1. OCR에 직접 근거가 있는 값만 작성하고, 불명확한 값은 null로 둡니다. 단, expense_category는 품목명·상호·문서 문맥을 근거로 고정 목록에서 가장 가까운 값을 선택하고 판단이 어려우면 `기타`로 작성합니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
-2. 상호는 실제 판매 주체를 선택합니다. 쇼핑몰·건물·지점 안내·URL은 입점 장소일 수 있으므로, 영수증을 발행하고 상품을 판매한 입점 매장명을 우선합니다. 예를 들어 OCR에 `유니클로`와 `Starfield` 또는 `starfield.co.kr`가 함께 있으면 merchant는 쇼핑몰인 Starfield가 아니라 입점 매장인 `유니클로`입니다. 브랜드명 뒤의 `(과세)`·`(면세)`는 세금 구분이므로 상호에서 제거합니다.
-3. 실제 결제된 상품 행만 items로 만듭니다. 먼저 `상품명 | 수량 | 단가 | 금액`의 대응을 확인한 뒤 출력하며, 상품 행이 명확하면 items를 비워 두지 않습니다. `총품목/총수량`의 총품목 수 N은 서로 다른 상품 행의 수이므로, 표시가 명확하면 실제 상품을 N개 찾아야 합니다.
-4. 새 상품명에 별도의 수량·단가·금액이 붙으면 독립 품목입니다. 한글명과 영문명이 이어져도 가격 묶음이 하나일 때만 같은 품목이며, `DIY`, `도안`, 괄호 표기라는 이유만으로 다른 유료 상품을 규격에 합치지 않습니다. 상호와 품목명이 같아도 각각 근거가 있으면 merchant와 items 양쪽에 모두 작성합니다. 예를 들어 상호가 `유니클로`이고 상품 행이 `유니클로(과세) 1 60,000`이면 merchant는 `유니클로`, items에는 `유니클로(과세)` 1개를 작성합니다.
-5. 상품명처럼 보여도 결제·승인·합계·할인·세금·안내 영역의 문구는 품목이 아닙니다. 반대로 별도 청구된 배송비·봉투값은 품목으로 둘 수 있습니다.
-6. total_amount는 `최종 결제금액`, `받을 금액`, `승인금액`, `총구매금액`처럼 최종 지불액을 뜻하는 명시적 라벨을 우선합니다. 상품합계·소계나 공급가액+세금 계산은 검산용이며, 할인·쿠폰 때문에 다르면 명시된 최종 금액을 선택합니다.
-7. 아래 코드 힌트는 후보일 뿐입니다. OCR의 명시적 라벨 및 문맥과 충돌하면 OCR 판단을 우선합니다.
+1. OCR 근거만 사용합니다. 불명확하면 null, 날짜는 YYYY-MM-DD, 금액은 숫자입니다.
+2. expense_category는 상호·품목·문맥으로 고르되 불명확하면 `기타`입니다.
+3. merchant는 issuer/business_info에서 실제 판매·발행 주체를 고릅니다. 카드사·PG사·쇼핑몰·URL은 판매자가 아니면 제외하고 `(과세)/(면세)`는 제거합니다.
+4. total_amount는 settlement의 최종 결제·받을·승인·청구 금액을 우선하고 tax_summary, adjustments, item_summary는 검산에만 씁니다. 품목 단가·소계는 최종금액이 아닙니다.
+5. sections는 line id를 참조하며 한 행은 여러 section에 속할 수 있습니다. 코드 힌트보다 명시적 OCR 라벨을 우선합니다.
 
 [파일명]
 {filename}
@@ -1198,23 +1447,23 @@ expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선�
 [코드 확인값]
 {json.dumps(hints, ensure_ascii=False)}
 
-[OCR 텍스트]
-{text[:6000]}
+[의미별 OCR 근거]
+{json.dumps(semantic_evidence, ensure_ascii=False, separators=(",", ":"))}
 """
 
 
 def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) -> str:
-    candidates = _receipt_item_candidates(pages)
     summary = _receipt_hints(text, "receipt")
+    candidates, _ = _reliable_item_candidates(_receipt_item_candidates(pages), summary)
     stated_count = summary.get("stated_item_count")
     stated_quantity = summary.get("stated_total_quantity")
-    # Always include a compact OCR excerpt. Candidate generation is heuristic;
-    # hiding the source text when even one bad candidate exists prevents the
-    # model from recovering item rows that the table parser missed.
-    evidence = json.dumps({
-        "candidates": candidates,
-        "ocr_text": text[:3500],
-    }, ensure_ascii=False, separators=(",", ":"))
+    evidence_payload = _semantic_prompt_payload(text, pages, candidates, item_pass=True)
+    # Include a recovery excerpt only when structural extraction is absent or
+    # conflicts with a receipt-declared item count. Normal receipts avoid
+    # repeating the same OCR text in both model calls.
+    if not candidates or (stated_count and len(candidates) != int(stated_count)):
+        evidence_payload["recovery_excerpt"] = text[:1600]
+    evidence = json.dumps(evidence_payload, ensure_ascii=False, separators=(",", ":"))
     return f"""영수증의 실제 구매 품목만 JSON으로 반환하세요.
 형식: {{"items":[{{"name":...,"specification":...,"quantity":...,"unit":...,"unit_price":...,"supply_amount":...,"tax_amount":...,"total_amount":...,"note":...}}]}}
 
@@ -1232,11 +1481,144 @@ def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) 
 11. product_code는 재고·상품 식별 코드이며 품목명이 아닙니다. name_candidate를 품목명으로 사용하고 코드는 specification 또는 note에만 보존하세요.
 12. raw_name_candidate와 name_cleanup이 있으면 거래일시·POS·판매번호·상품 열 제목을 제거한 name_candidate를 사용하세요. 상품명에 날짜, POS 번호, `상품코드/단가/수량/금액` 헤더를 포함하지 마세요.
 13. alias_candidates는 다른 언어로 반복 표기된 같은 상품명, specification_candidates는 중량·크기·묶음 규격, option_candidates는 SKU·색상 옵션입니다. 이 값들은 name에 다시 합치지 말고 specification 또는 note에 보존하세요.
-14. candidates가 OCR 원문과 충돌하거나 품목을 누락하면 ocr_text를 사용해 복원하세요. 정가 다음 행에 SKU·색상·할인액·할인 후 금액이 이어지면 같은 품목입니다.
+14. item_candidates가 행 근거와 충돌하거나 품목을 누락하면 lines와 recovery_excerpt(있는 경우)를 사용해 복원하세요. 정가 다음 행에 SKU·색상·할인액·할인 후 금액이 이어지면 같은 품목입니다.
+15. sections는 line id 참조이며 items가 주요 품목 근거입니다. adjustments·settlement·tax_summary 행은 품목으로 만들지 말고 검산과 제외 근거로만 사용하세요.
+16. rel은 H=높음, M=검토 필요입니다. why는 T=표, R=품목영역, A=산술일치, C=품목수일치, S=합계일치, E=기타근거입니다. H 후보를 우선하고 M은 lines로 확인하세요.
 
 [품목 근거]
 {evidence}
 """
+
+
+def _candidate_items(candidates: list[dict[str, Any]], resolution: str) -> list[dict[str, Any]]:
+    return [{
+        "name": candidate.get("name_candidate"),
+        "quantity": candidate.get("quantity_candidate"),
+        "unit_price": candidate.get("unit_price_candidate"),
+        "total_amount": candidate.get("amount_candidate"),
+        "product_code": candidate.get("product_code"),
+        "specification": " · ".join([
+            *candidate.get("alias_candidates", []),
+            *candidate.get("specification_candidates", []),
+            *candidate.get("option_candidates", []),
+        ]) or None,
+        "item_resolution": resolution,
+    } for candidate in candidates]
+
+
+def _deduplicate_model_items(items: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove model repetitions while preserving repeated OCR source rows."""
+    candidate_counts: dict[tuple[str, float], int] = {}
+    for candidate in candidates:
+        key = (_compact_evidence_text(candidate.get("name_candidate")), _clean_number(candidate.get("amount_candidate")))
+        candidate_counts[key] = candidate_counts.get(key, 0) + 1
+    seen: dict[tuple[str, float, float, float], int] = {}
+    result: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = (
+            _compact_evidence_text(item.get("name")), _clean_number(item.get("quantity")),
+            _clean_number(item.get("unit_price")), _clean_number(item.get("total_amount")),
+        )
+        allowed = max(candidate_counts.get((key[0], key[3]), 0), 1)
+        seen[key] = seen.get(key, 0) + 1
+        if seen[key] <= allowed:
+            result.append(item)
+    return result
+
+
+def _recover_items_when_grounded(
+    candidates: list[dict[str, Any]], hints: dict[str, Any], stated_count: int | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    grounded = [candidate for candidate in candidates if candidate.get("rel") == "H"]
+    if not grounded or len(grounded) != len(candidates) or not all(
+        candidate.get("name_candidate") and _clean_number(candidate.get("amount_candidate")) >= 100
+        for candidate in grounded
+    ):
+        return [], None
+    candidate_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in grounded)
+    hinted_total = _clean_number(hints.get("total_amount")) or _clean_number(hints.get("stated_total_amount"))
+    count_matches = bool(stated_count and len(grounded) == int(stated_count))
+    total_matches = bool(hinted_total >= 100 and abs(candidate_total - hinted_total) < .01)
+    strong_table = bool(len(grounded) >= 2 and all(
+        candidate.get("source") in {"table", "discounted_item_block"}
+        and _clean_number(candidate.get("quantity_candidate")) > 0
+        and _clean_number(candidate.get("unit_price_candidate")) > 0
+        and abs(
+            _clean_number(candidate.get("quantity_candidate")) * _clean_number(candidate.get("unit_price_candidate"))
+            - _clean_number(candidate.get("amount_candidate"))
+        ) < .01
+        for candidate in grounded
+    ))
+    if not count_matches and not total_matches and not strong_table:
+        return [], None
+    reason = (
+        "receipt_count_confirmed_ocr_recovery" if count_matches
+        else "ocr_candidates_match_receipt_total" if total_matches
+        else "validated_table_candidate_recovery"
+    )
+    return _candidate_items(grounded, reason), reason
+
+
+def _strict_grounded_item_fast_path(
+    candidates: list[dict[str, Any]], hints: dict[str, Any], stated_count: int | None,
+    model_total: Any = None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Skip the item LLM only when receipt structure proves every item value.
+
+    This is deliberately stricter than the failure recovery path. A normal LLM
+    call may still help clean ambiguous names or fill incomplete numeric fields,
+    so the fast path requires a complete table, exact count/total/arithmetic,
+    and no candidate-level uncertainty.
+    """
+    if not candidates or (stated_count and len(candidates) != int(stated_count)):
+        return [], None
+    # Without an explicit count, a single clean row cannot prove that OCR did
+    # not miss another item. Multi-row arithmetic tables can be corroborated
+    # by an independently extracted receipt total below.
+    if not stated_count and len(candidates) < 2:
+        return [], None
+    if hints.get("discount_amount") or hints.get("amount_relation"):
+        return [], None
+
+    metadata_name = re.compile(
+        r"영수증|거래\s*(?:일시|번호)|판매\s*(?:일시|번호)|POS\b|"
+        r"20\d{2}[-./]?\d{2}[-./]?\d{2}|\b\d{6,}\b",
+        re.IGNORECASE,
+    )
+    for candidate in candidates:
+        name = str(candidate.get("name_candidate") or "").strip()
+        quantity = _clean_number(candidate.get("quantity_candidate"))
+        unit_price = _clean_number(candidate.get("unit_price_candidate"))
+        amount = _clean_number(candidate.get("amount_candidate"))
+        if (
+            candidate.get("rel") != "H"
+            or candidate.get("source") not in {"table", "discounted_item_block"}
+            or candidate.get("uncertainty")
+            or candidate.get("alternate_price_candidates")
+            or candidate.get("candidate_type") == "incomplete_item"
+            or not name
+            or metadata_name.search(name)
+            or quantity <= 0
+            or unit_price <= 0
+            or amount < 100
+            or abs(quantity * unit_price - amount) >= .01
+        ):
+            return [], None
+
+    candidate_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in candidates)
+    corroborating_totals = {
+        value for value in (
+            _clean_number(hints.get("total_amount")),
+            _clean_number(hints.get("stated_total_amount")),
+            _clean_number(model_total),
+        )
+        if value >= 100
+    }
+    if not any(abs(candidate_total - total) < .01 for total in corroborating_totals):
+        return [], None
+    return _candidate_items(candidates, "strict_grounded_fast_path"), "strict_grounded_fast_path"
 
 
 async def _classify_receipt_with_model(
@@ -1245,7 +1627,10 @@ async def _classify_receipt_with_model(
     model_name: str,
     pages: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    raw = await generate(_receipt_prompt(text, filename, pages), json_format=True, num_predict=1200, model_name=model_name)
+    summary_prompt = _receipt_prompt(text, filename, pages)
+    summary_started = perf_counter()
+    raw = await generate(summary_prompt, json_format=True, num_predict=500, model_name=model_name)
+    summary_latency_ms = round((perf_counter() - summary_started) * 1000)
     result = json.loads(raw)
     if not isinstance(result, dict):
         logger.error("Receipt JSON parsing failed: model=%s filename=%s reason=object_expected raw_response=%s", model_name, filename, raw)
@@ -1255,39 +1640,109 @@ async def _classify_receipt_with_model(
         "prompt_version": FINANCE_PROMPT_VERSION,
         "summary_raw": json.loads(json.dumps(result, ensure_ascii=False)),
         "summary_response_text": raw,
+        "summary_latency_ms": summary_latency_ms,
+        "summary_prompt_chars": len(summary_prompt),
+        "summary_response_chars": len(raw),
     }
     result.pop("items", None)
-    candidates = _receipt_item_candidates(pages)
-    try:
-        items_raw = await generate(
-            _receipt_items_prompt(text, pages),
-            json_format=True,
-            num_predict=900,
-            model_name=model_name,
-        )
-        items_result = json.loads(items_raw)
-        model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
-        result["llm_trace"]["items_raw"] = json.loads(json.dumps(items_result, ensure_ascii=False))
-        result["llm_trace"]["items_response_text"] = items_raw
-        model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
-        stated_count = _receipt_hints(text, filename).get("stated_item_count")
-        result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
+    hints = _receipt_hints(text, filename)
+    raw_candidates = _receipt_item_candidates(pages)
+    candidates, rejected_candidates = _reliable_item_candidates(raw_candidates, hints)
+    result["semantic_evidence"] = _semantic_receipt_evidence(text, pages, candidates)
+    stated_count = hints.get("stated_item_count")
+    fast_path_items, fast_path_reason = _strict_grounded_item_fast_path(
+        candidates, hints, stated_count, result.get("total_amount"),
+    )
+    if fast_path_items:
+        result["items"] = fast_path_items
         result["item_extraction_diagnostics"] = {
             "candidates": candidates,
+            "rejected_candidates": rejected_candidates,
+            "model_items": [],
+            "resolved_items": json.loads(json.dumps(fast_path_items, ensure_ascii=False)),
+            "fallback_used": fast_path_reason,
+        }
+        result["llm_trace"].update({
+            "items_raw": None,
+            "items_response_text": None,
+            "items_latency_ms": 0,
+            "items_prompt_chars": 0,
+            "items_response_chars": 0,
+            "items_call_status": "skipped_grounded_fast_path",
+            "items_skip_reason": fast_path_reason,
+        })
+        return result
+
+    items_prompt = _receipt_items_prompt(text, pages)
+    items_started = perf_counter()
+    try:
+        items_raw = await generate(
+            items_prompt,
+            json_format=True,
+            num_predict=min(max(450, 260 + len(candidates) * 90), 850),
+            model_name=model_name,
+        )
+        items_latency_ms = round((perf_counter() - items_started) * 1000)
+        items_result = json.loads(items_raw)
+        model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
+        model_items = _deduplicate_model_items(model_items, candidates)
+        result["llm_trace"]["items_raw"] = json.loads(json.dumps(items_result, ensure_ascii=False))
+        result["llm_trace"]["items_response_text"] = items_raw
+        result["llm_trace"].update({
+            "items_latency_ms": items_latency_ms,
+            "items_prompt_chars": len(items_prompt),
+            "items_response_chars": len(items_raw),
+            "items_call_status": "success",
+        })
+        model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
+        result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
+        fallback_reason = None
+        if not result["items"]:
+            result["items"], fallback_reason = _recover_items_when_grounded(candidates, hints, stated_count)
+        if fallback_reason in {"ocr_candidates_match_receipt_total", "validated_table_candidate_recovery"}:
+            candidate_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in candidates)
+            model_total = _clean_number(result.get("total_amount"))
+            candidate_amounts = {_clean_number(candidate.get("amount_candidate")) for candidate in candidates}
+            if candidate_total >= 100 and not hints.get("discount_amount") and (
+                fallback_reason == "ocr_candidates_match_receipt_total" or model_total in candidate_amounts
+            ):
+                result["total_amount"] = candidate_total
+        result["item_extraction_diagnostics"] = {
+            "candidates": candidates,
+            "rejected_candidates": rejected_candidates,
             # Preserve the pre-normalization model payload for error tracing.
             "model_items": model_items_snapshot,
             "resolved_items": json.loads(json.dumps(result["items"], ensure_ascii=False)),
+            "fallback_used": fallback_reason,
         }
-    except Exception:
-        # Metadata remains useful when the isolated item pass fails.
-        result["items"] = []
+    except Exception as exc:
+        items_latency_ms = round((perf_counter() - items_started) * 1000)
+        result["items"], fallback_reason = _recover_items_when_grounded(candidates, hints, stated_count)
+        if fallback_reason in {"ocr_candidates_match_receipt_total", "validated_table_candidate_recovery"} and not hints.get("discount_amount"):
+            candidate_total = sum(_clean_number(candidate.get("amount_candidate")) for candidate in candidates)
+            model_total = _clean_number(result.get("total_amount"))
+            candidate_amounts = {_clean_number(candidate.get("amount_candidate")) for candidate in candidates}
+            if fallback_reason == "ocr_candidates_match_receipt_total" or model_total in candidate_amounts:
+                result["total_amount"] = candidate_total
         result["item_extraction_diagnostics"] = {
             "candidates": candidates,
+            "rejected_candidates": rejected_candidates,
             "model_items": [],
             "failed": True,
+            "failure_type": type(exc).__name__,
+            "fallback_used": fallback_reason,
+            "resolved_items": json.loads(json.dumps(result["items"], ensure_ascii=False)),
         }
         result["llm_trace"].setdefault("items_raw", None)
         result["llm_trace"].setdefault("items_response_text", None)
+        result["llm_trace"].update({
+            "items_latency_ms": items_latency_ms,
+            "items_prompt_chars": len(items_prompt),
+            "items_response_chars": 0,
+            "items_call_status": "failed",
+            "items_failure_type": type(exc).__name__,
+        })
+        logger.warning("Receipt item extraction failed: model=%s filename=%s error=%s", model_name, filename, type(exc).__name__)
     return result
 
 

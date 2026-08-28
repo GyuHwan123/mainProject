@@ -15,6 +15,10 @@ from app.api.routes.finance import (  # noqa: E402
     _receipt_item_candidates,
     _receipt_items_prompt,
     _receipt_prompt,
+    _reliable_item_candidates,
+    _semantic_prompt_payload,
+    _semantic_receipt_evidence,
+    _strict_grounded_item_fast_path,
 )
 
 
@@ -68,6 +72,186 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("품목 행 후보", prompt)
         self.assertIn("품목 근거", items_prompt)
         self.assertIn('"raw_cells":["볼펜","2","1,000"]', items_prompt)
+
+    def test_semantic_evidence_uses_line_ids_and_allows_multiple_roles(self):
+        ocr = "문구점 사업자번호 123-45-67890\n볼펜 2 1,000 2,000\n결제금액 신용카드 2,000원"
+        candidates = [{
+            "name_candidate": "볼펜", "raw_cells": ["볼펜", "2", "1,000", "2,000"],
+            "quantity_candidate": 2, "unit_price_candidate": 1000, "amount_candidate": 2000,
+        }]
+        evidence = _semantic_receipt_evidence(ocr, candidates=candidates)
+
+        self.assertEqual([line["id"] for line in evidence["lines"]], ["L001", "L002", "L003"])
+        self.assertIn("L001", evidence["sections"]["issuer"])
+        self.assertIn("L001", evidence["sections"]["business_info"])
+        self.assertIn("L002", evidence["sections"]["items"])
+        self.assertIn("L003", evidence["sections"]["settlement"])
+        self.assertIn("L003", evidence["sections"]["payment"])
+
+    def test_summary_and_item_payloads_do_not_repeat_item_lines(self):
+        ocr = "상호명 문구점\n볼펜 2 1,000 2,000\n결제금액 2,000원\n신용카드 승인번호 12345678"
+        pages = [{"page": 1, "tables": [{"rows": [["볼펜", "2", "1,000", "2,000"]]}]}]
+        candidates = _receipt_item_candidates(pages)
+
+        summary = _semantic_prompt_payload(ocr, pages, candidates, item_pass=False)
+        items = _semantic_prompt_payload(ocr, pages, candidates, item_pass=True)
+
+        self.assertNotIn("items", summary["sections"])
+        self.assertIn("items", items["sections"])
+        self.assertNotIn("item_candidates", summary)
+        self.assertEqual(items["item_candidates"][0]["name_candidate"], "볼펜")
+        self.assertEqual(summary["item_summary"]["candidate_amount_sum"], 2000)
+
+    def test_semantic_lines_preserve_repeated_products_without_numeric_overmatching(self):
+        ocr = "볼펜 1 1,000 1,000\n볼펜 1 1,000 1,000\n승인번호 10002000"
+        evidence = _semantic_receipt_evidence(ocr, candidates=[{
+            "name_candidate": "볼펜", "raw_cells": ["볼펜", "1", "1,000", "1,000"],
+            "amount_candidate": 1000,
+        }])
+
+        item_texts = [line["text"] for line in evidence["lines"] if line["id"] in evidence["sections"]["items"]]
+        self.assertEqual(item_texts.count("볼펜 1 1,000 1,000"), 2)
+        approval_id = next(line["id"] for line in evidence["lines"] if line["text"] == "승인번호 10002000")
+        self.assertNotIn(approval_id, evidence["sections"]["items"])
+
+    def test_item_payload_excludes_unknown_lines_and_coordinates(self):
+        pages = [{
+            "page": 1,
+            "items": [
+                {"text": "문구점", "bbox": [[0, 0], [50, 10]]},
+                {"text": "볼펜 1 1,000 1,000", "bbox": [[0, 20], [100, 30]]},
+                {"text": "감사합니다", "bbox": [[0, 40], [60, 50]]},
+            ],
+            "tables": [{"rows": [["볼펜", "1", "1,000", "1,000"]]}],
+        }]
+        candidates, _ = _reliable_item_candidates(_receipt_item_candidates(pages))
+        payload = _semantic_prompt_payload("", pages, candidates, item_pass=True)
+
+        self.assertNotIn("unknown", payload["sections"])
+        self.assertTrue(all("bbox" not in line and "page" not in line for line in payload["lines"]))
+
+    def test_rejects_metadata_and_accepts_arithmetic_product_candidates(self):
+        accepted, rejected = _reliable_item_candidates([
+            {"source": "ocr_line_unscoped", "name_candidate": "카드 번호", "amount_candidate": 1922, "raw_cells": ["카드 번호 4140-****-1922"]},
+            {"source": "ocr_line_unscoped", "name_candidate": "볼펜", "quantity_candidate": 2, "unit_price_candidate": 1000, "amount_candidate": 2000, "raw_cells": ["볼펜 2 1,000 2,000"]},
+        ])
+
+        self.assertEqual([item["name_candidate"] for item in accepted], ["볼펜"])
+        self.assertEqual([item["name_candidate"] for item in rejected], ["카드 번호"])
+        self.assertEqual(accepted[0]["rel"], "M")
+        self.assertIn("A", accepted[0]["why"])
+        self.assertEqual(rejected[0]["rel"], "L")
+
+    def test_candidate_reliability_uses_compact_count_and_total_reasons(self):
+        accepted, _ = _reliable_item_candidates([{
+            "source": "table", "name_candidate": "USB", "amount_candidate": 7900,
+            "raw_cells": ["USB", "7,900"],
+        }], {"stated_item_count": 1, "total_amount": 7900})
+
+        self.assertEqual(accepted[0]["rel"], "H")
+        self.assertEqual(accepted[0]["why"], ["T", "C", "S"])
+        prompt = _receipt_items_prompt("총품목/총수량 총구매금액\n1/1 7,900", [{
+            "page": 1, "tables": [{"rows": [["USB", "7,900"]]}],
+        }])
+        self.assertIn('"rel":"H"', prompt)
+        self.assertIn('"why":["T","A","C","S"]', prompt)
+
+    async def test_uses_strict_fast_path_before_item_model_for_grounded_candidates(self):
+        pages = [{"page": 1, "tables": [{"rows": [
+            ["책", "1", "5,000", "5,000"], ["노트", "1", "3,000", "3,000"],
+        ]}]}]
+        responses = ['{"merchant":"문구점","total_amount":8000}', ValueError("invalid item json")]
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)):
+            result = await _classify_receipt_with_model("총품목/총수량 총구매금액\n2/2 8,000", "receipt.jpg", "test-model", pages)
+
+        self.assertEqual([item["name"] for item in result["items"]], ["책", "노트"])
+        self.assertEqual(result["item_extraction_diagnostics"]["fallback_used"], "strict_grounded_fast_path")
+        self.assertEqual(result["llm_trace"]["items_call_status"], "skipped_grounded_fast_path")
+        self.assertIn("summary_latency_ms", result["llm_trace"])
+        self.assertIn("items_prompt_chars", result["llm_trace"])
+
+    def test_strict_grounded_fast_path_requires_complete_exact_evidence(self):
+        candidates = [{
+            "source": "table", "rel": "H", "why": ["T", "A", "C", "S"],
+            "name_candidate": "책", "quantity_candidate": 2,
+            "unit_price_candidate": 4000, "amount_candidate": 8000,
+        }]
+
+        items, reason = _strict_grounded_item_fast_path(
+            candidates,
+            {"stated_item_count": 1, "total_amount": 8000},
+            1,
+        )
+
+        self.assertEqual(reason, "strict_grounded_fast_path")
+        self.assertEqual(items[0]["name"], "책")
+        self.assertEqual(items[0]["quantity"], 2)
+
+    def test_strict_grounded_fast_path_rejects_uncertain_or_metadata_candidates(self):
+        base = {
+            "source": "table", "rel": "H", "name_candidate": "책",
+            "quantity_candidate": 1, "unit_price_candidate": 8000,
+            "amount_candidate": 8000,
+        }
+        uncertain = {**base, "uncertainty": ["quantity_recovered_from_total"]}
+        metadata = {**base, "name_candidate": "영수증 20250828 책"}
+
+        self.assertEqual(
+            _strict_grounded_item_fast_path([uncertain], {"total_amount": 8000}, 1),
+            ([], None),
+        )
+        self.assertEqual(
+            _strict_grounded_item_fast_path([metadata], {"total_amount": 8000}, 1),
+            ([], None),
+        )
+
+    def test_strict_grounded_fast_path_accepts_multirow_table_with_model_total(self):
+        candidates = [
+            {
+                "source": "table", "rel": "H", "name_candidate": "책 A",
+                "quantity_candidate": 1, "unit_price_candidate": 5000,
+                "amount_candidate": 5000,
+            },
+            {
+                "source": "table", "rel": "H", "name_candidate": "책 B",
+                "quantity_candidate": 1, "unit_price_candidate": 3000,
+                "amount_candidate": 3000,
+            },
+        ]
+
+        items, reason = _strict_grounded_item_fast_path(candidates, {}, None, 8000)
+
+        self.assertEqual(reason, "strict_grounded_fast_path")
+        self.assertEqual([item["name"] for item in items], ["책 A", "책 B"])
+
+    async def test_skips_item_llm_for_strict_grounded_candidates(self):
+        pages = [{"page": 1, "tables": [{"rows": [
+            ["책", "2", "4,000", "8,000"],
+        ]}]}]
+        responses = ['{"merchant":"문구점","total_amount":8000}']
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
+            result = await _classify_receipt_with_model(
+                "총품목/총수량 총구매금액\n1/2 8,000", "receipt.jpg", "test-model", pages,
+            )
+
+        self.assertEqual(mocked.await_count, 1)
+        self.assertEqual(result["items"][0]["name"], "책")
+        self.assertEqual(result["llm_trace"]["items_latency_ms"], 0)
+        self.assertEqual(result["llm_trace"]["items_call_status"], "skipped_grounded_fast_path")
+
+    async def test_recovers_multirow_arithmetic_table_and_total_after_model_failure(self):
+        pages = [{"page": 1, "tables": [{"rows": [
+            ["책 A", "1", "6,700", "6,700"],
+            ["책 B", "1", "4,900", "4,900"],
+            ["책 C", "1", "8,300", "8,300"],
+        ]}]}]
+        responses = ['{"merchant":"서점","total_amount":8300}', ValueError("timeout")]
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)):
+            result = await _classify_receipt_with_model("서점 구매 영수증", "receipt.jpg", "test-model", pages)
+
+        self.assertEqual(len(result["items"]), 3)
+        self.assertEqual(result["total_amount"], 19900)
+        self.assertEqual(result["item_extraction_diagnostics"]["fallback_used"], "validated_table_candidate_recovery")
 
     def test_prefers_table_and_does_not_rescan_page_metadata(self):
         candidates = _receipt_item_candidates([{

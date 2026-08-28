@@ -6,8 +6,8 @@ begin;
 alter table public.finance_record_evaluations
   add column if not exists pipeline_version text;
 
--- Preserve the value previously stored in pipeline_trace.version and assign
--- v1.0 to older rows that did not have pipeline metadata.
+-- Preserve existing evaluation versions. Rows created before explicit version
+-- metadata remain v1.0; new semantic-line pipeline evaluations are v2.0.
 update public.finance_record_evaluations
 set pipeline_version = coalesce(
   nullif(btrim(pipeline_version), ''),
@@ -21,7 +21,7 @@ set pipeline_trace = coalesce(pipeline_trace, '{}'::jsonb) - 'version'
 where coalesce(pipeline_trace, '{}'::jsonb) ? 'version';
 
 alter table public.finance_record_evaluations
-  alter column pipeline_version set default 'v1.0',
+  alter column pipeline_version set default 'v2.0',
   alter column pipeline_version set not null;
 
 comment on column public.finance_record_evaluations.pipeline_version is
@@ -33,6 +33,7 @@ commit;
 select
   count(*) as total_evaluations,
   count(*) filter (where pipeline_version = 'v1.0') as pipeline_v1_0,
+  count(*) filter (where pipeline_version = 'v2.0') as pipeline_v2_0,
   count(*) filter (where pipeline_version is null or btrim(pipeline_version) = '') as missing_version,
   count(*) filter (where coalesce(pipeline_trace, '{}'::jsonb) ? 'version') as trace_version_remaining
 from public.finance_record_evaluations;

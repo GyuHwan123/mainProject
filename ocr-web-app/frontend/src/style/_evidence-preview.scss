@@ -248,6 +248,21 @@
     display: block;
   }
 }
+.rag-evidence-highlight-layer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.rag-evidence-highlight {
+  position: absolute;
+  display: block;
+  background: rgba(255, 214, 64, 0.34);
+  border-radius: 2px;
+  transform-origin: left bottom;
+  pointer-events: none;
+}
 .evidence-spreadsheet {
   min-width: 100%;
   width: max-content;

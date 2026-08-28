@@ -70,9 +70,52 @@ function bboxPoints(value) {
   return [];
 }
 
-function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
+function normalizeEvidenceText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function findEvidenceItemIndices(items, sourceContent) {
+  const normalizedSource = normalizeEvidenceText(sourceContent);
+  if (!normalizedSource) return [];
+
+  const characters = [];
+  items.forEach((item, itemIndex) => {
+    for (const character of String(item?.str || '')) characters.push({ character, itemIndex });
+    if (item?.hasEOL) characters.push({ character: ' ', itemIndex });
+  });
+
+  let normalizedPage = '';
+  const itemIndexByCharacter = [];
+  let pendingSpaceItem = null;
+  characters.forEach(({ character, itemIndex }) => {
+    if (/\s/.test(character)) {
+      if (normalizedPage && !normalizedPage.endsWith(' ')) pendingSpaceItem = itemIndex;
+      return;
+    }
+    if (pendingSpaceItem !== null) {
+      normalizedPage += ' ';
+      itemIndexByCharacter.push(pendingSpaceItem);
+      pendingSpaceItem = null;
+    }
+    normalizedPage += character;
+    itemIndexByCharacter.push(itemIndex);
+  });
+
+  const candidates = [normalizedSource];
+  [240, 160, 100, 60, 40].forEach((length) => {
+    if (normalizedSource.length > length) candidates.push(normalizedSource.slice(0, length).trim());
+  });
+  const match = candidates.find((candidate, index) => candidate.length >= (index === 0 ? 24 : 40) && normalizedPage.includes(candidate));
+  if (!match) return [];
+
+  const start = normalizedPage.indexOf(match);
+  return [...new Set(itemIndexByCharacter.slice(start, start + match.length))];
+}
+
+function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [], sourceContent = '' }) {
   const canvasRef = useRef(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, scale: 1 });
+  const [evidenceHighlights, setEvidenceHighlights] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +134,38 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     return () => { active = false; try { renderTask?.cancel(); } catch { /* 이미 종료된 렌더 작업 */ } };
   }, [pdf, pageNumber]);
 
+  useEffect(() => {
+    let active = true;
+    setEvidenceHighlights([]);
+    if (!sourceContent) return () => { active = false; };
+
+    pdf.getPage(pageNumber).then(async (page) => {
+      const viewport = page.getViewport({ scale: 1.05 });
+      const textContent = await page.getTextContent();
+      if (!active) return;
+      const items = Array.isArray(textContent?.items) ? textContent.items : [];
+      const matchedIndices = findEvidenceItemIndices(items, sourceContent);
+      const highlights = matchedIndices.map((itemIndex) => {
+        const item = items[itemIndex];
+        if (!item?.transform) return null;
+        const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const fontHeight = Math.hypot(transform[2], transform[3]);
+        const width = Math.max(2, Number(item.width || 0) * viewport.scale);
+        if (!fontHeight || !width) return null;
+        return {
+          left: transform[4],
+          top: transform[5] - fontHeight,
+          width,
+          height: fontHeight,
+          transform: `rotate(${Math.atan2(transform[1], transform[0])}rad)`,
+        };
+      }).filter(Boolean);
+      setEvidenceHighlights(highlights);
+    }).catch(() => {});
+
+    return () => { active = false; };
+  }, [pdf, pageNumber, sourceContent]);
+
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
     if (!points.length || !pageSize.width) return null;
@@ -106,7 +181,7 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
     return xs.length && ys.length ? { left: Math.min(...xs) * pageSize.scale, top: Math.min(...ys) * pageSize.scale, width: (Math.max(...xs) - Math.min(...xs)) * pageSize.scale, height: (Math.max(...ys) - Math.min(...ys)) * pageSize.scale } : null;
   }).filter(Boolean);
-  return <div className="evidence-pdf-page"><canvas ref={canvasRef} />{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
+  return <div className="evidence-pdf-page"><canvas ref={canvasRef} /><div className="rag-evidence-highlight-layer" aria-hidden="true">{evidenceHighlights.map((style, index) => <span className="rag-evidence-highlight" style={style} key={index} />)}</div>{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
 }
 
 function SpreadsheetEvidencePage({ page, bbox }) {
@@ -230,7 +305,7 @@ function EvidencePreview({ source, onUpload, uploading }) {
     <div className="evidence-document-stage">
     {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
     {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
-    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} />}
+    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} sourceContent={Number(source?.pageNumber || 1) === currentPage ? source?.content : ''} />}
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
     {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
     {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}

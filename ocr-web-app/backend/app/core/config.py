@@ -30,7 +30,10 @@ class Settings(BaseSettings):
     RAG_EVALUATION_ANSWER_THRESHOLD: float = 0.75
     # Docker Compose overrides this with the internal `ocr` service address.
     OCR_BASE_URL: str = "http://127.0.0.1:8001"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""

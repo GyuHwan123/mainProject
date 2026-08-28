@@ -39,7 +39,7 @@
     position: absolute;
     inset: 0;
     z-index: 8;
-    background: #eef3f9;
+    background: $upload-background;
     border-radius: 8px 0 0 8px;
   }
   .upload-mode-overlay:disabled {
@@ -80,36 +80,41 @@
   justify-items: center;
   gap: 8px;
   color: rgba($bgd, 0.52);
-  background: #eef3f9;
-  border: 2px dashed rgba($midel-color, 0.4);
-  border-radius: 8px 0 0 8px;
+  background: $upload-background;
+  border: 1px solid $upload-border-color;
+  border-radius:  0 0 0 10px;
   cursor: pointer;
   transition:
-    background 0.18s,
-    border-color 0.18s;
+    background-color 0.18s ease,
+    border-color 0.18s ease;
   svg {
     color: $midel-color;
-    font-size: 48px;
+    font-size: 32px;
   }
   strong {
     margin-top: 5px;
     color: $main-color;
     font-size: 15px;
+    font-weight: 800;
   }
   p {
     margin: 0;
+    color: rgba($bgd, 0.52);
     font-size: 13px;
+    line-height: 1.5;
   }
   small {
     padding: 5px 9px;
     color: rgba($bgd, 0.48);
     background: #fff;
+    border: 1px solid rgba($midel-color, 0.16);
     border-radius: 12px;
     font-size: 11px;
+    line-height: 1;
   }
   &:hover {
-    background: #e7eff9;
-    border-color: $midel-color;
+    background: $upload-hover-background;
+    border-color: $upload-border-hover-color;
   }
   &:disabled {
     cursor: wait;
@@ -247,6 +252,21 @@
   canvas {
     display: block;
   }
+}
+.rag-evidence-highlight-layer {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.rag-evidence-highlight {
+  position: absolute;
+  display: block;
+  background: rgba(255, 214, 64, 0.34);
+  border-radius: 2px;
+  transform-origin: left bottom;
+  pointer-events: none;
 }
 .evidence-spreadsheet {
   min-width: 100%;

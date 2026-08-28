@@ -79,7 +79,7 @@ export default function MyPage() {
   };
 
   return <div className="app-shell mypage-shell"><Sidebar />
-    <main className="mypage-workspace">
+    <main className="mypage-workspace page-enter">
       <header className="mypage-header"><div><p>ACCOUNT WORKSPACE</p><h1>내 정보</h1><span>계정 정보와 문서 AI 사용 현황을 확인합니다.</span></div><button type="button" disabled={loading} onClick={loadAccountData}><IoRefreshOutline />{loading ? '불러오는 중' : '새로고침'}</button></header>
       {error && <p className="mypage-error">{error}</p>}
 

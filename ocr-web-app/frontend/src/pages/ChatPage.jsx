@@ -222,6 +222,24 @@ function SpreadsheetEvidencePage({ page, bbox }) {
   </div>;
 }
 
+function DocumentSummaryPreview({ document }) {
+  if (!document) return <div className="document-summary-empty">
+    <strong>요약할 문서를 선택해 주세요.</strong>
+    <p>RAG 문서를 선택하면 AI 문서 요약을 확인할 수 있습니다.</p>
+  </div>;
+
+  return <section className="document-summary-preview" aria-labelledby="document-summary-title">
+    <header>
+      <div><small>DOCUMENT SUMMARY</small><h2 id="document-summary-title">AI 문서 요약</h2></div>
+      <span title={document.name}>{document.name}</span>
+    </header>
+    <div className="document-summary-placeholder">
+      <strong>문서 요약을 준비할 수 있습니다.</strong>
+      <p>현재는 요약 API가 연결되지 않아 문서 요약 내용이 표시되지 않습니다.</p>
+    </div>
+  </section>;
+}
+
 function EvidencePreview({ source, onUpload, uploading }) {
   const [preview, setPreview] = useState({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
   const [privacyPages, setPrivacyPages] = useState([]);
@@ -343,6 +361,7 @@ function ChatPageContent() {
   const [selectedSource, setSelectedSource] = useState(restoredChatState.selectedSource || null);
   const [busy, setBusy] = useState(false);
   const [uploadMode, setUploadMode] = useState(false);
+  const [documentViewMode, setDocumentViewMode] = useState('viewer');
   const [scrapbookOpen, setScrapbookOpen] = useState(false);
   const [scrapSaving, setScrapSaving] = useState(false);
   const [scrapError, setScrapError] = useState('');
@@ -387,6 +406,10 @@ function ChatPageContent() {
   useEffect(() => {
     setChatHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE))));
   }, [sessions.length]);
+
+  useEffect(() => {
+    if (!activeId) setDocumentViewMode('viewer');
+  }, [activeId]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -499,6 +522,7 @@ function ChatPageContent() {
     setSources([]);
     setEvidenceFlash(false);
     setUploadMode(false);
+    setDocumentViewMode('viewer');
   };
 
   const uploadFiles = async (files) => {
@@ -743,7 +767,21 @@ function ChatPageContent() {
         <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
           <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>{activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}<button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><RiFileUploadLine /> 문서 추가</button></div></div>
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
-          <div className="evidence-workspace"><div className="preview-slot"><EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />{uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}</div><div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div></div>
+          <div className="evidence-workspace">
+            <div className="preview-slot">
+              <div className="document-view-tabs" role="tablist" aria-label="RAG 문서 보기 방식">
+                <button type="button" role="tab" aria-selected={documentViewMode === 'viewer'} className={documentViewMode === 'viewer' ? 'active' : ''} onClick={() => setDocumentViewMode('viewer')}>문서 보기</button>
+                <button type="button" role="tab" aria-selected={documentViewMode === 'summary'} className={documentViewMode === 'summary' ? 'active' : ''} onClick={() => setDocumentViewMode('summary')}>AI 문서 요약</button>
+              </div>
+              <div className="document-view-content">
+                {documentViewMode === 'viewer'
+                  ? <EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />
+                  : <DocumentSummaryPreview document={activeDoc} />}
+                {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
+              </div>
+            </div>
+            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
+          </div>
         </section>
 
         <section className="conversation-panel">

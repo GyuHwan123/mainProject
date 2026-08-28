@@ -27,7 +27,7 @@ def _tool(email:str,name:str,args:dict[str,Any],proposals:list[dict])->Any:
     raise ValueError(f"지원하지 않는 도구: {name}")
 
 async def chat(email:str,message:str,history:list[dict]|None=None)->AgentChatResponse:
-    started=time.perf_counter();used:list[str]=[];proposals:list[dict]=[];model=settings.RAG_LLM_MODEL
+    started=time.perf_counter();used:list[str]=[];proposals:list[dict]=[];model=settings.DASHBOARD_AGENT_MODEL
     system="당신은 사내 AI 업무 비서입니다. 반드시 제공된 도구로 로그인 사용자의 실제 일정, 업무, 회의를 조회하세요. 생성 요청은 내용을 확인한 뒤 create 도구를 사용하세요. 답변은 간결한 한국어로 작성하세요."
     safe_history=[{"role":item.get("role"),"content":str(item.get("content",""))[:2000]} for item in (history or [])[-8:] if item.get("role") in {"user","assistant"}]
     messages=[{"role":"system","content":system},*safe_history,{"role":"user","content":message}]
@@ -115,7 +115,7 @@ async def extract_meeting_actions(email:str,meeting_id:str)->MeetingExtractionRe
 회의 내용: {meeting.content or meeting.summary}"""
     try:
         async with httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL,timeout=90) as client:
-            response=await client.post("/api/chat",json={"model":settings.RAG_LLM_MODEL,"messages":[{"role":"system","content":"당신은 회의록 업무·일정 추출기입니다. JSON만 출력하세요."},{"role":"user","content":prompt}],"format":"json","stream":False})
+            response=await client.post("/api/chat",json={"model":settings.DASHBOARD_AGENT_MODEL,"messages":[{"role":"system","content":"당신은 회의록 업무·일정 추출기입니다. JSON만 출력하세요."},{"role":"user","content":prompt}],"format":"json","stream":False})
             response.raise_for_status();raw=response.json().get("message",{}).get("content","{}");data=json.loads(raw)
         return MeetingExtractionResponse(tasks=data.get("tasks") or [],schedules=data.get("schedules") or [])
     except (httpx.HTTPError,json.JSONDecodeError) as exc:

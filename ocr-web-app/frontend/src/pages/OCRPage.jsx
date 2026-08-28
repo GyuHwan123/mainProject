@@ -1399,10 +1399,6 @@ export default function OCRPage() {
               )}
               {error && <div className="ocr-error">{error}</div>}
             </div>
-            {processingMode === 'receipt' && <section className="receipt-raw-result">
-              <header><div><strong>텍스트 추출 결과</strong><small>영수증 OCR 원문</small></div><span>{currentItems.length}개 항목</span></header>
-              <div>{currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={selectedItemIndex === index ? 'selected' : ''} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : <p>영수증을 업로드하면 추출된 텍스트가 여기에 표시됩니다.</p>}</div>
-            </section>}
           </div>
 
           <aside className="text-panel">
@@ -1429,6 +1425,10 @@ export default function OCRPage() {
             {preprocessingInfo && <div className="receipt-preprocess-status"><strong>영수증 전처리 완료</strong><span>{(preprocessingInfo.applied_steps || []).map((step) => ({ perspective_correction: '원근', deskew: '기울기', crop: '여백', upscale: '확대', illumination_correction: '조명', contrast_enhancement: '대비', closing: '획 연결', sharpen: '선명화' }[step] || step)).join(' · ')}</span></div>}
             {resultTab === 'text' ? (financeRecord ? <FinanceReceiptWorksheet records={currentFinanceRecords} user={user} /> : processingMode === 'receipt' ? <div className="receipt-document-empty"><span>＋</span><strong>선별값이 들어갈 재무 문서</strong><p>영수증을 분석하면 날짜, 상호, 카테고리와 금액을 선별해<br />해당 재무 양식의 새로운 행으로 자동 추가합니다.</p><div><b>01</b> 영수증 인식 <i>→</i><b>02</b> 값 선별 <i>→</i><b>03</b> 행 추가</div></div> : <ExtractionWorksheet rows={validationRows} onChange={setValidationRows} selectedIds={selectedRowIds} onSelectRange={setSelectedRowIds} onEvidence={(itemIndex) => { setSelectedItemIndex(itemIndex); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />) : <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>{hasResult ? (currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : (currentText || '현재 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 OCR 원문이 표시됩니다.'}</div>}
             <div className="text-note"><b>i</b><p>{resultTab === 'text' ? (financeRecord ? '영수증에서 선별한 값이 재무 양식의 새로운 행으로 저장되었습니다.' : '행 번호를 누른 채 위아래로 드래그해 범위를 선택하고, 새 Excel 문서 만들기를 누르세요.') : 'OCR 원문을 선택하면 오른쪽 원본의 해당 근거 영역이 강조됩니다.'}</p></div>
+            {processingMode === 'receipt' && <section className="receipt-raw-result">
+              <header><div><strong>텍스트 추출 결과</strong><small>영수증 OCR 원문</small></div><span>{currentItems.length}개 항목</span></header>
+              <div>{currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={selectedItemIndex === index ? 'selected' : ''} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : <p>영수증을 업로드하면 추출된 텍스트가 여기에 표시됩니다.</p>}</div>
+            </section>}
           </aside>
           {processingMode === 'receipt' && <aside className="receipt-agent-panel">
             <header><span>AI FINANCE AGENT</span><h2>3. AI 재무 에이전트</h2><p>자동 추출 결과를 검산하고 최종 결정을 사용자에게 맡깁니다.</p></header>

@@ -772,6 +772,31 @@ class SupabaseService:
             row["status"] = "RAG_READY" if row["chunk_count"] else "EMPTY"
         return rows
 
+    def delete_rag_document(self, user_email: str, rag_document_id: str) -> None:
+        owned_document = httpx.get(
+            f"{self.url}/rest/v1/rag_documents",
+            params={
+                "select": "id",
+                "id": f"eq.{rag_document_id}",
+                "owner": f"eq.{user_email}",
+                "limit": "1",
+            },
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(owned_document, "RAG 문서 삭제 권한 확인 실패")
+        if not owned_document.json():
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+
+        response = httpx.delete(
+            f"{self.url}/rest/v1/rag_documents",
+            params={"id": f"eq.{rag_document_id}", "owner": f"eq.{user_email}"},
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "RAG 문서 삭제 실패")
+        if not response.json():
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+
     def replace_rag_index(
         self, *, user_email: str, document: dict[str, Any], chunks: list[dict[str, Any]],
         embeddings: list[list[float]], embedding_model: str,

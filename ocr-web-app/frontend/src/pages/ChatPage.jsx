@@ -11,7 +11,33 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
+const HISTORY_PAGE_SIZE = 5;
 const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[1-4]|ER-00[1-3])$/;
+
+function HistoryPagination({ page, totalItems, onChange, label }) {
+  const totalPages = Math.ceil(totalItems / HISTORY_PAGE_SIZE);
+  if (totalPages <= 1) return null;
+  return <nav className="history-pagination" aria-label={`${label} 페이지`}>
+    <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="이전 페이지">‹</button>
+    {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => <button type="button" key={number} className={page === number ? 'active' : ''} aria-current={page === number ? 'page' : undefined} onClick={() => onChange(number)}>{number}</button>)}
+    <button type="button" disabled={page >= totalPages} onClick={() => onChange(page + 1)} aria-label="다음 페이지">›</button>
+  </nav>;
+}
+
+function DeleteConfirmDialog({ request, deleting, error, onCancel, onConfirm }) {
+  if (!request) return null;
+  const isAll = request.mode === 'all';
+  const target = request.target === 'rag' ? '기록보관함' : '채팅이력';
+  const title = isAll ? `${target}을 전체 삭제하시겠습니까?` : '이 기록을 삭제하시겠습니까?';
+  return <div className="delete-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) onCancel(); }}>
+    <section className="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-description">
+      <span className="delete-confirm-icon"><IoTrashOutline /></span>
+      <div><small>{target} {isAll ? '전체삭제' : '기록 삭제'}</small><h2 id="delete-confirm-title">{title}</h2><p id="delete-confirm-description">삭제한 기록은 복구할 수 없습니다.</p></div>
+      {error && <p className="delete-confirm-error" role="alert">{error}</p>}
+      <footer><button type="button" className="cancel-delete" disabled={deleting} onClick={onCancel}>취소</button><button type="button" className="confirm-delete" disabled={deleting} onClick={onConfirm}>{deleting ? '삭제 중...' : (isAll ? '전체삭제' : '삭제')}</button></footer>
+    </section>
+  </div>;
+}
 
 class ChatErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { failed: false, message: '' }; }
@@ -226,6 +252,11 @@ function ChatPageContent() {
   const [sessions, setSessions] = useState([]);
   const [sessionsLoaded, setSessionsLoaded] = useState(false);
   const [documentsLoaded, setDocumentsLoaded] = useState(false);
+  const [ragHistoryPage, setRagHistoryPage] = useState(1);
+  const [chatHistoryPage, setChatHistoryPage] = useState(1);
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
   const [activeSessionId, setActiveSessionId] = useState(restoredChatState.activeSessionId ?? null);
   const [activeId, setActiveId] = useState(restoredChatState.activeId ?? null);
   const [messages, setMessages] = useState(() => Array.isArray(restoredChatState.messages) && restoredChatState.messages.length
@@ -270,6 +301,16 @@ function ChatPageContent() {
     isDocumentPreview: true,
   } : null);
   const totalChunks = useMemo(() => documents.reduce((sum, item) => sum + (item.chunkCount || 0), 0), [documents]);
+  const pagedDocuments = useMemo(() => documents.slice((ragHistoryPage - 1) * HISTORY_PAGE_SIZE, ragHistoryPage * HISTORY_PAGE_SIZE), [documents, ragHistoryPage]);
+  const pagedSessions = useMemo(() => sessions.slice((chatHistoryPage - 1) * HISTORY_PAGE_SIZE, chatHistoryPage * HISTORY_PAGE_SIZE), [sessions, chatHistoryPage]);
+
+  useEffect(() => {
+    setRagHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(documents.length / HISTORY_PAGE_SIZE))));
+  }, [documents.length]);
+
+  useEffect(() => {
+    setChatHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE))));
+  }, [sessions.length]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -470,10 +511,54 @@ function ChatPageContent() {
     } finally { setBusy(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20); }
   };
 
-  const removeSession = async (id) => {
-    await apiClient.delete(`/chatbot/sessions/${id}`);
-    if (activeSessionId === id) startNewChat();
-    refreshSessions();
+  const requestDelete = (target, mode, id = null) => {
+    setDeleteError('');
+    setDeleteRequest({ target, mode, id });
+  };
+
+  const closeDeleteConfirm = () => {
+    if (deleting) return;
+    setDeleteRequest(null);
+    setDeleteError('');
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteRequest || deleting) return;
+    const { target, mode, id } = deleteRequest;
+    const items = target === 'rag' ? documents : sessions;
+    const ids = mode === 'all' ? items.map((item) => item.id) : [id];
+    const endpoint = target === 'rag' ? '/rag/documents' : '/chatbot/sessions';
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      const results = await Promise.allSettled(ids.map((itemId) => apiClient.delete(`${endpoint}/${itemId}`)));
+      const deletedIds = ids.filter((_, index) => results[index].status === 'fulfilled');
+      const failedCount = results.length - deletedIds.length;
+
+      if (target === 'rag') {
+        if (deletedIds.includes(activeId)) {
+          setActiveId(null);
+          setUploadMode(false);
+          startNewChat();
+        }
+        if (deletedIds.length) setDocuments((current) => current.filter((item) => !deletedIds.includes(item.id)));
+        if (mode === 'all' && !failedCount) setRagHistoryPage(1);
+      } else {
+        if (deletedIds.includes(activeSessionId)) startNewChat();
+        if (deletedIds.length) setSessions((current) => current.filter((item) => !deletedIds.includes(item.id)));
+        if (mode === 'all' && !failedCount) setChatHistoryPage(1);
+      }
+
+      if (failedCount) {
+        setDeleteError(`${failedCount}개 기록을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.`);
+        return;
+      }
+      setDeleteRequest(null);
+    } catch (error) {
+      setDeleteError(error.response?.data?.detail || '기록을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const saveToScrapbook = async (message, index) => {
@@ -565,9 +650,9 @@ function ChatPageContent() {
       <section className="rag-grid">
         <aside className="history-panel">
           <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
-          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><span>{documents.length}</span></header><div>{documents.map((document) => <button key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div></button>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div></section>
-          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><span>{sessions.length}</span></header><div className="history-list-rag">{sessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button className="delete-session" onClick={() => removeSession(session.id)} title="대화 삭제"><IoTrashOutline /></button></div>)}
-          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div></section>
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveId(document.id); setUploadMode(false); startNewChat(); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoTrashOutline /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
+          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><div className="history-header-actions"><button type="button" disabled={!sessions.length || deleting} onClick={() => requestDelete('chat', 'all')}>전체삭제</button><span>{sessions.length}</span></div></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('chat', 'single', session.id); }} title="대화 삭제" aria-label={`${session.title} 대화 삭제`}><IoTrashOutline /></button></div>)}
+          {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div><HistoryPagination page={chatHistoryPage} totalItems={sessions.length} onChange={setChatHistoryPage} label="채팅 이력" /></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
         </aside>
 
@@ -598,6 +683,7 @@ function ChatPageContent() {
 
       <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
       {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}
+      <DeleteConfirmDialog request={deleteRequest} deleting={deleting} error={deleteError} onCancel={closeDeleteConfirm} onConfirm={confirmDelete} />
     </main>
   </div>;
 }

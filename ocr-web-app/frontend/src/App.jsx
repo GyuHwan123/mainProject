@@ -42,10 +42,10 @@ export default function App() {
   return (
     <>
       {hasSession && (ocrMounted || isOcrRoute) && (
-        <div style={{ display: isOcrRoute ? 'contents' : 'none' }} aria-hidden={!isOcrRoute}><OCRPage /></div>
+        <div className={`persistent-route ${isOcrRoute ? 'is-active' : ''}`} style={{ display: isOcrRoute ? 'contents' : 'none' }} aria-hidden={!isOcrRoute}><OCRPage /></div>
       )}
       {hasSession && (reportMounted || isReportRoute) && (
-        <div style={{ display: isReportRoute ? 'contents' : 'none' }} aria-hidden={!isReportRoute}>
+        <div className={`persistent-route ${isReportRoute ? 'is-active' : ''}`} style={{ display: isReportRoute ? 'contents' : 'none' }} aria-hidden={!isReportRoute}>
           <EnterpriseRoute><ReportPage /></EnterpriseRoute>
         </div>
       )}

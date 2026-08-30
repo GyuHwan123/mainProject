@@ -37,8 +37,56 @@ select {
   background: #f6f8fb;
 }
 
+@keyframes pageEnterDesktop {
+  from {
+    opacity: 0;
+    transform: translate3d(-5px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes pageEnterMobile {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -5px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.page-enter {
+  animation: pageEnterDesktop 0.58s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.persistent-route:not(.is-active) .page-enter {
+  animation: none;
+}
+
+.persistent-route.is-active .page-enter {
+  animation: pageEnterDesktop 0.58s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @media (max-width: 1120px) {
   .app-shell {
     flex-direction: column;
+  }
+
+  .page-enter,
+  .persistent-route.is-active .page-enter {
+    animation-name: pageEnterMobile;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .persistent-route.is-active .page-enter {
+    animation: none;
   }
 }

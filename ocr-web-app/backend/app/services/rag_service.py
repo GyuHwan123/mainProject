@@ -27,6 +27,10 @@ _embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
 _embedding_cache_lock = Lock()
 
 
+def can_access_company_rag(user_role: str, subscription_tier: str) -> bool:
+    return user_role.upper() in {"DEVELOPER", "ADMIN"} or subscription_tier.upper() == "ENTERPRISE"
+
+
 @lru_cache(maxsize=1)
 def _get_embedding_model() -> Any:
     from sentence_transformers import SentenceTransformer
@@ -584,7 +588,10 @@ async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
         raise
 
 
-async def search(user_email: str, query: str, rag_document_id: str | None, limit: int) -> list[dict[str, Any]]:
+async def search(
+    user_email: str, query: str, rag_document_id: str | None, limit: int, *,
+    user_role: str = "USER", subscription_tier: str = "PERSONAL",
+) -> list[dict[str, Any]]:
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
     focus_subject = strong_subjects[0] if strong_subjects else ""
@@ -594,6 +601,7 @@ async def search(user_email: str, query: str, rag_document_id: str | None, limit
     facet_vectors = query_vectors[1:]
     candidates = supabase_service.search_rag_chunks(
         user_email, embedding, rag_document_id, 4,
+        include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]

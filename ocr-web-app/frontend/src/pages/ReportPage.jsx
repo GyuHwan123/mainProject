@@ -11,6 +11,65 @@ const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%
 const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
 const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
 
+function ReportDropdown({ value, options, onChange, disabled = false, ariaLabel, onFocus, prefix }) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const rootRef = useRef(null);
+  const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
+  const selectedOption = options[selectedIndex] || options[0];
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  const openDropdown = () => {
+    if (disabled) return;
+    setActiveIndex(selectedIndex);
+    setOpen(true);
+  };
+  const selectOption = (option) => {
+    if (option?.disabled) return;
+    onChange(option.value);
+    setOpen(false);
+  };
+  const handleKeyDown = (event) => {
+    if (disabled) return;
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!open) { openDropdown(); return; }
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      setActiveIndex((current) => (current + direction + options.length) % options.length);
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      if (open) selectOption(options[activeIndex]);
+      else openDropdown();
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return <div ref={rootRef} className={`report-dropdown light ${open ? 'open' : ''}`}>
+    <button type="button" className="report-dropdown-trigger" disabled={disabled} aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} onFocus={onFocus} onClick={() => open ? setOpen(false) : openDropdown()} onKeyDown={handleKeyDown}>
+      {prefix && <span className="report-dropdown-prefix">{prefix}</span>}<span className="report-dropdown-value" title={selectedOption?.label}>{selectedOption?.label}</span><i aria-hidden="true" />
+    </button>
+    {open && <div className="report-dropdown-menu" role="listbox" aria-label={ariaLabel}>
+      {options.map((option, index) => <button type="button" role="option" aria-selected={option.value === value} className={`${option.value === value ? 'selected' : ''} ${index === activeIndex ? 'focused' : ''}`} disabled={option.disabled} key={option.value || option.label} onMouseEnter={() => setActiveIndex(index)} onClick={() => selectOption(option)}>{option.label}</button>)}
+    </div>}
+  </div>;
+}
+
 function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) {
   const metrics = useMemo(() => {
     if (!evaluation) return null;
@@ -195,7 +254,7 @@ function RagLlmEvaluation() {
       <input ref={fileRef} hidden type="file" accept=".json,application/json" disabled={running} onChange={(event) => { loadDataset(event.target.files?.[0]); event.target.value = ''; }} />
       <button type="button" disabled={running} onClick={() => fileRef.current?.click()}>{running ? '업로드 잠김' : '정답 데이터 업로드'}</button>
       <div className="rag-llm-file"><strong>{fileName || '선택된 파일 없음'}</strong><span>{dataset ? `${dataset.cases.length}문항 · 업로드 완료` : '기존 RAG 평가 JSON을 선택하세요.'}</span></div>
-      <label><span>평가 모델 선택</span><select value={modelName} disabled={running || !models.length} onChange={(event) => setModelName(event.target.value)}><option value="">설치 모델 없음</option>{models.map((model) => <option key={model} value={model}>{model}</option>)}</select></label>
+      <div className="rag-llm-model-select"><span>평가 모델 선택</span><ReportDropdown ariaLabel="평가 모델 선택" value={modelName} disabled={running || !models.length} options={models.length ? models.map((model) => ({ value: model, label: model })) : [{ value: '', label: '설치 모델 없음', disabled: true }]} onChange={setModelName} /></div>
       <button type="button" className="run" disabled={!dataset || !modelName || running} onClick={runEvaluation}>{running ? '평가 실행 중...' : '평가 시작'}</button>
     </div>
     <div className="rag-llm-progress"><div><strong>{stateLabel}</strong><span>{running ? `${status.current} / ${status.total}${status.question_id ? ` · ${status.question_id}` : ''}` : `${status.current || 0} / ${status.total || dataset?.cases.length || 0}`}</span></div><i><b style={{ width: `${status.total ? Math.min(100, status.current / status.total * 100) : 0}%` }} /></i></div>
@@ -538,8 +597,63 @@ export default function ReportPage() {
   ];
 
   return <div className="app-shell developer-report-shell"><Sidebar />
-    <main className="developer-report">
-      <header className="report-header"><div><p>{reportView === 'developer' ? 'DEVELOPER ANALYTICS' : 'ENTERPRISE WORK REPORT'}</p><h1>{reportView === 'developer' ? 'AI 성능 리포트' : '기업 업무 리포트'}</h1><span>Dashboard &gt; {reportView === 'developer' ? 'Performance Report' : 'Business Report'}{lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}</span></div><div className="report-header-actions">{isDeveloper && <div className="report-view-toggle"><button className={reportView === 'business' ? 'active' : ''} onClick={() => setReportView('business')}>기업용</button><label className={reportView === 'developer' ? 'active developer-report-select' : 'developer-report-select'}><span>개발자용</span><select aria-label="개발자용 리포트 선택" value={developerReport} onFocus={() => setReportView('developer')} onChange={(event) => { setDeveloperReport(event.target.value); setReportView('developer'); }}><option value="rag">RAG</option><option value="receipt">영수증</option></select></label></div>}<button className="refresh-report" disabled={loading} onClick={() => { loadBusinessStats(); if (isDeveloper) loadEvaluations(); if (developerReport === 'receipt') window.dispatchEvent(new Event('finance-evaluations-updated')); }}><IoRefreshOutline />새로고침</button>{reportView === 'developer' && developerReport !== 'receipt' && <button disabled={!runs.length} onClick={exportReport}><IoDownloadOutline /> JSON 내보내기</button>}</div></header>
+    <main className="developer-report page-enter">
+      <header className="report-header">
+        <div>
+          <p>{reportView === 'developer'? 'DEVELOPER ANALYTICS': 'ENTERPRISE WORK REPORT'}</p>
+          <h1>{reportView === 'developer'? 'AI 성능 리포트': '기업 업무 리포트'}</h1>
+
+          <span>Dashboard &gt;{' '}{reportView === 'developer'? 'Performance Report': 'Business Report'}
+            {lastUpdated && reportView === 'developer' && ` · ${lastUpdated.toLocaleTimeString('ko-KR')} 갱신`}
+          </span>
+        </div>
+
+        <div className="report-header-actions">
+          {isDeveloper && (
+            <div className="report-view-toggle">
+              <button className={reportView === 'business' ? 'active' : ''}
+                onClick={() => setReportView('business')}
+              >
+                기업용
+              </button>
+
+              <div
+                className={reportView === 'developer'  ? 'active developer-report-select'
+                    : 'developer-report-select'
+                }
+              >
+                <ReportDropdown ariaLabel="개발자용 리포트 선택" prefix="개발자용" value={developerReport} options={[{ value: 'rag', label: 'RAG' }, { value: 'receipt', label: 'Expense flow' }]} onFocus={() => setReportView('developer')} onChange={(nextValue) => { setDeveloperReport(nextValue); setReportView('developer'); }} />
+              </div>
+            </div>
+          )}
+
+          <button  className="refresh-report"  disabled={loading}
+            onClick={() => {
+              loadBusinessStats();
+
+              if (isDeveloper) {loadEvaluations();}
+
+              if (developerReport === 'receipt') {window.dispatchEvent(new Event('finance-evaluations-updated'));}
+            }}
+          >
+            <IoRefreshOutline />
+            새로고침
+          </button>
+
+          {/*
+          {reportView === 'developer' &&
+            developerReport !== 'receipt' && (
+              <button
+                disabled={!runs.length}
+                onClick={exportReport}
+              >
+                <IoDownloadOutline />
+                JSON 내보내기
+              </button>
+            )}
+          */}
+        </div>
+      </header>
       {error && <div className="report-access-error">{error}</div>}
       {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">

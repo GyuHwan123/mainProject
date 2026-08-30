@@ -848,40 +848,43 @@ class SupabaseService:
         return None
 
     def search_rag_chunks(
-        self, user_email: str, embedding: list[float], rag_document_id: str | None, limit: int,
+        self, user_email: str, embedding: list[float], rag_document_id: str | None, limit: int, *,
+        include_company_documents: bool = False,
     ) -> list[dict[str, Any]]:
         documents = self.list_rag_documents(user_email)
-        company_response = httpx.get(
-            f"{self.url}/rest/v1/rag_documents",
-            params={
-                "select": "id,doc_id,title,owner,filename",
-                "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
-            },
-            headers=self._service_headers(), timeout=15,
-        )
-        self._raise_for_supabase(company_response, "RAG company documents lookup failed")
-        company_documents = company_response.json()
-        company_document_ids = {row["id"] for row in company_documents}
+        company_documents: list[dict[str, Any]] = []
+        if include_company_documents:
+            company_response = httpx.get(
+                f"{self.url}/rest/v1/rag_documents",
+                params={
+                    "select": "id,doc_id,title,owner,filename",
+                    "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
+                },
+                headers=self._service_headers(), timeout=15,
+            )
+            self._raise_for_supabase(company_response, "RAG company documents lookup failed")
+            company_documents = company_response.json()
         documents.extend(company_documents)
         document_by_id = {row["id"]: row for row in documents}
         if rag_document_id and rag_document_id not in document_by_id:
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
-        if not document_by_id:
+        allowed_document_ids = [rag_document_id] if rag_document_id else list(document_by_id)
+        if not allowed_document_ids:
             return []
         response = httpx.post(
             f"{self.url}/rest/v1/rpc/match_rag_chunks", headers=self._service_headers(),
-            json={"query_embedding": embedding, "match_threshold": 0.2, "match_count": 100},
+            json={
+                "query_embedding": embedding,
+                "allowed_document_ids": allowed_document_ids,
+                "match_threshold": 0.2,
+                "match_count": limit,
+            },
             timeout=30,
         )
         self._raise_for_supabase(response, "RAG 벡터 검색 실패")
         rows = [
             row for row in response.json()
             if row.get("document_id") in document_by_id
-            and (
-                row.get("document_id") in company_document_ids
-                or not rag_document_id
-                or row.get("document_id") == rag_document_id
-            )
         ][:limit]
         for row in rows:
             rag_id = row["document_id"]
@@ -900,6 +903,59 @@ class SupabaseService:
         )
         self._raise_for_supabase(response, "RAG 문서 카탈로그 조회 실패")
         return response.json()
+
+    def get_accessible_rag_document(
+        self, user_email: str, rag_document_id: str, *, include_company_documents: bool = False,
+    ) -> dict[str, Any]:
+        response = httpx.get(
+            f"{self.url}/rest/v1/rag_documents",
+            params={
+                "select": "id,doc_id,title,owner,filename,summary",
+                "id": f"eq.{rag_document_id}",
+                "limit": "1",
+            },
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(response, "RAG 문서 접근 권한 확인 실패")
+        rows = response.json()
+        if not rows:
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+        document = rows[0]
+        is_owned = str(document.get("owner") or "").lower() == user_email.lower()
+        is_company = include_company_documents and document.get("doc_id") in COMPANY_RAG_DOCUMENT_IDS
+        if not (is_owned or is_company):
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+        return document
+
+    def list_all_rag_chunks(self, rag_document_id: str) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        page_size = 1_000
+        while True:
+            response = httpx.get(
+                f"{self.url}/rest/v1/rag_chunks",
+                params={
+                    "select": "id,document_id,chunk_index,page_number,content",
+                    "document_id": f"eq.{rag_document_id}",
+                    "order": "chunk_index.asc",
+                    "limit": str(page_size),
+                    "offset": str(len(rows)),
+                },
+                headers=self._service_headers(), timeout=30,
+            )
+            self._raise_for_supabase(response, "RAG 문서 전체 청크 조회 실패")
+            page = response.json()
+            rows.extend(page)
+            if len(page) < page_size:
+                return rows
+
+    def save_rag_document_summary(self, rag_document_id: str, summary: str) -> None:
+        response = httpx.patch(
+            f"{self.url}/rest/v1/rag_documents",
+            params={"id": f"eq.{rag_document_id}"},
+            headers={**self._service_headers(), "Prefer": "return=minimal"},
+            json={"summary": summary}, timeout=15,
+        )
+        self._raise_for_supabase(response, "RAG 문서 요약 저장 실패")
 
     def list_rag_chunks(self, user_email: str, rag_document_id: str) -> list[dict[str, Any]]:
         owned_document = next(

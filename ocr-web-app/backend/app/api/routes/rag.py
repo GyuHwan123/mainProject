@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
 from app.models.user import User
+from app.services.document_summary_service import get_or_create_document_summary
 from app.services.rag_service import rag_service
 from app.services.supabase_service import COMPANY_RAG_DOCUMENT_IDS, supabase_service
 from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
@@ -51,6 +52,18 @@ def delete_document(
     supabase_service.delete_rag_document(user.email, rag_document_id)
 
 
+@router.post("/documents/{rag_document_id}/summary")
+async def summarize_document(
+    rag_document_id: str, force_regenerate: bool = False,
+    user: User = Depends(require_current_user),
+) -> dict[str, Any]:
+    return await get_or_create_document_summary(
+        user.email, rag_document_id,
+        user_role=user.role, subscription_tier=user.subscription_tier,
+        force_regenerate=force_regenerate,
+    )
+
+
 @router.get("/company-documents/{doc_id}/file")
 def get_company_document_file(
     doc_id: str, _user: User = Depends(require_current_user),
@@ -77,4 +90,7 @@ async def index_document(document_id: str, user: User = Depends(require_current_
 async def search(payload: RagSearchRequest, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     if is_sensitive_query(payload.query):
         raise HTTPException(status_code=403, detail=PRIVACY_RESPONSE)
-    return await rag_service.search(user.email, payload.query.strip(), payload.rag_document_id, payload.limit)
+    return await rag_service.search(
+        user.email, payload.query.strip(), payload.rag_document_id, payload.limit,
+        user_role=user.role, subscription_tier=user.subscription_tier,
+    )

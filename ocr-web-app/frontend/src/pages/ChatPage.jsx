@@ -1,7 +1,8 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoBookmarkOutline, IoCloseOutline, IoCloudUploadOutline, IoTrashOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoCloseOutline, IoTrashOutline } from 'react-icons/io5';
+import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
@@ -70,9 +71,52 @@ function bboxPoints(value) {
   return [];
 }
 
-function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
+function normalizeEvidenceText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function findEvidenceItemIndices(items, sourceContent) {
+  const normalizedSource = normalizeEvidenceText(sourceContent);
+  if (!normalizedSource) return [];
+
+  const characters = [];
+  items.forEach((item, itemIndex) => {
+    for (const character of String(item?.str || '')) characters.push({ character, itemIndex });
+    if (item?.hasEOL) characters.push({ character: ' ', itemIndex });
+  });
+
+  let normalizedPage = '';
+  const itemIndexByCharacter = [];
+  let pendingSpaceItem = null;
+  characters.forEach(({ character, itemIndex }) => {
+    if (/\s/.test(character)) {
+      if (normalizedPage && !normalizedPage.endsWith(' ')) pendingSpaceItem = itemIndex;
+      return;
+    }
+    if (pendingSpaceItem !== null) {
+      normalizedPage += ' ';
+      itemIndexByCharacter.push(pendingSpaceItem);
+      pendingSpaceItem = null;
+    }
+    normalizedPage += character;
+    itemIndexByCharacter.push(itemIndex);
+  });
+
+  const candidates = [normalizedSource];
+  [240, 160, 100, 60, 40].forEach((length) => {
+    if (normalizedSource.length > length) candidates.push(normalizedSource.slice(0, length).trim());
+  });
+  const match = candidates.find((candidate, index) => candidate.length >= (index === 0 ? 24 : 40) && normalizedPage.includes(candidate));
+  if (!match) return [];
+
+  const start = normalizedPage.indexOf(match);
+  return [...new Set(itemIndexByCharacter.slice(start, start + match.length))];
+}
+
+function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [], sourceContent = '' }) {
   const canvasRef = useRef(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0, naturalWidth: 0, naturalHeight: 0, scale: 1 });
+  const [evidenceHighlights, setEvidenceHighlights] = useState([]);
 
   useEffect(() => {
     let active = true;
@@ -91,6 +135,38 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     return () => { active = false; try { renderTask?.cancel(); } catch { /* 이미 종료된 렌더 작업 */ } };
   }, [pdf, pageNumber]);
 
+  useEffect(() => {
+    let active = true;
+    setEvidenceHighlights([]);
+    if (!sourceContent) return () => { active = false; };
+
+    pdf.getPage(pageNumber).then(async (page) => {
+      const viewport = page.getViewport({ scale: 1.05 });
+      const textContent = await page.getTextContent();
+      if (!active) return;
+      const items = Array.isArray(textContent?.items) ? textContent.items : [];
+      const matchedIndices = findEvidenceItemIndices(items, sourceContent);
+      const highlights = matchedIndices.map((itemIndex) => {
+        const item = items[itemIndex];
+        if (!item?.transform) return null;
+        const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
+        const fontHeight = Math.hypot(transform[2], transform[3]);
+        const width = Math.max(2, Number(item.width || 0) * viewport.scale);
+        if (!fontHeight || !width) return null;
+        return {
+          left: transform[4],
+          top: transform[5] - fontHeight,
+          width,
+          height: fontHeight,
+          transform: `rotate(${Math.atan2(transform[1], transform[0])}rad)`,
+        };
+      }).filter(Boolean);
+      setEvidenceHighlights(highlights);
+    }).catch(() => {});
+
+    return () => { active = false; };
+  }, [pdf, pageNumber, sourceContent]);
+
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
     if (!points.length || !pageSize.width) return null;
@@ -106,7 +182,7 @@ function PdfEvidencePage({ pdf, pageNumber, bbox, privacyBoxes = [] }) {
     const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
     return xs.length && ys.length ? { left: Math.min(...xs) * pageSize.scale, top: Math.min(...ys) * pageSize.scale, width: (Math.max(...xs) - Math.min(...xs)) * pageSize.scale, height: (Math.max(...ys) - Math.min(...ys)) * pageSize.scale } : null;
   }).filter(Boolean);
-  return <div className="evidence-pdf-page"><canvas ref={canvasRef} />{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
+  return <div className="evidence-pdf-page"><canvas ref={canvasRef} /><div className="rag-evidence-highlight-layer" aria-hidden="true">{evidenceHighlights.map((style, index) => <span className="rag-evidence-highlight" style={style} key={index} />)}</div>{boxStyle && <span className="evidence-bbox" style={boxStyle} />}{privacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}</div>;
 }
 
 function SpreadsheetEvidencePage({ page, bbox }) {
@@ -144,6 +220,23 @@ function SpreadsheetEvidencePage({ page, bbox }) {
       </tr>)}</tbody>
     </table>
   </div>;
+}
+
+function DocumentSummaryPreview({ document, summary, loading, error, onRetry, onRegenerate }) {
+  if (!document) return <div className="document-summary-empty">
+    <strong>요약할 문서를 선택해 주세요.</strong>
+    <p>RAG 문서를 선택하면 AI 문서 요약을 확인할 수 있습니다.</p>
+  </div>;
+
+  return <section className="document-summary-preview" aria-labelledby="document-summary-title">
+    <header>
+      <div><small>DOCUMENT SUMMARY</small><h2 id="document-summary-title">AI 문서 요약</h2></div>
+      <div className="document-summary-actions"><span title={document.name}>{document.name}</span>{summary && <button type="button" disabled={loading} onClick={onRegenerate}>{loading ? '다시 요약 중...' : '다시 요약'}</button>}</div>
+    </header>
+    {loading && !summary && <div className="document-summary-placeholder summary-loading"><i /><strong>AI가 문서를 요약하고 있습니다...</strong><p>문서 길이에 따라 잠시 시간이 걸릴 수 있습니다.</p></div>}
+    {!loading && error && !summary && <div className="document-summary-placeholder summary-error"><strong>문서 요약에 실패했습니다.</strong><p>{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
+    {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}{summary}</div>}
+  </section>;
 }
 
 function EvidencePreview({ source, onUpload, uploading }) {
@@ -223,14 +316,14 @@ function EvidencePreview({ source, onUpload, uploading }) {
     return xs.length && ys.length ? { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: (Math.max(...xs) - Math.min(...xs)) * preview.scale, height: (Math.max(...ys) - Math.min(...ys)) * preview.scale } : null;
   }).filter(Boolean);
 
-  if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><IoCloudUploadOutline /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
+  if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><RiFileUploadLine /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
   const pageCount = Math.max(1, preview.pageCount || 1);
   return <div className="evidence-preview"><div className="evidence-preview-label"><span>{source.source}</span><div className="evidence-page-controls"><button disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>‹</button><b>{currentPage} / {pageCount}</b><button disabled={currentPage >= pageCount} onClick={() => setCurrentPage((page) => page + 1)}>›</button></div></div><div className="evidence-preview-body">
     {['pdf', 'spreadsheet'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
     <div className="evidence-document-stage">
     {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
     {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
-    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} />}
+    {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} sourceContent={Number(source?.pageNumber || 1) === currentPage ? source?.content : ''} />}
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
     {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
     {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
@@ -267,6 +360,10 @@ function ChatPageContent() {
   const [selectedSource, setSelectedSource] = useState(restoredChatState.selectedSource || null);
   const [busy, setBusy] = useState(false);
   const [uploadMode, setUploadMode] = useState(false);
+  const [documentViewMode, setDocumentViewMode] = useState('viewer');
+  const [documentSummaries, setDocumentSummaries] = useState({});
+  const [summaryLoadingId, setSummaryLoadingId] = useState(null);
+  const [summaryErrors, setSummaryErrors] = useState({});
   const [scrapbookOpen, setScrapbookOpen] = useState(false);
   const [scrapSaving, setScrapSaving] = useState(false);
   const [scrapError, setScrapError] = useState('');
@@ -291,6 +388,7 @@ function ChatPageContent() {
   const evaluationFileRef = useRef(null);
   const evaluationRunningRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
+  const summaryRequestsRef = useRef(new Set());
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const previewSource = selectedSource || (activeDoc ? {
@@ -304,6 +402,29 @@ function ChatPageContent() {
   const pagedDocuments = useMemo(() => documents.slice((ragHistoryPage - 1) * HISTORY_PAGE_SIZE, ragHistoryPage * HISTORY_PAGE_SIZE), [documents, ragHistoryPage]);
   const pagedSessions = useMemo(() => sessions.slice((chatHistoryPage - 1) * HISTORY_PAGE_SIZE, chatHistoryPage * HISTORY_PAGE_SIZE), [sessions, chatHistoryPage]);
 
+  const loadDocumentSummary = async (documentId, { retry = false, forceRegenerate = false } = {}) => {
+    if (!documentId || summaryRequestsRef.current.has(documentId)) return;
+    if (!retry && !forceRegenerate && Object.prototype.hasOwnProperty.call(documentSummaries, documentId)) return;
+    summaryRequestsRef.current.add(documentId);
+    setSummaryLoadingId(documentId);
+    setSummaryErrors((current) => ({ ...current, [documentId]: '' }));
+    try {
+      const { data } = await apiClient.post(`/rag/documents/${encodeURIComponent(documentId)}/summary`, null, {
+        params: forceRegenerate ? { force_regenerate: true } : undefined,
+        timeout: 600000,
+      });
+      setDocumentSummaries((current) => ({ ...current, [documentId]: data.summary || '' }));
+    } catch (error) {
+      setSummaryErrors((current) => ({
+        ...current,
+        [documentId]: error.response?.data?.detail || '잠시 후 다시 시도해 주세요.',
+      }));
+    } finally {
+      summaryRequestsRef.current.delete(documentId);
+      setSummaryLoadingId((current) => current === documentId ? null : current);
+    }
+  };
+
   useEffect(() => {
     setRagHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(documents.length / HISTORY_PAGE_SIZE))));
   }, [documents.length]);
@@ -311,6 +432,14 @@ function ChatPageContent() {
   useEffect(() => {
     setChatHistoryPage((page) => Math.min(page, Math.max(1, Math.ceil(sessions.length / HISTORY_PAGE_SIZE))));
   }, [sessions.length]);
+
+  useEffect(() => {
+    if (!activeId) setDocumentViewMode('viewer');
+  }, [activeId]);
+
+  useEffect(() => {
+    if (documentViewMode === 'summary' && activeDoc?.id) loadDocumentSummary(activeDoc.id);
+  }, [documentViewMode, activeDoc?.id]);
 
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
@@ -415,6 +544,15 @@ function ChatPageContent() {
     setQuery('');
     setSources([]);
     setSelectedSource(null);
+  };
+
+  const clearActiveDocument = () => {
+    setActiveId(null);
+    setSelectedSource(null);
+    setSources([]);
+    setEvidenceFlash(false);
+    setUploadMode(false);
+    setDocumentViewMode('viewer');
   };
 
   const uploadFiles = async (files) => {
@@ -642,7 +780,7 @@ function ChatPageContent() {
   };
 
   return <div className="app-shell chat-app-shell"><Sidebar />
-    <main className="chat-workspace">
+    <main className="chat-workspace page-enter">
       <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
       <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
       {isDeveloper && <input ref={evaluationFileRef} hidden disabled={evaluationRunning} type="file" accept=".json,application/json" onChange={(event) => { loadEvaluationDataset(event.target.files?.[0]); event.target.value = ''; }} />}
@@ -657,9 +795,30 @@ function ChatPageContent() {
         </aside>
 
         <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
-          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span><button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><IoCloudUploadOutline /> 문서 추가</button></div></div>
+          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>{activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}<button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><RiFileUploadLine /> 문서 추가</button></div></div>
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
-          <div className="evidence-workspace"><div className="preview-slot"><EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />{uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><IoCloudUploadOutline /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}</div><div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div></div>
+          <div className="evidence-workspace">
+            <div className="preview-slot">
+              <div className="document-view-tabs" role="tablist" aria-label="RAG 문서 보기 방식">
+                <button type="button" role="tab" aria-selected={documentViewMode === 'viewer'} className={documentViewMode === 'viewer' ? 'active' : ''} onClick={() => setDocumentViewMode('viewer')}>문서 보기</button>
+                <button type="button" role="tab" aria-selected={documentViewMode === 'summary'} className={documentViewMode === 'summary' ? 'active' : ''} onClick={() => setDocumentViewMode('summary')}>AI 문서 요약</button>
+              </div>
+              <div className="document-view-content">
+                {documentViewMode === 'viewer'
+                  ? <EvidencePreview source={previewSource} uploading={Boolean(indexingId)} onUpload={(droppedFiles) => { if (Array.isArray(droppedFiles)) uploadFiles(droppedFiles).catch(() => setIndexingId(null)); else fileRef.current?.click(); }} />
+                  : <DocumentSummaryPreview
+                    document={activeDoc}
+                    summary={activeDoc ? documentSummaries[activeDoc.id] : ''}
+                    loading={summaryLoadingId === activeDoc?.id}
+                    error={activeDoc ? summaryErrors[activeDoc.id] : ''}
+                    onRetry={() => activeDoc && loadDocumentSummary(activeDoc.id, { retry: true })}
+                    onRegenerate={() => activeDoc && loadDocumentSummary(activeDoc.id, { forceRegenerate: true })}
+                  />}
+                {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
+              </div>
+            </div>
+            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
+          </div>
         </section>
 
         <section className="conversation-panel">

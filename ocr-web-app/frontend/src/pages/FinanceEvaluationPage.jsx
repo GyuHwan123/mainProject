@@ -227,7 +227,41 @@ function OcrSheetPreview({ pages, text, diagnostics, prediction, truth }) {
   </div>;
 }
 
-function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
+const EVALUATION_SEMANTICS = {
+  issuer: { label: '발행처·사업자', color: '#7c3aed', sections: ['issuer', 'business_info'] },
+  transaction: { label: '거래 정보', color: '#16a34a', sections: ['transaction', 'service_detail'] },
+  items: { label: '구매 품목', color: '#ef4444', sections: ['items'] },
+  adjustments: { label: '할인·조정', color: '#db2777', sections: ['adjustments'] },
+  tax: { label: '공급가액·세금', color: '#f97316', sections: ['tax_summary'] },
+  settlement: { label: '합계·결제액', color: '#65a30d', sections: ['settlement'] },
+  payment: { label: '결제수단·카드', color: '#475569', sections: ['payment'] },
+  auxiliary: { label: '부가 안내', color: '#0891b2', sections: ['auxiliary'] },
+};
+const compactSemanticText = (value) => String(value || '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+
+function semanticForText(text, evidence) {
+  const needle = compactSemanticText(text);
+  const lines = evidence?.lines || [];
+  const sections = evidence?.sections || {};
+  const matchingIds = lines.filter((line) => {
+    const lineText = compactSemanticText(line.text);
+    return needle && lineText && (lineText.includes(needle) || needle.includes(lineText));
+  }).map((line) => line.id);
+  const order = ['items', 'settlement', 'tax', 'adjustments', 'payment', 'transaction', 'issuer', 'auxiliary'];
+  const matched = order.find((key) => EVALUATION_SEMANTICS[key].sections.some((section) => (sections[section] || []).some((id) => matchingIds.includes(id))));
+  if (matched) return matched;
+  const raw = String(text || '');
+  if (/상품|품목|수량|단가/.test(raw)) return 'items';
+  if (/합계|결제금액|받을금액|승인금액/.test(raw)) return 'settlement';
+  if (/공급가액|부가세|과세|면세/.test(raw)) return 'tax';
+  if (/할인|쿠폰|적립/.test(raw)) return 'adjustments';
+  if (/카드|현금|승인번호/.test(raw)) return 'payment';
+  if (/거래일|판매일|주문번호/.test(raw)) return 'transaction';
+  if (/사업자|대표자|주소|가맹점|매장명/.test(raw)) return 'issuer';
+  return null;
+}
+
+function OcrBoxedImage({ preview, pages, alt, expanded = false, semanticEvidence = null, activeSemantic = null }) {
   const imageRef = useRef(null);
   const [imageSize, setImageSize] = useState({ naturalWidth: 0, naturalHeight: 0, width: 0, height: 0 });
   const items = Array.isArray(pages?.[0]?.items) ? pages[0].items : [];
@@ -257,6 +291,7 @@ function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
     const boxWidth = x1 - x0; const boxHeight = y1 - y0;
     if (boxWidth <= 0 || boxHeight <= 0) return null;
     if (boxHeight > imageSize.naturalHeight * .2 || boxWidth * boxHeight > imageSize.naturalWidth * imageSize.naturalHeight * .18) return null;
+    const semanticKey = semanticForText(item.text, semanticEvidence);
     return {
       key: `${index}-${item.text || ''}`,
       text: String(item.text || '').trim(),
@@ -264,6 +299,8 @@ function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
       top: y0 / imageSize.naturalHeight * imageSize.height,
       width: Math.max(boxWidth / imageSize.naturalWidth * imageSize.width, 2),
       height: Math.max(boxHeight / imageSize.naturalHeight * imageSize.height, 2),
+      semanticKey,
+      semanticColor: semanticKey ? EVALUATION_SEMANTICS[semanticKey].color : null,
     };
   }).filter(Boolean) : [];
 
@@ -274,7 +311,7 @@ function OcrBoxedImage({ preview, pages, alt, expanded = false }) {
       width: event.currentTarget.clientWidth,
       height: event.currentTarget.clientHeight,
     })} />
-    {boxes.map((box) => <span className="eval-bbox-overlay" key={box.key} title={box.text || 'OCR 감지 영역'} style={{ left: box.left, top: box.top, width: box.width, height: box.height }} />)}
+    {boxes.map((box) => <span className={`eval-bbox-overlay ${box.semanticKey ? 'semantic' : ''} ${activeSemantic && box.semanticKey !== activeSemantic ? 'semantic-muted' : ''}`} key={box.key} title={box.text || 'OCR 감지 영역'} style={{ left: box.left, top: box.top, width: box.width, height: box.height, '--semantic-color': box.semanticColor }} />)}
     {!!boxes.length && <em className="ocr-box-count">OCR {boxes.length}개</em>}
   </div>;
 }
@@ -311,14 +348,43 @@ function PendingReceiptEvaluation({ receipt }) {
   </article>;
 }
 
+function EvaluationSemanticLegend({ active, available, onChange }) {
+  return <div className="evaluation-semantic-legend"><div><strong>영역 범례</strong><small>의미 분류별 OCR 근거</small></div><nav><button type="button" className={!active ? 'active' : ''} onClick={() => onChange(null)}>전체</button>{Object.entries(EVALUATION_SEMANTICS).map(([key, definition]) => <button type="button" key={key} className={active === key ? 'active' : ''} disabled={!available.has(key)} onClick={() => onChange(active === key ? null : key)} style={{ '--semantic-color': definition.color }}><i />{definition.label}</button>)}</nav></div>;
+}
+
+function EvaluationExtractionInsights({ prediction, trace, pages, onSemanticSelect }) {
+  const items = Array.isArray(prediction?.items) ? prediction.items : [];
+  const candidates = trace?.item_candidates || [];
+  const ocrItems = (pages || []).flatMap((page) => page?.items || []);
+  const confidences = ocrItems.map((item) => Number(item.confidence ?? item.score)).filter((value) => Number.isFinite(value) && value >= 0 && value <= 1);
+  const ocrConfidence = confidences.length ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : null;
+  const reliable = candidates.filter((candidate) => candidate.rel === 'H').length;
+  const arithmetic = items.filter((item) => Number(item.quantity) > 0 && Number(item.unit_price) > 0 && Number(item.total_amount) > 0);
+  const arithmeticPassed = arithmetic.filter((item) => Math.abs(Number(item.quantity) * Number(item.unit_price) - Number(item.total_amount)) < .01).length;
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+  const totalMatches = itemTotal > 0 && Math.abs(itemTotal - Number(prediction?.total_amount || 0)) < .01;
+  const evidenceRate = candidates.length ? reliable / candidates.length : null;
+  const validationValues = [arithmetic.length ? arithmeticPassed / arithmetic.length : null, items.length ? Number(totalMatches) : null].filter((value) => value != null);
+  const validationRate = validationValues.length ? validationValues.reduce((sum, value) => sum + value, 0) / validationValues.length : null;
+  const confidenceValues = [ocrConfidence, evidenceRate, validationRate].filter((value) => value != null);
+  const groundedConfidence = confidenceValues.length ? confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length : null;
+  const money = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
+  const fields = [['issuer', '가게명', prediction?.merchant || '확인 필요'], ['transaction', '구매일자', prediction?.transaction_date || '확인 필요'], ['settlement', '총 결제액', money(prediction?.total_amount)], ['tax', '공급가액 · 부가세', `${money(prediction?.supply_amount)} · ${money(prediction?.tax_amount)}`], ['payment', '결제방법', prediction?.payment_method || '확인 필요'], ['payment', '카드번호', prediction?.card_number || '근거 없음']];
+  return <section className="evaluation-extraction-insights"><article className="evaluation-key-info"><header><div><strong>추출된 주요 정보</strong><small>항목을 누르면 영수증 근거 영역이 강조됩니다.</small></div><span>최종 결과</span></header><dl>{fields.map(([semantic, label, value]) => <button type="button" key={label} style={{ '--semantic-color': EVALUATION_SEMANTICS[semantic].color }} onClick={() => onSemanticSelect(semantic)}><dt>{label}</dt><dd>{value}</dd></button>)}</dl></article><article className="evaluation-item-info"><header><div><strong>구매 항목 상세</strong><small>구조화된 품목명·수량·단가·금액</small></div><span>총 {items.length}건</span></header><div><table><thead><tr><th>상품명</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name || '확인 필요'}<small>{item.specification || ''}</small></td><td>{Number(item.quantity || 0).toLocaleString('ko-KR')}</td><td>{money(item.unit_price)}</td><td>{money(item.total_amount)}</td></tr>)}</tbody></table>{!items.length && <p>구조화된 구매 항목이 없습니다.</p>}</div></article><article className="evaluation-confidence-info"><header><div><strong>근거 기반 신뢰도</strong><small>정답 정확도가 아닌 OCR·후보·산술 검증 상태입니다.</small></div><span>{groundedConfidence == null ? '근거 부족' : groundedConfidence >= .9 ? '높음' : groundedConfidence >= .7 ? '검토 권장' : '확인 필요'}</span></header><div className="evaluation-confidence-body"><div className="evaluation-confidence-ring" style={{ '--confidence': `${Math.round((groundedConfidence || 0) * 100)}%` }}><strong>{groundedConfidence == null ? '-' : `${Math.round(groundedConfidence * 100)}%`}</strong><small>검증 신뢰도</small></div><dl><div><dt>OCR 인식 신뢰도</dt><dd>{ocrConfidence == null ? '미제공' : `${Math.round(ocrConfidence * 100)}%`}</dd></div><div><dt>고신뢰 품목 후보</dt><dd>{candidates.length ? `${reliable}/${candidates.length}` : '후보 없음'}</dd></div><div><dt>품목 산술 검산</dt><dd>{arithmetic.length ? `${arithmeticPassed}/${arithmetic.length}` : '대상 없음'}</dd></div><div><dt>품목 합계와 결제액</dt><dd className={totalMatches ? 'ok' : 'warning'}>{items.length ? (totalMatches ? '일치' : '확인 필요') : '대상 없음'}</dd></div></dl></div></article></section>;
+}
+
 function ModelPipelineResult({ run, result, imagePreview }) {
   const [imageOpen, setImageOpen] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [activeSemantic, setActiveSemantic] = useState(null);
   const score = result.system?.score || {};
   const impact = result.system?.ocr_impact;
   const workbook = result.system?.workbook;
   const errorAnalysis = result.system?.error_analysis || {};
   const errorTags = Array.isArray(errorAnalysis.error_tags) ? errorAnalysis.error_tags : [];
+  const pipelineTrace = result.system?.pipeline_trace || {};
+  const semanticEvidence = pipelineTrace.semantic_evidence || {};
+  const availableSemantics = new Set((run.ocr_pages || []).flatMap((page) => page?.items || []).map((item) => semanticForText(item.text, semanticEvidence)).filter(Boolean));
   if (Array.isArray(run.ocr_pages)) OCR_PREVIEW_CONTEXT.set(run.ocr_pages, {
     diagnostics: run.ocr_diagnostics,
     prediction: result.system?.prediction,
@@ -341,7 +407,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
       anchor.href = url; anchor.download = `finance-receipt-${run.record_id}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
     } finally { setExportingExcel(false); }
   };
-  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 파이프라인</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}<details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded /></div>}</article>;
+  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section className="semantic-image-panel"><h3>1. 입력 이미지 · 의미별 OCR 박스 · 클릭해서 확대</h3><EvaluationSemanticLegend active={activeSemantic} available={availableSemantics} onChange={setActiveSemantic} /><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 파이프라인</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><EvaluationExtractionInsights prediction={result.system?.prediction || {}} trace={pipelineTrace} pages={run.ocr_pages} onSemanticSelect={setActiveSemantic} /><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}<details><summary>OCR 영향 상세 보기</summary><OcrImpact impact={impact} /></details>{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /></div>}</article>;
 }
 
 function PipelineEmpty() {

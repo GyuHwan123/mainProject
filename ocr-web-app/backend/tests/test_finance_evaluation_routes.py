@@ -10,8 +10,8 @@ from app.services.finance_pipeline import FINANCE_PIPELINE_VERSION  # noqa: E402
 
 
 class FinanceEvaluationRouteTests(unittest.TestCase):
-    def test_current_semantic_receipt_pipeline_is_v2(self):
-        self.assertEqual(FINANCE_PIPELINE_VERSION, "v2.0")
+    def test_current_semantic_receipt_pipeline_is_v2_5(self):
+        self.assertEqual(FINANCE_PIPELINE_VERSION, "v2.5")
 
     def test_record_prediction_preserves_structured_schema_and_quantity(self):
         prediction, raw = _prediction_from_finance_record({

@@ -634,6 +634,68 @@ $blue: #1f5f94;
     line-height: 1;
   }
 }
+
+.evaluation-semantic-legend {
+  padding: 8px 9px;
+  display: grid;
+  gap: 6px;
+  background: #fff;
+  border-bottom: 1px solid #e1e8f0;
+  > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  strong { color: #314a63; font-size: 9px; }
+  small { color: #8a98a8; font-size: 7px; }
+  nav { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { padding: 4px 6px; display: inline-flex; align-items: center; gap: 4px; color: #5c6f84; background: #fff; border: 1px solid #d9e2ec; border-radius: 5px; font-size: 7px; font-weight: 750; cursor: pointer; }
+  button i { width: 6px; height: 6px; background: var(--semantic-color); border-radius: 2px; }
+  button:first-child::before { content: ''; width: 6px; height: 6px; background: #91a4b8; border-radius: 2px; }
+  button.active { color: #174f7d; border-color: var(--semantic-color, #6f9fc7); box-shadow: inset 0 0 0 1px var(--semantic-color, #6f9fc7); }
+  button:disabled { opacity: .32; cursor: default; }
+}
+.ocr-boxed-image .eval-bbox-overlay.semantic {
+  background: color-mix(in srgb, var(--semantic-color) 28%, transparent);
+  border: 2px solid var(--semantic-color);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--semantic-color) 38%, transparent);
+}
+.ocr-boxed-image .eval-bbox-overlay.semantic-muted { opacity: .1; }
+
+.evaluation-extraction-insights {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: 1fr 1.25fr 1fr;
+  gap: 10px;
+  > article { min-width: 0; overflow: hidden; background: #fff; border: 1px solid #dfe7f0; border-radius: 9px; }
+  article > header { padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-bottom: 1px solid #e7edf3; }
+  header strong, header small { display: block; }
+  header strong { color: #253f58; font-size: 10px; }
+  header small { margin-top: 2px; color: #8996a6; font-size: 7px; }
+  header > span { color: $blue; font-size: 8px; font-weight: 800; white-space: nowrap; }
+}
+.evaluation-key-info dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.evaluation-key-info dl button { min-width: 0; padding: 8px 9px; display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px; text-align: left; background: #fff; border: 0; border-bottom: 1px solid #edf1f5; border-left: 3px solid var(--semantic-color); cursor: pointer; }
+.evaluation-key-info dt { color: #617287; font-size: 7px; font-weight: 800; }
+.evaluation-key-info dd { min-width: 0; margin: 0; overflow: hidden; color: #263b52; font-size: 8px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+.evaluation-item-info > div { overflow-x: auto; }
+.evaluation-item-info table { min-width: 420px; width: 100%; border-collapse: collapse; }
+.evaluation-item-info th, .evaluation-item-info td { padding: 7px 8px; border-right: 1px solid #e5ebf1; border-bottom: 1px solid #e5ebf1; font-size: 7px; }
+.evaluation-item-info th { color: #52667d; background: #f4f7fa; }
+.evaluation-item-info td { color: #2d4259; text-align: right; }
+.evaluation-item-info td:first-child { text-align: left; font-weight: 750; }
+.evaluation-item-info td small { display: block; margin-top: 2px; color: #8b98a7; font-size: 6px; font-weight: 400; }
+.evaluation-item-info > div > p { padding: 18px; color: #8b98a7; font-size: 8px; text-align: center; }
+.evaluation-confidence-body { padding: 12px; display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; }
+.evaluation-confidence-ring { width: 70px; height: 70px; display: grid; place-content: center; justify-items: center; border-radius: 50%; background: radial-gradient(circle, #fff 56%, transparent 58%), conic-gradient(#15966f var(--confidence), #dfe9e5 0); }
+.evaluation-confidence-ring strong { color: #17624d; font-size: 15px; }
+.evaluation-confidence-ring small { color: #788a84; font-size: 6px; }
+.evaluation-confidence-body dl { margin: 0; display: grid; gap: 4px; }
+.evaluation-confidence-body dl div { padding: 6px 7px; display: flex; justify-content: space-between; gap: 6px; background: #f5f8fb; border-radius: 5px; }
+.evaluation-confidence-body dt { color: #68798b; font-size: 7px; }
+.evaluation-confidence-body dd { margin: 0; color: #2c4258; font-size: 7px; font-weight: 800; }
+.evaluation-confidence-body dd.ok { color: #14835b; }
+.evaluation-confidence-body dd.warning { color: #b16a1d; }
+
+@media (max-width: 1100px) {
+  .evaluation-extraction-insights { grid-template-columns: 1fr; }
+}
 .ocr-sheet-mini {
   overflow: auto;
   background: white;
@@ -1120,8 +1182,85 @@ $blue: #1f5f94;
   margin: 0;
   display: block;
   article {
+    position: relative;
     height: 100%;
     box-sizing: border-box;
+  }
+}
+.batch-insight-grid .batch-selection-metrics article {
+  overflow: visible;
+}
+.selection-metric-title {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  button {
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    color: #718198;
+    background: transparent;
+    cursor: help;
+    &:hover,
+    &:focus-visible {
+      color: $blue;
+      background: #eaf2f9;
+      outline: none;
+    }
+  }
+  &:hover .selection-score-tooltip,
+  &:focus-within .selection-score-tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+}
+.selection-score-tooltip {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(360px, calc(100vw - 64px));
+  padding: 12px 14px;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(-4px);
+  display: grid;
+  gap: 5px;
+  border: 1px solid #d7e1eb;
+  border-radius: 9px;
+  color: #52667d;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(31, 55, 82, 0.16);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.55;
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+  pointer-events: none;
+  strong,
+  b,
+  span,
+  em {
+    display: block;
+  }
+  strong {
+    color: #28445f;
+    font-size: 12px;
+  }
+  b {
+    color: #173e68;
+  }
+  em {
+    margin-top: 2px;
+    color: #526b83;
+    font-style: normal;
+    font-weight: 750;
   }
 }
 .batch-selection-metrics .batch-insight-empty {

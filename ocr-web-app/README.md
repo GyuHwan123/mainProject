@@ -8,6 +8,7 @@ PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + F
 - [Supabase enum 준비](docs/01-supabase-enums.sql)
 - [Supabase 최신 통합 스키마](docs/02-supabase-schema.sql)
 - [Supabase 적용 결과 점검](docs/03-supabase-inspection.sql)
+- [재무 파이프라인 v2.5 적용](docs/06-finance-pipeline-v2-5.sql)
 
 ## 1. 프로젝트 구성
 

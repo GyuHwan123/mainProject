@@ -14,14 +14,14 @@ SUMMARY_ITEM_PATTERN = re.compile(
     r"합계|소계|결제|승인|공급가액|부가세|세액|할인|쿠폰|적립금|거스름돈|총\s*구매",
     re.IGNORECASE,
 )
-DISCOUNT_PATTERN = re.compile(r"할인|쿠폰|적립금", re.IGNORECASE)
+DISCOUNT_PATTERN = re.compile(r"할인|쿠폰|적립금|캐시백", re.IGNORECASE)
 TOTAL_PATTERN = re.compile(r"합계|소계|결제|승인|총\s*구매|공급가액|부가세|세액", re.IGNORECASE)
 FIELD_LABEL_PATTERNS = {
     "total_amount": re.compile(r"합계|결제|승인|받을\s*금액|총\s*구매", re.IGNORECASE),
     "supply_amount": re.compile(r"공급가액|공급액", re.IGNORECASE),
     "tax_amount": re.compile(r"부가세|세액", re.IGNORECASE),
     "discount_amount": re.compile(r"할인|쿠폰", re.IGNORECASE),
-    "total_quantity": re.compile(r"총\s*수량", re.IGNORECASE),
+    "total_quantity": re.compile(r"총\s*(?:수량|매수)", re.IGNORECASE),
 }
 CATEGORY_EVIDENCE_PATTERNS = {
     "교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
@@ -70,7 +70,28 @@ def _ocr_digit_confusion(expected: Any, observed: Any) -> bool:
         return False
     if not any(character.isdigit() for character in expected_compact):
         return False
-    return observed_compact.translate(OCR_DIGIT_CONFUSIONS) == expected_compact
+    return (
+        observed_compact.translate(OCR_DIGIT_CONFUSIONS)
+        == expected_compact.translate(OCR_DIGIT_CONFUSIONS)
+    )
+
+
+def _quantity_decimal_separator_lost(expected: Any, observed: Any) -> bool:
+    def quantity_value(value: Any) -> float | None:
+        try:
+            cleaned = re.sub(r"[^0-9.+-]", "", str(value).replace(",", ""))
+            return float(cleaned) if cleaned else None
+        except (TypeError, ValueError):
+            return None
+
+    expected_number = quantity_value(expected)
+    observed_number = quantity_value(observed)
+    if expected_number is None or observed_number is None or expected_number <= 0 or observed_number <= 0:
+        return False
+    return (
+        abs(expected_number * 1000 - observed_number) < 0.01
+        or abs(observed_number * 1000 - expected_number) < 0.01
+    )
 
 
 def _value_equal(field: str, left: Any, right: Any) -> bool:
@@ -221,7 +242,17 @@ def analyze_finance_evaluation_failure(
         if field == "items":
             continue
         actual = prediction.get(field)
-        if expected != actual and normalization_equivalent(field, expected, actual):
+        if (
+            field == "total_quantity"
+            and _quantity_decimal_separator_lost(expected, actual)
+            and _text_contains(ocr_text, field, expected)
+        ):
+            tags.append(_tag(
+                "NORMALIZATION_ERROR", "DECIMAL_SEPARATOR_LOST", field=field, confidence=0.99,
+                message="OCR의 총수량 소수점이 숫자 정규화 과정에서 제거됐습니다.",
+                evidence={"expected": expected, "actual": actual},
+            ))
+        elif field not in NUMBER_FIELDS and expected != actual and normalization_equivalent(field, expected, actual):
             tags.append(_tag(
                 "NORMALIZATION_ERROR", "SEMANTIC_EQUIVALENCE", field=field, confidence=1.0,
                 message="표현은 다르지만 정규화하면 같은 의미인 값입니다.",
@@ -237,7 +268,17 @@ def analyze_finance_evaluation_failure(
         actual_item = final_items[actual_index]
         for field, expected in truth_item.items():
             actual = actual_item.get(field)
-            if expected != actual and normalization_equivalent(field, expected, actual):
+            if (
+                field == "quantity"
+                and _quantity_decimal_separator_lost(expected, actual)
+                and _text_contains(ocr_text, field, expected)
+            ):
+                tags.append(_tag(
+                    "NORMALIZATION_ERROR", "DECIMAL_SEPARATOR_LOST", scope=f"items[{index}]", field=field, confidence=0.99,
+                    message="OCR의 수량 소수점이 숫자 정규화 과정에서 제거됐습니다.",
+                    evidence={"expected": expected, "actual": actual},
+                ))
+            elif field not in NUMBER_FIELDS and expected != actual and normalization_equivalent(field, expected, actual):
                 tags.append(_tag(
                     "NORMALIZATION_ERROR", "SEMANTIC_EQUIVALENCE", scope=f"items[{index}]", field=field, confidence=1.0,
                     message="품목 표현은 다르지만 정규화하면 같은 의미인 값입니다.",
@@ -276,6 +317,12 @@ def analyze_finance_evaluation_failure(
             continue
         actual = prediction.get(field)
         if _value_equal(field, expected, actual):
+            continue
+        if (
+            field == "total_quantity"
+            and _quantity_decimal_separator_lost(expected, actual)
+            and _text_contains(ocr_text, field, expected)
+        ):
             continue
         if field == "expense_category" and _category_evidence_found(ocr_text, expected):
             tags.append(_tag(
@@ -401,6 +448,12 @@ def analyze_finance_evaluation_failure(
                 ("total_amount", "ITEM_AMOUNT_ERROR"),
             ):
                 if field not in truth_item or _value_equal(field, truth_item.get(field), comparison_source.get(field)):
+                    continue
+                if (
+                    field == "quantity"
+                    and _quantity_decimal_separator_lost(truth_item.get(field), comparison_source.get(field))
+                    and _text_contains(ocr_text, field, truth_item.get(field))
+                ):
                     continue
                 category = "LLM_ERROR"
                 confidence = 0.94 if candidate and _value_equal(field, truth_item.get(field), candidate.get(field)) else 0.7

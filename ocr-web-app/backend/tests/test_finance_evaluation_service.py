@@ -309,6 +309,37 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
         self.assertTrue(score["complete_match"])
 
+    def test_matches_taxi_fee_and_corporate_taxi_to_taxi_use(self):
+        for predicted_name in ("택시 이용료", "법인택시"):
+            with self.subTest(predicted_name=predicted_name):
+                score = score_fields(
+                    {"items": [{"name": predicted_name, "quantity": 1, "total_amount": 5300}]},
+                    {"items": [{"name": "택시 이용", "quantity": 1, "total_amount": 5300}]},
+                )
+
+                self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+                self.assertTrue(score["complete_match"])
+
+    def test_matches_tmoney_mobility_names_to_intercity_bus_ticket(self):
+        for predicted_name in ("티머니 모빌리티", "티머니 모빌리티 승차권"):
+            with self.subTest(predicted_name=predicted_name):
+                score = score_fields(
+                    {"items": [{"name": predicted_name, "quantity": 1, "total_amount": 16200}]},
+                    {"items": [{"name": "시외/고속버스 승차권", "quantity": 1, "total_amount": 16200}]},
+                )
+
+                self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+                self.assertTrue(score["complete_match"])
+
+    def test_matches_soil_brand_name_to_generic_fuel_item(self):
+        score = score_fields(
+            {"items": [{"name": "에쓰오일", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}]},
+            {"items": [{"name": "유류", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+        self.assertTrue(score["complete_match"])
+
     def test_matches_card_approval_and_card_payment_method(self):
         score = score_fields({"payment_method": "카드승인"}, {"payment_method": "카드"})
 

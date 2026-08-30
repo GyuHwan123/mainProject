@@ -7,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance import (  # noqa: E402
     EXPENSE_CATEGORIES,
+    _classify_item_structure,
+    _item_parser_profile,
     _classify_receipt_with_model,
     _normalize,
     _normalize_expense_category,
@@ -46,10 +48,32 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_normalize_expense_category("생활/식비"), "식비")
         self.assertEqual(_normalize_expense_category("식비/생활"), "식비")
         self.assertEqual(_normalize_expense_category("식비/쇼핑"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/주류"), "식비/주류")
+        self.assertEqual(_normalize_expense_category("식비/주류"), "식비")
+        self.assertEqual(_normalize_expense_category("식비/주류", "카스 맥주 2캔"), "식비/주류")
         self.assertEqual(_normalize_expense_category("모델이 만든 새 분류"), "기타")
         normalized = _normalize({"expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
         self.assertEqual(normalized["expense_category"], "기타")
+
+    def test_requires_explicit_alcohol_evidence_for_food_and_alcohol_category(self):
+        food = _normalize(
+            {"expense_category": "식비/주류", "items": [{"name": "초콜릿", "quantity": 2, "total_amount": 6900}]},
+            "receipt.jpg",
+            "GS25 초콜릿 2개 결제금액 6,900원",
+        )
+        alcohol = _normalize(
+            {"expense_category": "식비/주류", "items": [{"name": "와인", "quantity": 1, "total_amount": 19000}]},
+            "receipt.jpg",
+            "레드 와인 1병 결제금액 19,000원",
+        )
+        non_alcohol = _normalize(
+            {"expense_category": "식비/주류", "items": [{"name": "무알코올 음료", "quantity": 1, "total_amount": 3000}]},
+            "receipt.jpg",
+            "무알코올 음료 결제금액 3,000원",
+        )
+
+        self.assertEqual(food["expense_category"], "식비")
+        self.assertEqual(alcohol["expense_category"], "식비/주류")
+        self.assertEqual(non_alcohol["expense_category"], "식비")
 
     def test_explicit_final_amount_overrides_model_selected_item_amount(self):
         ocr = "상품명 금액\n샤프 8,300\n최종 결제금액 56,300원"
@@ -72,6 +96,17 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("품목 행 후보", prompt)
         self.assertIn("품목 근거", items_prompt)
         self.assertIn('"raw_cells":["볼펜","2","1,000"]', items_prompt)
+
+        self.assertIn('"evidence_bundles"', items_prompt)
+        self.assertIn('"normalized_numbers"', items_prompt)
+        self.assertIn('"arithmetic_relations"', items_prompt)
+        self.assertIn('"parser_hypothesis"', items_prompt)
+        self.assertIn('"is_binding":false', items_prompt)
+        self.assertIn('"raw_cells_are_authoritative":true', items_prompt)
+        self.assertNotIn('"resolved_fields"', items_prompt)
+        self.assertIn('"parser_profile":"3-column_single-line_flat"', items_prompt)
+        self.assertIn('"applicable_rules"', items_prompt)
+        self.assertIn('"common_rules"', items_prompt)
 
     def test_semantic_evidence_uses_line_ids_and_allows_multiple_roles(self):
         ocr = "문구점 사업자번호 123-45-67890\n볼펜 2 1,000 2,000\n결제금액 신용카드 2,000원"
@@ -153,8 +188,8 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         prompt = _receipt_items_prompt("총품목/총수량 총구매금액\n1/1 7,900", [{
             "page": 1, "tables": [{"rows": [["USB", "7,900"]]}],
         }])
-        self.assertIn('"rel":"H"', prompt)
-        self.assertIn('"why":["T","A","C","S"]', prompt)
+        self.assertIn('"reliability":"H"', prompt)
+        self.assertIn('"reasons":["T","A","C","S"]', prompt)
 
     async def test_uses_strict_fast_path_before_item_model_for_grounded_candidates(self):
         pages = [{"page": 1, "tables": [{"rows": [
@@ -169,6 +204,39 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["llm_trace"]["items_call_status"], "skipped_grounded_fast_path")
         self.assertIn("summary_latency_ms", result["llm_trace"])
         self.assertIn("items_prompt_chars", result["llm_trace"])
+
+    def test_classifies_item_structure_as_independent_attributes(self):
+        structure = _classify_item_structure([{
+            "source": "discounted_item_block", "rel": "H",
+            "name_candidate": "coffee", "quantity_candidate": 2,
+            "unit_price_candidate": 4000, "amount_candidate": 8000,
+            "option_candidates": ["extra shot"],
+        }])
+
+        self.assertEqual(structure, {
+            "column_schema": "4-column",
+            "layout": "multi-line",
+            "relationship": "parent-child",
+            "confidence": "high",
+        })
+
+    def test_assigns_only_bundle_specific_parser_rules(self):
+        two_column = _item_parser_profile({
+            "source": "table", "raw_cells": ["coffee", "5,000"],
+            "name_candidate": "coffee", "amount_candidate": 5000,
+        })
+        parent_child = _item_parser_profile({
+            "source": "discounted_item_block",
+            "raw_cells": ["extra shot", "1,000"],
+            "name_candidate": "extra shot", "amount_candidate": 1000,
+            "option_candidates": ["extra shot"],
+        })
+
+        self.assertEqual(two_column["profile"], "2-column_single-line_flat")
+        self.assertTrue(any("Do not default quantity" in rule for rule in two_column["rules"]))
+        self.assertFalse(any("four observed cells" in rule for rule in two_column["rules"]))
+        self.assertEqual(parent_child["profile"], "2-column_multi-line_parent-child")
+        self.assertTrue(any("preceding parent" in rule for rule in parent_child["rules"]))
 
     def test_strict_grounded_fast_path_requires_complete_exact_evidence(self):
         candidates = [{
@@ -375,6 +443,229 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(normalized["payment_method"], "현금")
 
+    def test_derives_total_quantity_from_resolved_item_quantities(self):
+        normalized = _normalize(
+            {
+                "doc_type": "TRAVEL_EXPENSE",
+                "expense_category": "교통",
+                "merchant": "개인택시",
+                "total_amount": 96200,
+                "items": [{
+                    "name": "택시 이용",
+                    "quantity": 1,
+                    "unit_price": 96200,
+                    "total_amount": 96200,
+                }],
+            },
+            "receipt_005.jpg",
+            "개인택시 현금결제 96,200원",
+        )
+
+        self.assertEqual(normalized["structured_data"]["total_quantity"], 1)
+
+    def test_does_not_derive_total_quantity_when_an_item_quantity_is_missing(self):
+        normalized = _normalize(
+            {
+                "items": [
+                    {"name": "상품 A", "quantity": 1, "total_amount": 1000},
+                    {"name": "상품 B", "quantity": None, "total_amount": 2000},
+                ],
+                "total_amount": 3000,
+            },
+            "receipt.jpg",
+            "결제금액 3,000원",
+        )
+
+        self.assertIsNone(normalized["structured_data"].get("total_quantity"))
+
+    def test_rejects_cashback_and_fuel_discount_rows_returned_as_items(self):
+        normalized = _normalize(
+            {
+                "items": [
+                    {"name": "보통 휘발유", "quantity": "20.994", "unit_price": 1429, "total_amount": 30000},
+                    {"name": "자동 캐시백", "quantity": 1, "total_amount": 840},
+                    {"name": "할인 전 주유단가", "quantity": 1, "total_amount": 1469},
+                ],
+                "total_amount": 30000,
+                "item_extraction_diagnostics": {"candidates": []},
+            },
+            "receipt_011.jpg",
+            "보통 휘발유 1,429 X 20.994 30,000\n자동 캐시백 -840원\n할인 전 주유단가 1,469원",
+        )
+
+        structured = normalized["structured_data"]
+        self.assertEqual([item["name"] for item in structured["items"]], ["보통 휘발유"])
+        self.assertEqual(structured["items"][0]["quantity"], 20.994)
+        self.assertEqual(len(structured["item_extraction_diagnostics"]["rejected_adjustment_items"]), 2)
+
+    def test_excludes_cashback_rows_from_item_candidates(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "text": "보통 휘발유 1,429 20.994 30,000\n자동 캐시백 -840원",
+            "tables": [{"rows": [
+                ["보통 휘발유", "1,429", "20.994", "30,000"],
+                ["자동 캐시백", "1", "840", "840"],
+            ]}],
+        }])
+
+        self.assertEqual([candidate["name_candidate"] for candidate in candidates], ["보통 휘발유"])
+        self.assertEqual(candidates[0]["quantity_candidate"], 20.994)
+
+    def test_discounted_item_pair_preserves_explicit_quantity_column(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "text": "상품 A 3,000 2\n할인 -200 2,800",
+            "tables": [{
+                "columns": ["name", "unit_price", "quantity"],
+                "rows": [
+                    ["상품 A", "3,000", "2"],
+                    ["할인", "-200", "2,800"],
+                ],
+            }],
+        }])
+
+        self.assertEqual(candidates[0]["quantity_candidate"], 2)
+        self.assertEqual(candidates[0]["quantity_resolution"], "explicit_table_column")
+
+    def test_discounted_item_pair_uses_unique_arithmetic_quantity_without_headers(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "text": "상품 B 1,500 2 3,000\n할인 -200 2,800",
+            "tables": [{"rows": [
+                ["상품 B", "1,500", "2", "3,000"],
+                ["할인", "-200", "2,800"],
+            ]}],
+        }])
+
+        self.assertEqual(candidates[0]["quantity_candidate"], 2)
+        self.assertEqual(candidates[0]["quantity_resolution"], "discount_block_arithmetic")
+
+    def test_discounted_item_pair_keeps_single_item_default_without_quantity_evidence(self):
+        candidates = _receipt_item_candidates([{
+            "page": 1,
+            "text": "상품 C 3,000\n할인 -200 2,800",
+            "tables": [{
+                "columns": ["name", "unit_price"],
+                "rows": [
+                    ["상품 C", "3,000"],
+                    ["할인 -200", "2,800"],
+                ],
+            }],
+        }])
+
+        self.assertEqual(candidates[0]["quantity_candidate"], 1)
+        self.assertEqual(candidates[0]["quantity_resolution"], "single_item_default")
+
+    def test_builds_reliable_multi_line_fuel_sale_candidate(self):
+        text = """농협중앙회 신용매출전표
+카드종류 NH카드/신용승인
+합계금액 72,000원
+초저유황경유 51.8L 1390원"""
+        pages = [{"page": 1, "text": text, "tables": []}]
+
+        raw_candidates = _receipt_item_candidates(pages)
+        candidates, rejected = _reliable_item_candidates(raw_candidates, _receipt_hints(text, "receipt_013.jpg"))
+
+        self.assertFalse(rejected)
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate["candidate_type"], "fuel_sale_item")
+        self.assertEqual(candidate["source"], "fuel_sale_block")
+        self.assertEqual(candidate["name_candidate"], "초저유황경유")
+        self.assertEqual(candidate["quantity_candidate"], 51.8)
+        self.assertEqual(candidate["unit"], "L")
+        self.assertEqual(candidate["unit_price_candidate"], 1390)
+        self.assertEqual(candidate["amount_candidate"], 72000)
+        self.assertEqual(candidate["rel"], "H")
+        self.assertTrue({"F", "A", "S"}.issubset(candidate["why"]))
+
+    def test_uses_fuel_specific_item_prompt_profile(self):
+        text = "합계금액 72,000원\n초저유황경유 51.8L 1390원"
+        prompt = _receipt_items_prompt(text, [{"page": 1, "text": text, "tables": []}])
+
+        self.assertIn('"candidate_type":"fuel_sale_item"', prompt)
+        self.assertIn('"parser_profile":"fuel_sale_item_multi-line_flat"', prompt)
+        self.assertIn("price per litre", prompt)
+        self.assertIn('"tolerance":144', prompt)
+
+    async def test_recovers_fuel_item_when_item_model_fails(self):
+        text = """농협중앙회 신용매출전표
+카드종류 NH카드/신용승인
+합계금액 72,000원
+초저유황경유 51.8L 1390원"""
+        pages = [{"page": 1, "text": text, "tables": []}]
+        responses = ['{"merchant":"속입주유소","total_amount":72000}', ValueError("invalid item json")]
+
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)):
+            result = await _classify_receipt_with_model(text, "receipt_013.jpg", "test-model", pages)
+
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["name"], "초저유황경유")
+        self.assertEqual(result["items"][0]["quantity"], 51.8)
+        self.assertEqual(result["items"][0]["unit"], "L")
+        self.assertEqual(result["items"][0]["unit_price"], 1390)
+        self.assertEqual(result["items"][0]["total_amount"], 72000)
+        self.assertEqual(result["items"][0]["candidate_type"], "fuel_sale_item")
+        self.assertEqual(result["item_extraction_diagnostics"]["fallback_used"], "ocr_candidates_match_receipt_total")
+
+    def test_builds_narrow_unitemized_golf_service_candidate(self):
+        text = """비씨카드 승인
+가맹점 (주)한양컨트리클럽
+합계금액 79,000원"""
+        raw_candidates = _receipt_item_candidates([{"page": 1, "text": text, "tables": []}])
+        candidates, _ = _reliable_item_candidates(raw_candidates, _receipt_hints(text, "receipt_017.jpg"))
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate["structure_type"], "unitemized_charge")
+        self.assertEqual(candidate["candidate_type"], "single_service_charge")
+        self.assertEqual(candidate["service_type"], "golf_course_service")
+        self.assertEqual(candidate["name_candidate"], "컨트리클럽 이용")
+        self.assertEqual(candidate["quantity_candidate"], 1)
+        self.assertEqual(candidate["amount_candidate"], 79000)
+        self.assertEqual(candidate["rel"], "M")
+        self.assertIn("D", candidate["why"])
+
+    def test_uses_unitemized_service_prompt_profile(self):
+        text = "비씨카드 승인\n가맹점 한양컨트리클럽\n합계금액 79,000원"
+        prompt = _receipt_items_prompt(text, [{"page": 1, "text": text, "tables": []}])
+
+        self.assertIn('"structure_type":"unitemized_charge"', prompt)
+        self.assertIn('"service_type":"golf_course_service"', prompt)
+        self.assertIn('"parser_profile":"single_service_charge_unitemized_flat"', prompt)
+
+    async def test_recovers_unitemized_service_when_item_model_fails(self):
+        text = "비씨카드 승인\n가맹점 (주)한양컨트리클럽\n합계금액 79,000원"
+        pages = [{"page": 1, "text": text, "tables": []}]
+        responses = ['{"merchant":"한양컨트리클럽","total_amount":79000}', ValueError("invalid item json")]
+
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)):
+            result = await _classify_receipt_with_model(text, "receipt_017.jpg", "test-model", pages)
+
+        self.assertEqual(len(result["items"]), 1)
+        self.assertEqual(result["items"][0]["name"], "컨트리클럽 이용")
+        self.assertEqual(result["items"][0]["quantity"], 1)
+        self.assertEqual(result["items"][0]["unit"], "회")
+        self.assertEqual(result["items"][0]["total_amount"], 79000)
+        self.assertEqual(result["items"][0]["item_resolution"], "single_service_domain_recovery")
+
+    def test_does_not_infer_unitemized_service_for_generic_or_itemized_receipts(self):
+        generic = "비씨카드 승인\n가맹점 일반상점\n합계금액 79,000원"
+        self.assertFalse(any(
+            candidate.get("candidate_type") == "single_service_charge"
+            for candidate in _receipt_item_candidates([{"page": 1, "text": generic, "tables": []}])
+        ))
+
+        itemized = "한양컨트리클럽\n상품명 수량 금액\n생수 1 1,000\n합계금액 1,000원"
+        self.assertFalse(any(
+            candidate.get("candidate_type") == "single_service_charge"
+            for candidate in _receipt_item_candidates([{
+                "page": 1,
+                "text": itemized,
+                "tables": [{"columns": ["name", "quantity", "amount"], "rows": [["생수", "1", "1,000"]]}],
+            }])
+        ))
+
     def test_explicit_ocr_payment_evidence_overrides_conflicting_llm_value(self):
         cash = _normalize(
             {"payment_method": "신용카드", "items": []},
@@ -430,6 +721,46 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved[0]["name"], "노트")
         self.assertEqual(resolved[0]["raw_model_name"], "판매일시 POS 상품코드 노트")
         self.assertEqual(resolved[0]["name_resolution"], "unique_ocr_amount_match")
+
+    def test_recovers_missing_quantities_only_from_unique_structured_arithmetic_rows(self):
+        resolved = _reconcile_items_with_candidates(
+            [
+                {"name": "LG 모니터", "quantity": None, "unit_price": None, "total_amount": 799000},
+                {"name": "RAZER 마우스", "quantity": None, "unit_price": None, "total_amount": 69900},
+            ],
+            [
+                {
+                    "source": "table", "column_resolution": "header", "name_candidate": "LG 모니터",
+                    "quantity_candidate": 1, "unit_price_candidate": 799000, "amount_candidate": 799000,
+                },
+                {
+                    "source": "table", "column_resolution": "header", "name_candidate": "RAZER 마우스",
+                    "quantity_candidate": 1, "unit_price_candidate": 69900, "amount_candidate": 69900,
+                },
+            ],
+            2,
+        )
+
+        self.assertEqual([item["quantity"] for item in resolved], [1, 1])
+        self.assertEqual([item["unit_price"] for item in resolved], [799000, 69900])
+        self.assertTrue(all(
+            item["quantity_resolution"] == "unique_structured_arithmetic_match"
+            for item in resolved
+        ))
+
+    def test_does_not_recover_quantity_from_unstructured_or_failed_arithmetic_candidate(self):
+        resolved = _reconcile_items_with_candidates(
+            [{"name": "상품", "quantity": None, "unit_price": None, "total_amount": 10000}],
+            [{
+                "source": "ocr_line_unscoped", "column_resolution": "plausibility",
+                "name_candidate": "상품", "quantity_candidate": 2,
+                "unit_price_candidate": 4000, "amount_candidate": 10000,
+            }],
+            1,
+        )
+
+        self.assertIsNone(resolved[0]["quantity"])
+        self.assertIsNone(resolved[0]["unit_price"])
 
     def test_does_not_reconcile_ambiguous_same_price_item_rows(self):
         resolved = _reconcile_items_with_candidates(
@@ -517,6 +848,18 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hints["transaction_date"], "2016-09-18")
         self.assertEqual(normalized["transaction_date"], "2016-09-18")
 
+    def test_prefers_labeled_transaction_date_over_longer_quality_inspection_date(self):
+        ocr = "품질검사일자: 2017-11-09\n거래일시: 18/01/10 18:05:24"
+        hints = _receipt_hints(ocr, "receipt_012.jpg")
+        normalized = _normalize(
+            {"transaction_date": "2017-11-09", "items": []},
+            "receipt_012.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["transaction_date"], "2018-01-10")
+        self.assertEqual(normalized["transaction_date"], "2018-01-10")
+
     def test_limits_items_to_stated_ocr_item_count_without_reinterpreting_them(self):
         ocr = "총품목/총수량 총구매금액\n2/7 81,300"
         items = [{"name": name} for name in ["첫 품목", "두 번째 해석", "오인식 1", "오인식 2", "오인식 3"]]
@@ -543,6 +886,57 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(hints["stated_item_count"], 2)
         self.assertEqual(hints["stated_total_quantity"], 7)
+
+    def test_reads_vertically_flattened_item_and_quantity_summary(self):
+        hints = _receipt_hints(
+            "총품목수 총수량\n2 2\n면세 761,755\n결제대상금액 837,930원",
+            "receipt_018.jpg",
+        )
+
+        self.assertEqual(hints["stated_item_count"], 2)
+        self.assertEqual(hints["stated_total_quantity"], 2)
+
+    def test_does_not_treat_money_as_vertical_total_quantity(self):
+        hints = _receipt_hints(
+            "총품목수 총수량\n2 837,930원",
+            "receipt.jpg",
+        )
+
+        self.assertIsNone(hints["stated_item_count"])
+        self.assertIsNone(hints["stated_total_quantity"])
+
+    def test_reads_ticket_total_count_without_inventing_item_count(self):
+        ocr = "총매수: 2매\n취소매수: 0매\n승인금액: 16,200원"
+        hints = _receipt_hints(ocr, "receipt_007.jpg")
+        normalized = _normalize(
+            {"items": [{"name": "티머니모빌리티 승차권", "quantity": None, "total_amount": 16200}]},
+            "receipt_007.jpg",
+            ocr,
+        )
+
+        self.assertIsNone(hints["stated_item_count"])
+        self.assertEqual(hints["stated_total_quantity"], 2)
+        self.assertEqual(normalized["structured_data"]["total_quantity"], 2)
+
+    def test_sums_ticket_passenger_counts_as_total_quantity(self):
+        ocr = "KTX 125 일반실 입석\n어른 1매, 어린이 0매 | 할인: 0명\n결제금액 50,800원"
+        hints = _receipt_hints(ocr, "receipt_010.jpg")
+        normalized = _normalize(
+            {"items": [{"name": "KTX 125 일반실 승차권", "quantity": None, "total_amount": 50800}]},
+            "receipt_010.jpg",
+            ocr,
+        )
+
+        self.assertEqual(hints["stated_total_quantity"], 1)
+        self.assertEqual(normalized["structured_data"]["total_quantity"], 1)
+
+    def test_prefers_explicit_ticket_total_over_passenger_breakdown(self):
+        hints = _receipt_hints(
+            "총매수: 3매\n성인 1매 어린이 1매",
+            "ticket.jpg",
+        )
+
+        self.assertEqual(hints["stated_total_quantity"], 3)
 
     def test_reads_short_date_with_time_attached_to_day(self):
         hints = _receipt_hints("거래일시: 25/09/2115:47:32", "receipt.jpg")

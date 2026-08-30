@@ -44,18 +44,6 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
         self.assertIn("needs_review", prompt)
 
-<<<<<<< HEAD
-    def test_unknown_expense_category_falls_back_to_miscellaneous(self):
-        self.assertEqual(_normalize_expense_category("취미소품"), "취미/소품")
-        self.assertEqual(_normalize_expense_category("생활/식비"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/생활"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/쇼핑"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/주류"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/주류", "카스 맥주 2캔"), "식비/주류")
-        self.assertEqual(_normalize_expense_category("모델이 만든 새 분류"), "기타")
-        normalized = _normalize({"expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
-        self.assertEqual(normalized["expense_category"], "기타")
-=======
     def test_unknown_expense_category_requires_review_without_guessing(self):
         self.assertEqual(_normalize_expense_category("사무용품"), "소모품비")
         self.assertEqual(_normalize_expense_category("출장숙박"), "출장숙박비")
@@ -65,7 +53,6 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(normalized["expense_category"])
         self.assertIsNone(normalized["document_type"])
         self.assertTrue(normalized["structured_data"]["needs_review"])
->>>>>>> 493443797abf7e1e9a5363261014a1a42d23a980
 
     def test_requires_explicit_alcohol_evidence_for_food_and_alcohol_category(self):
         food = _normalize(

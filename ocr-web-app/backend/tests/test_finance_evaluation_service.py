@@ -83,6 +83,23 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertNotIn("document_type", score["fields"])
         self.assertIn("expense_category", score["fields"])
 
+    def test_normalizes_legacy_ground_truth_categories_to_managed_categories(self):
+        cases = {
+            "취미/여가": "취미/쇼핑",
+            "생활/쇼핑": "취미/소품",
+            "의류/쇼핑": "취미/쇼핑",
+        }
+
+        for ground_truth_category, expected in cases.items():
+            with self.subTest(category=ground_truth_category):
+                truth = normalize_ground_truth({"카테고리": ground_truth_category})
+                self.assertEqual(truth["expense_category"], expected)
+                score = score_fields(
+                    {"expense_category": expected},
+                    {"expense_category": ground_truth_category},
+                )
+                self.assertTrue(score["fields"]["expense_category"]["correct"])
+
     def test_calculates_test01_test20_weighted_selection_rubric(self):
         truth = normalize_ground_truth({
             "가게명": "테스트 상점", "구매일자": "2025-10-03", "총 물품 수량": 1,

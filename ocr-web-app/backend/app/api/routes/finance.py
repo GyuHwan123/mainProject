@@ -42,8 +42,16 @@ def _normalize_expense_category(value: Any) -> str:
     if not raw:
         return "기타"
     compact = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
-    if compact in {"생활식비", "식비생활", "식비쇼핑"}:
-        return "식비"
+    aliases = {
+        "생활식비": "식비",
+        "식비생활": "식비",
+        "식비쇼핑": "식비",
+        "취미여가": "취미/쇼핑",
+        "생활쇼핑": "취미/소품",
+        "의류쇼핑": "취미/쇼핑",
+    }
+    if compact in aliases:
+        return aliases[compact]
     by_compact = {re.sub(r"[^0-9A-Za-z가-힣]", "", category).lower(): category for category in EXPENSE_CATEGORIES}
     return by_compact.get(compact, "기타")
 

@@ -34,21 +34,19 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         prompt = _receipt_prompt("브러쉬드 알파카 실", "receipt.jpg")
 
         self.assertIn("고정 목록 중 정확히 하나", prompt)
-        self.assertIn("취미/소품", prompt)
+        self.assertIn("복리후생비(간식)", prompt)
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
+        self.assertIn("needs_review", prompt)
 
-    def test_unknown_expense_category_falls_back_to_miscellaneous(self):
-        self.assertEqual(_normalize_expense_category("취미소품"), "취미/소품")
-        self.assertEqual(_normalize_expense_category("생활/식비"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/생활"), "식비")
-        self.assertEqual(_normalize_expense_category("식비/쇼핑"), "식비")
-        self.assertEqual(_normalize_expense_category("취미/여가"), "취미/쇼핑")
-        self.assertEqual(_normalize_expense_category("생활/쇼핑"), "취미/소품")
-        self.assertEqual(_normalize_expense_category("의류/쇼핑"), "취미/쇼핑")
-        self.assertEqual(_normalize_expense_category("식비/주류"), "식비/주류")
-        self.assertEqual(_normalize_expense_category("모델이 만든 새 분류"), "기타")
-        normalized = _normalize({"expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
-        self.assertEqual(normalized["expense_category"], "기타")
+    def test_unknown_expense_category_requires_review_without_guessing(self):
+        self.assertEqual(_normalize_expense_category("사무용품"), "소모품비")
+        self.assertEqual(_normalize_expense_category("출장숙박"), "출장숙박비")
+        self.assertIsNone(_normalize_expense_category("취미/쇼핑"))
+        self.assertIsNone(_normalize_expense_category("모델이 만든 새 분류"))
+        normalized = _normalize({"doc_type": "EXPENSE_REPORT", "expense_category": "임의 카테고리"}, "receipt.jpg", "상호 영수증")
+        self.assertIsNone(normalized["expense_category"])
+        self.assertIsNone(normalized["document_type"])
+        self.assertTrue(normalized["structured_data"]["needs_review"])
 
     def test_explicit_final_amount_overrides_model_selected_item_amount(self):
         ocr = "상품명 금액\n샤프 8,300\n최종 결제금액 56,300원"
@@ -141,7 +139,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_recovers_finance_values_and_filename_context(self):
         hints = _receipt_hints(SAMPLE_OCR, "서울출장_식비.jpg")
         self.assertEqual(hints["document_type"], "TRAVEL_EXPENSE")
-        self.assertEqual(hints["expense_category"], "일비/식대")
+        self.assertEqual(hints["expense_category"], "출장식비")
         self.assertEqual(hints["transaction_date"], "2025-10-05")
         self.assertEqual(hints["supply_amount"], 28545)
         self.assertEqual(hints["tax_amount"], 2855)
@@ -171,7 +169,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         normalized = _normalize(
             {
                 "document_type": "EXPENSE_REPORT",
-                "expense_category": "식비",
+                "expense_category": "출장식비",
                 "merchant": "광화문점",
                 "transaction_date": None,
                 "supply_amount": 28.545,
@@ -306,7 +304,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
     def test_normalizes_trained_doc_type_key_for_internal_workbook_schema(self):
         normalized = _normalize(
-            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통비", "total_amount": 96200},
+            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "여비교통비", "total_amount": 96200},
             "receipt_005.jpg",
             "결제금액 96,200원",
         )
@@ -316,7 +314,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
     def test_keeps_legacy_document_type_compatible(self):
         normalized = _normalize(
-            {"document_type": "WELFARE_BENEFIT", "total_amount": 10000},
+            {"document_type": "WELFARE_BENEFIT", "expense_category": "복리후생비(간식)", "total_amount": 10000},
             "receipt.jpg",
             "결제금액 10,000원",
         )

@@ -489,6 +489,7 @@ export default function OCRPage() {
   const [financeRecords, setFinanceRecords] = useState(() => readReceiptWorkspace().financeRecords);
   const [financeReviewOpen, setFinanceReviewOpen] = useState(false);
   const [financeReviewDraft, setFinanceReviewDraft] = useState(null);
+  const [financeTaxonomy, setFinanceTaxonomy] = useState({ document_types: [], expense_categories: [], category_to_document_type: {} });
   const [savedFinanceOpen, setSavedFinanceOpen] = useState(false);
   const [savedFinanceRecords, setSavedFinanceRecords] = useState([]);
   const [savedFinanceLoading, setSavedFinanceLoading] = useState(false);
@@ -511,6 +512,14 @@ export default function OCRPage() {
   useEffect(() => {
     saveReceiptRecords(financeRecord, financeRecords);
   }, [financeRecord, financeRecords]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/finance/taxonomy')
+      .then(({ data }) => { if (active) setFinanceTaxonomy(data); })
+      .catch(() => { if (active) setFinanceTaxonomy({ document_types: [], expense_categories: [], category_to_document_type: {} }); });
+    return () => { active = false; };
+  }, []);
 
   const openReceiptBatchEvaluation = async (fileList) => {
     const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
@@ -1216,6 +1225,10 @@ export default function OCRPage() {
 
   const confirmFinanceRecord = async () => {
     if (!financeRecord || financeRecord.status === 'CONFIRMED') return;
+    if (!financeRecord.document_type || !financeRecord.expense_category) {
+      setError('문서 유형과 카테고리를 검토 화면에서 선택해 주세요.');
+      return;
+    }
     let nextBatchFile = null;
     let completedEvaluationEntries = null;
     setLoading(true);
@@ -1223,7 +1236,7 @@ export default function OCRPage() {
     try {
       const { data } = await apiClient.patch(`/finance/records/${financeRecord.id}`, {
         document_type: financeRecord.document_type,
-        expense_category: financeRecord.expense_category || '기타',
+        expense_category: financeRecord.expense_category,
         merchant: financeRecord.merchant || null,
         transaction_date: financeRecord.transaction_date || null,
         supply_amount: Number(financeRecord.supply_amount || 0),
@@ -1452,8 +1465,8 @@ export default function OCRPage() {
             <header><div><span>AI FINANCE AGENT</span><h2 id="finance-review-title">추출 정보 검토·수정</h2><p>AI가 선별한 값을 확인하고 필요한 항목만 수정해주세요.</p></div><button type="button" aria-label="닫기" disabled={loading} onClick={() => setFinanceReviewOpen(false)}><IoCloseOutline /></button></header>
             <form onSubmit={saveFinanceReview}>
               <div className="finance-review-grid">
-                <label><span>문서 유형</span><select value={financeReviewDraft.document_type} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, document_type: event.target.value }))}>{Object.entries(FINANCE_DOCUMENTS).map(([value, definition]) => <option key={value} value={value}>{definition.title}</option>)}</select></label>
-                <label><span>카테고리</span><input required maxLength="100" value={financeReviewDraft.expense_category} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))} /></label>
+                <label><span>문서 유형</span><select required value={financeReviewDraft.document_type || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, document_type: event.target.value, expense_category: '' }))}><option value="" disabled>선택</option>{Object.entries(FINANCE_DOCUMENTS).filter(([value]) => !financeTaxonomy.document_types.length || financeTaxonomy.document_types.includes(value)).map(([value, definition]) => <option key={value} value={value}>{definition.title}</option>)}</select></label>
+                <label><span>카테고리</span><select required value={financeReviewDraft.expense_category || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))}><option value="" disabled>선택</option>{financeTaxonomy.expense_categories.filter((category) => !financeReviewDraft.document_type || financeTaxonomy.category_to_document_type[category] === financeReviewDraft.document_type).map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label><span>상호(가맹점)</span><input maxLength="200" value={financeReviewDraft.merchant} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, merchant: event.target.value }))} /></label>
                 <label><span>결제일</span><input type="date" value={financeReviewDraft.transaction_date} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, transaction_date: event.target.value }))} /></label>
                 <label><span>공급가액</span><input type="number" min="0" value={financeReviewDraft.supply_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, supply_amount: event.target.value }))} /></label>

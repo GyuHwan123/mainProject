@@ -3,24 +3,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from app.constants.finance_taxonomy import normalize_expense_category
+
 
 def _compact(value: Any) -> str:
     return re.sub(r"[^0-9a-z가-힣]", "", str(value or "").lower())
 
-
-CATEGORY_ALIASES = {
-    "교통": "교통",
-    "교통비": "교통",
-    "식비": "식비",
-    "생활식비": "식비",
-    "식비생활": "식비",
-    "식비쇼핑": "식비",
-    "취미여가": "취미쇼핑",
-    "취미쇼핑": "취미쇼핑",
-    "생활쇼핑": "취미소품",
-    "취미소품": "취미소품",
-    "의류쇼핑": "취미쇼핑",
-}
 
 MERCHANT_ALIASES = {
     "korail": "한국철도공사",
@@ -35,7 +23,8 @@ def semantic_normalized_value(field: str, value: Any) -> str | None:
     if not compact:
         return None
     if field == "expense_category":
-        return CATEGORY_ALIASES.get(compact, compact)
+        canonical = normalize_expense_category(value)
+        return _compact(canonical) if canonical else compact
     if field == "merchant":
         return MERCHANT_ALIASES.get(compact, compact)
     if field == "name":

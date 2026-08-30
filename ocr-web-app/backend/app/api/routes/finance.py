@@ -14,6 +14,13 @@ from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
 from app.api.routes.chatbot import generate
+from app.constants.finance_taxonomy import (
+    ALLOWED_DOCUMENT_TYPES,
+    ALLOWED_EXPENSE_CATEGORIES,
+    CATEGORY_TO_DOCUMENT_TYPE,
+    normalize_expense_category,
+    validate_classification,
+)
 from app.core.config import settings
 from app.models.user import User
 from app.services.finance_workbook_service import build_finance_workbook
@@ -21,39 +28,18 @@ from app.services.supabase_service import supabase_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
-EXPENSE_CATEGORIES = (
-    "기타", "교통", "교통비", "주유/교통", "숙박비", "일비/식대",
-    "식비", "식비/주류",
-    "도서", "교육비", "의료", "복리후생", "문화", "레저",
-    "미용", "미용/생활", "전자제품", "전자제품/문구", "사무용품",
-    "소프트웨어", "취미/쇼핑", "취미/소품",
-)
-FINANCE_PROMPT_VERSION = "receipt-v4-fixed-expense-categories"
+DocumentType = Literal["EXPENSE_REPORT", "PURCHASE_REQUEST", "TRAVEL_EXPENSE", "WELFARE_BENEFIT"]
+EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES  # Backward-compatible import name.
+FINANCE_PROMPT_VERSION = "receipt-v5-sft-canonical-taxonomy"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 _ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
 _ITEM_COLUMN_HEADER = re.compile(rf"(?:{_ITEM_COLUMN_LABEL}[\s|:/·-]*){{2,}}", re.IGNORECASE)
 
 
-def _normalize_expense_category(value: Any) -> str:
-    """Return one centrally managed category; unknown model output falls back safely."""
-    raw = str(value or "").strip()
-    if not raw:
-        return "기타"
-    compact = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
-    aliases = {
-        "생활식비": "식비",
-        "식비생활": "식비",
-        "식비쇼핑": "식비",
-        "취미여가": "취미/쇼핑",
-        "생활쇼핑": "취미/소품",
-        "의류쇼핑": "취미/쇼핑",
-    }
-    if compact in aliases:
-        return aliases[compact]
-    by_compact = {re.sub(r"[^0-9A-Za-z가-힣]", "", category).lower(): category for category in EXPENSE_CATEGORIES}
-    return by_compact.get(compact, "기타")
+def _normalize_expense_category(value: Any) -> str | None:
+    """Backward-compatible wrapper around the canonical taxonomy normalizer."""
+    return normalize_expense_category(value)
 
 
 def _clean_item_name_evidence(value: Any) -> tuple[str, list[str]]:
@@ -160,8 +146,8 @@ class FinanceRecordUpdate(BaseModel):
 class FinanceRecord(BaseModel):
     id: str
     document_id: str
-    document_type: DocumentType
-    expense_category: str
+    document_type: DocumentType | None
+    expense_category: str | None
     merchant: str | None = None
     transaction_date: date | None = None
     supply_amount: float = 0
@@ -321,11 +307,11 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     if any(keyword in name for keyword in ("출장", "여비", "교통", "숙박", "ktx", "srt", "택시")):
         document_type = "TRAVEL_EXPENSE"
         if any(keyword in name for keyword in ("식비", "식대", "음료", "카페")):
-            expense_category = "일비/식대"
+            expense_category = "출장식비"
         elif "숙박" in name:
-            expense_category = "숙박비"
+            expense_category = "출장숙박비"
         else:
-            expense_category = "교통비"
+            expense_category = "여비교통비"
     elif any(keyword in name for keyword in ("복지", "도서", "교육", "병원", "검진", "경조")):
         document_type = "WELFARE_BENEFIT"
     elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
@@ -667,15 +653,13 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
             "stated_total_amount": hints.get("stated_total_amount"),
         })
         result["receipt_summary"] = receipt_summary
-    allowed = {"EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"}
-    document_type = str(
-        hints.get("document_type")
-        or result.get("doc_type")
-        or result.get("document_type")
-        or "EXPENSE_REPORT"
-    ).upper()
-    if document_type not in allowed:
-        document_type = "EXPENSE_REPORT"
+    candidate_doc_type = hints.get("document_type") or result.get("doc_type") or result.get("document_type")
+    candidate_category = hints.get("expense_category") or result.get("expense_category")
+    document_type, expense_category, needs_review, review_reason = validate_classification(
+        candidate_doc_type,
+        candidate_category,
+        result.get("needs_review", False),
+    )
     def prefer_evidenced_model_amount(field: str) -> float:
         model_value = _clean_number(result.get(field))
         hint_value = _clean_number(hints.get(field))
@@ -713,9 +697,16 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
             transaction_date = None
     result["source_filename"] = filename
     result["deterministic_hints"] = hints
+    result["doc_type"] = document_type
+    result["expense_category"] = expense_category
+    result["needs_review"] = needs_review
+    if review_reason:
+        result["classification_review_reason"] = review_reason
+    else:
+        result.pop("classification_review_reason", None)
     normalized_record = {
         "document_type": document_type,
-        "expense_category": _normalize_expense_category(hints.get("expense_category") or result.get("expense_category")),
+        "expense_category": expense_category,
         "merchant": _normalize_merchant(result.get("merchant"), text),
         "transaction_date": transaction_date,
         "supply_amount": supply,
@@ -1179,20 +1170,20 @@ def _receipt_prompt(text: str, filename: str, pages: list[dict[str, Any]] | None
     return f"""OCR 영수증의 요약 정보만 JSON 객체 하나로 반환하세요. items는 추출하지 마세요.
 OCR에 없는 값은 추측하지 말고 null로 작성하세요.
 
-doc_type은 다음 중 하나입니다.
-- EXPENSE_REPORT: 일반 경비
-- TRAVEL_EXPENSE: 출장·교통·숙박
-- PURCHASE_REQUEST: 물품·장비·소프트웨어 구매
-- WELFARE_BENEFIT: 도서·교육·의료·복리후생
+doc_type은 다음 고정 목록 중 하나입니다.
+{json.dumps(ALLOWED_DOCUMENT_TYPES, ensure_ascii=False)}
 
-반환 키: image, doc_type, expense_category, merchant, transaction_date, supply_amount,
+반환 키: image, doc_type, expense_category, needs_review, merchant, transaction_date, supply_amount,
 tax_amount, discount_amount, total_amount, payment_method, card_number, description.
 
-expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선택하세요. 목록에 적절한 값이 없거나 근거가 부족하면 `기타`를 선택하세요.
+expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선택하세요.
 {json.dumps(EXPENSE_CATEGORIES, ensure_ascii=False)}
 
+category와 doc_type은 반드시 아래 관계와 일치해야 합니다.
+{json.dumps(CATEGORY_TO_DOCUMENT_TYPE, ensure_ascii=False)}
+
 판단 규칙:
-1. OCR에 직접 근거가 있는 값만 작성하고, 불명확한 값은 null로 둡니다. 단, expense_category는 품목명·상호·문서 문맥을 근거로 고정 목록에서 가장 가까운 값을 선택하고 판단이 어려우면 `기타`로 작성합니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
+1. 분류 근거가 충분하면 doc_type과 expense_category를 허용 목록에서 선택하고 needs_review=false로 작성합니다. 근거가 부족하면 doc_type과 expense_category를 모두 null로 두고 needs_review=true로 작성합니다. 날짜는 YYYY-MM-DD, 금액과 수량은 숫자로 작성합니다.
 2. 상호는 실제 판매 주체를 선택합니다. 쇼핑몰·건물·지점 안내·URL은 입점 장소일 수 있으므로, 영수증을 발행하고 상품을 판매한 입점 매장명을 우선합니다. 예를 들어 OCR에 `유니클로`와 `Starfield` 또는 `starfield.co.kr`가 함께 있으면 merchant는 쇼핑몰인 Starfield가 아니라 입점 매장인 `유니클로`입니다. 브랜드명 뒤의 `(과세)`·`(면세)`는 세금 구분이므로 상호에서 제거합니다.
 3. 실제 결제된 상품 행만 items로 만듭니다. 먼저 `상품명 | 수량 | 단가 | 금액`의 대응을 확인한 뒤 출력하며, 상품 행이 명확하면 items를 비워 두지 않습니다. `총품목/총수량`의 총품목 수 N은 서로 다른 상품 행의 수이므로, 표시가 명확하면 실제 상품을 N개 찾아야 합니다.
 4. 새 상품명에 별도의 수량·단가·금액이 붙으면 독립 품목입니다. 한글명과 영문명이 이어져도 가격 묶음이 하나일 때만 같은 품목이며, `DIY`, `도안`, 괄호 표기라는 이유만으로 다른 유료 상품을 규격에 합치지 않습니다. 상호와 품목명이 같아도 각각 근거가 있으면 merchant와 items 양쪽에 모두 작성합니다. 예를 들어 상호가 `유니클로`이고 상품 행이 `유니클로(과세) 1 60,000`이면 merchant는 `유니클로`, items에는 `유니클로(과세)` 1개를 작성합니다.
@@ -1311,8 +1302,9 @@ async def _classify_receipt(
         # OCR 결과는 LLM 장애와 무관하게 재무 양식에 먼저 저장합니다.
         # 학습 모델이 준비되면 같은 검토 화면에서 분류값을 보완할 수 있습니다.
         return {
-            "document_type": hints.get("document_type") or "EXPENSE_REPORT",
+            "doc_type": hints.get("document_type"),
             "expense_category": _normalize_expense_category(hints.get("expense_category")),
+            "needs_review": not bool(hints.get("document_type") and _normalize_expense_category(hints.get("expense_category"))),
             "transaction_date": hints.get("transaction_date"),
             "supply_amount": hints.get("supply_amount") or 0,
             "tax_amount": hints.get("tax_amount") or 0,
@@ -1398,6 +1390,15 @@ def list_records(user: User = Depends(require_current_user)) -> list[dict[str, A
     return unique_records
 
 
+@router.get("/taxonomy")
+def get_finance_taxonomy(user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return {
+        "document_types": list(ALLOWED_DOCUMENT_TYPES),
+        "expense_categories": list(ALLOWED_EXPENSE_CATEGORIES),
+        "category_to_document_type": CATEGORY_TO_DOCUMENT_TYPE,
+    }
+
+
 @router.get("/history")
 def finance_history(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     history = []
@@ -1422,6 +1423,13 @@ def finance_history(user: User = Depends(require_current_user)) -> list[dict[str
 @router.patch("/records/{record_id}", response_model=FinanceRecord)
 def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
     values = payload.model_dump(mode="json")
+    document_type, expense_category, needs_review, reason = validate_classification(
+        values["document_type"], values["expense_category"]
+    )
+    if needs_review:
+        raise HTTPException(status_code=422, detail=f"유효하지 않은 비용 분류입니다: {reason}")
+    values["document_type"] = document_type
+    values["expense_category"] = expense_category
     if not values["total_amount"]:
         values["total_amount"] = values["supply_amount"] + values["tax_amount"]
     return supabase_service.update_finance_record(user.email, record_id, values)

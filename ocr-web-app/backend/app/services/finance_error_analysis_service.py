@@ -24,8 +24,21 @@ FIELD_LABEL_PATTERNS = {
     "total_quantity": re.compile(r"총\s*수량", re.IGNORECASE),
 }
 CATEGORY_EVIDENCE_PATTERNS = {
-    "교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
-    "주유/교통": re.compile(r"주유소|유종|휘발유|경유|주유|oil", re.IGNORECASE),
+    "교통비": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
+    "도서인쇄비": re.compile(r"도서|서적|책|인쇄|제본", re.IGNORECASE),
+    "복리후생비(간식)": re.compile(r"간식|과자|음료|커피", re.IGNORECASE),
+    "복리후생비(식대)": re.compile(r"식대|식사|음식|메뉴", re.IGNORECASE),
+    "비품비": re.compile(r"비품|장비|집기", re.IGNORECASE),
+    "소모품비": re.compile(r"소모품|사무용품|문구", re.IGNORECASE),
+    "여비교통비": re.compile(r"출장|여비|항공|ktx|srt|택시|승차권", re.IGNORECASE),
+    "운반비": re.compile(r"운반|배송|택배|화물", re.IGNORECASE),
+    "인쇄비": re.compile(r"인쇄|출력|복사|제본", re.IGNORECASE),
+    "지급수수료": re.compile(r"수수료|fee", re.IGNORECASE),
+    "차량유지비": re.compile(r"주유소|유종|휘발유|경유|주유|정비|oil", re.IGNORECASE),
+    "출장숙박비": re.compile(r"출장|숙박|호텔|모텔|리조트", re.IGNORECASE),
+    "출장식비": re.compile(r"출장|식대|식사|음식|메뉴", re.IGNORECASE),
+    "통신비": re.compile(r"통신|전화|인터넷|휴대폰", re.IGNORECASE),
+    "회의비": re.compile(r"회의|미팅|회식", re.IGNORECASE),
 }
 OCR_DIGIT_CONFUSIONS = str.maketrans({
     "o": "0", "O": "0",

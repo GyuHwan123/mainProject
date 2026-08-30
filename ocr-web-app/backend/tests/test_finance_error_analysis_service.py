@@ -9,12 +9,12 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="한국철도공사 KTX 125 일반실 승차권",
             ground_truth={
                 "merchant": "한국철도공사",
-                "expense_category": "교통",
+                "expense_category": "사무용품",
                 "items": [{"name": "KTX 125 일반실 승차권"}],
             },
             prediction={
                 "merchant": "KORAIL",
-                "expense_category": "교통비",
+                "expense_category": "소모품비",
                 "items": [{"name": "KTX125 일반실 1호차입석"}],
             },
             pipeline_trace={},
@@ -27,12 +27,12 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
     def test_classifies_receipt_failures_without_unknown_or_unclassified_fields(self):
         truth = {
             "merchant": "늘좋은주유소", "transaction_date": "2018-01-10",
-            "expense_category": "주유/교통", "total_quantity": 48.936,
+            "expense_category": "차량유지비", "total_quantity": 48.936,
             "items": [{"name": "유류", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}],
         }
         prediction = {
             "merchant": "늘좋은주유소", "transaction_date": "2017-11-09",
-            "expense_category": "기타", "total_quantity": None,
+            "expense_category": "회의비", "total_quantity": None,
             "items": [{"name": "NS-OIL", "quantity": 2, "unit_price": 10000, "total_amount": 22000}],
         }
         result = analyze_finance_evaluation_failure(

@@ -76,14 +76,14 @@ def _record_rows(document_type: str, records: list[dict[str, Any]]) -> list[list
                 ])
             elif document_type == "TRAVEL_EXPENSE":
                 rows.append([
-                    receipt_id, item_index, record.get("expense_category") or "교통비", record.get("transaction_date"),
+                    receipt_id, item_index, record.get("expense_category") or "확인 필요", record.get("transaction_date"),
                     data.get("route") or data.get("location"), data.get("transport_method") or data.get("service_type"),
                     record.get("merchant"), _number(item.get("total_amount")) or (_number(record.get("total_amount")) if is_single else 0),
                     data.get("evidence_status") or "첨부", item.get("name") or item.get("note") or data.get("note") or record.get("description"),
                 ])
             elif document_type == "WELFARE_BENEFIT":
                 rows.append([
-                    receipt_id, item_index, record.get("expense_category") or "기타 복리후생", record.get("transaction_date"),
+                    receipt_id, item_index, record.get("expense_category") or "확인 필요", record.get("transaction_date"),
                     item.get("name") or record.get("description"), record.get("merchant"),
                     _number(item.get("total_amount")) or (_number(record.get("total_amount")) if is_single else 0),
                     data.get("evidence_type") or record.get("payment_method") or "영수증", item.get("note") or data.get("note"),

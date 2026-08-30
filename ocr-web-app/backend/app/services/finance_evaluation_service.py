@@ -9,7 +9,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from app.api.routes.finance import _classify_receipt_with_model, _normalize
+from app.api.routes.finance import _classify_receipt_with_model, _normalize, _normalize_expense_category
 from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
 from app.services.finance_normalization import normalization_equivalent
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
@@ -126,6 +126,9 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
     for korean_key, english_key in korean_to_english.items():
         if english_key not in normalized and korean_key in truth:
             normalized[english_key] = truth[korean_key]
+
+    if "expense_category" in normalized:
+        normalized["expense_category"] = _normalize_expense_category(normalized["expense_category"])
 
     # 할인액은 선택 필드다. 정답에서 생략된 경우 모델도 값을 만들지
     # 않았는지 평가할 수 있도록 명시적인 null로 정규화한다.

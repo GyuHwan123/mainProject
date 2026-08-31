@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
+import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import FinanceEvaluationPage from './FinanceEvaluationPage';
@@ -479,6 +480,7 @@ export default function ReportPage() {
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(() => {
@@ -536,9 +538,21 @@ export default function ReportPage() {
   }, []);
 
   useEffect(() => {
-    loadBusinessStats();
-    apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {});
-    if (isDeveloper) loadEvaluations(); else setLoading(false);
+    let active = true;
+    const initialRequests = [
+      loadBusinessStats(),
+      apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
+    ];
+
+    if (isDeveloper) initialRequests.push(loadEvaluations());
+
+    Promise.allSettled(initialRequests).finally(() => {
+      if (!active) return;
+      if (!isDeveloper) setLoading(false);
+      setInitialLoading(false);
+    });
+
+    return () => { active = false; };
   }, [isDeveloper, loadBusinessStats, loadEvaluations]);
 
   useEffect(() => {
@@ -595,6 +609,10 @@ export default function ReportPage() {
     { label: 'LLM TTFT', value: null, color: '#ef9b18' },
     { label: '답변 완료', value: null, color: '#6558dc' },
   ];
+
+  if (initialLoading) {
+    return <LoginLoading title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" />;
+  }
 
   return <div className="app-shell developer-report-shell"><Sidebar />
     <main className="developer-report page-enter">

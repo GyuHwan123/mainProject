@@ -10,6 +10,7 @@ done
 
 llm_model="${OLLAMA_LLM_MODEL:-gemma2:2b}"
 receipts_model="${OLLAMA_RECEIPTS_MODEL:-}"
+receipts_modelfile="${OLLAMA_RECEIPTS_MODELFILE:-}"
 rag_model="${OLLAMA_RAG_MODEL:-}"
 rag_gguf_path="${OLLAMA_RAG_GGUF_PATH:-}"
 
@@ -20,13 +21,19 @@ for model in "$llm_model"; do
   fi
 done
 
-# Receipt extraction is optional. A local/custom model name may not exist in
-# the public registry, so it must not prevent the required RAG models or the
-# API from starting.
-if [ -n "$receipts_model" ] && ! ollama list | grep -Fq "$receipts_model"; then
-  echo "Preparing optional receipt model $receipts_model..."
-  if ! ollama pull "$receipts_model"; then
-    echo "Warning: optional receipt model could not be pulled: $receipts_model" >&2
+# Receipt extraction can use a local full-model GGUF through a Modelfile.
+if [ -n "$receipts_model" ] || [ -n "$receipts_modelfile" ]; then
+  if [ -z "$receipts_model" ] || [ -z "$receipts_modelfile" ]; then
+    echo "OLLAMA_RECEIPTS_MODEL and OLLAMA_RECEIPTS_MODELFILE must be set together." >&2
+    exit 1
+  fi
+  if [ ! -f "$receipts_modelfile" ]; then
+    echo "Receipt Modelfile was not found: $receipts_modelfile" >&2
+    exit 1
+  fi
+  if ! ollama list | awk 'NR > 1 { print $1 }' | grep -Fxq "$receipts_model"; then
+    echo "Registering local receipt model $receipts_model from $receipts_modelfile..."
+    ollama create "$receipts_model" -f "$receipts_modelfile"
   fi
 fi
 

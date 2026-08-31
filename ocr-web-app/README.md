@@ -49,6 +49,20 @@ OLLAMA_RAG_GGUF_PATH=/models/rag/my-qlora-rag.gguf
 보안상 `.env`, `.safetensors`, `.gguf`, Hugging Face 인증 정보는 Git에 추가하지
 마세요.
 
+## 영수증 전체 GGUF 모델 설치
+
+전체 모델 GGUF는 `models/receipts/`에 두고, 해당 폴더의 `Modelfile`에서 직접
+참조합니다. 현재 구성은 `gemma3-4b-trained-v2.gguf`를
+`gemma3-4b-trained:latest`로 등록합니다. `.env`에 다음 값을 설정한 뒤
+`docker compose up --build`를 실행합니다.
+
+```env
+RECEIPTS_LLM_MODEL=gemma3-4b-trained:latest
+OLLAMA_RECEIPTS_MODELFILE=/models/receipts/Modelfile
+```
+
+GGUF는 Git에 포함되지 않으며, Ollama의 named volume에 등록 결과가 보존됩니다.
+
 PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI 구조이며, 영구 데이터는 Supabase PostgreSQL과 Storage에 저장합니다.
 
 ## 문서

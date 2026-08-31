@@ -5,6 +5,9 @@
 *.gguf
 models/rag/*
 !models/rag/README.md
+models/receipts/*
+!models/receipts/README.md
+!models/receipts/Modelfile
 # Hugging Face authentication files and tokens
 .huggingface/
 hf_token

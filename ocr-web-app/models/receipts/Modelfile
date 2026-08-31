@@ -1,0 +1,1 @@
+FROM /models/receipts/gemma3-4b-trained-v2.gguf

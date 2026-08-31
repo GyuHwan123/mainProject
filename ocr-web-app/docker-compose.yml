@@ -90,11 +90,13 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
-      # Place local QLoRA GGUF files in models/rag; they are never copied into images.
+      # Local GGUF files are mounted read-only and are never copied into images.
       - ./models/rag:/models/rag:ro
+      - ./models/receipts:/models/receipts:ro
     environment:
       OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-gemma2:2b}
       OLLAMA_RECEIPTS_MODEL: ${RECEIPTS_LLM_MODEL:-}
+      OLLAMA_RECEIPTS_MODELFILE: ${OLLAMA_RECEIPTS_MODELFILE:-}
       OLLAMA_RAG_MODEL: ${OLLAMA_RAG_MODEL:-}
       OLLAMA_RAG_GGUF_PATH: ${OLLAMA_RAG_GGUF_PATH:-}
     networks:

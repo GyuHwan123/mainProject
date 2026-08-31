@@ -4,10 +4,13 @@ from unittest.mock import Mock, patch
 from fastapi import HTTPException
 
 from app.services.rag_service import can_access_company_rag
-from app.services.supabase_service import SupabaseService
+from app.services.supabase_service import COMPANY_RAG_DOCUMENT_IDS, SupabaseService
 
 
 class RagSearchPermissionTests(unittest.TestCase):
+    def test_legacy_supabase_module_exports_company_rag_document_ids(self):
+        self.assertIn("HR-001", COMPANY_RAG_DOCUMENT_IDS)
+
     def setUp(self) -> None:
         self.service = SupabaseService()
         self.service.url = "https://example.supabase.co"

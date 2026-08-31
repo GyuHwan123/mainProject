@@ -5,7 +5,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.api.routes.finance_evaluations import _pipeline_trace, _prediction_from_finance_record  # noqa: E402
+from app.api.routes.finance_evaluations import (  # noqa: E402
+    _pipeline_trace,
+    _prediction_from_finance_record,
+    _raw_prediction_from_trace,
+)
 from app.services.finance_pipeline import FINANCE_PIPELINE_VERSION  # noqa: E402
 
 
@@ -44,6 +48,19 @@ class FinanceEvaluationRouteTests(unittest.TestCase):
         self.assertEqual(trace["llm"]["summary_raw"]["merchant"], "문구점")
         self.assertTrue(trace["validator"]["changed"])
         self.assertEqual(trace["item_candidates"][0]["name_candidate"], "노트")
+
+    def test_legacy_raw_prediction_unwraps_items_raw_object(self):
+        raw = _raw_prediction_from_trace({
+            "llm": {
+                "summary_raw": {"merchant": "store"},
+                "items_raw": {"items": [{"name": "item"}]},
+            },
+        }, {"items": [{"name": "fallback"}]})
+
+        self.assertEqual(raw["merchant"], "store")
+        self.assertIsInstance(raw["items"], list)
+        self.assertEqual(raw["items"][0]["name"], "item")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,53 +12,63 @@ ALLOWED_DOCUMENT_TYPES = (
 )
 
 ALLOWED_EXPENSE_CATEGORIES = (
-    "교통비",
-    "도서인쇄비",
-    "복리후생비(간식)",
-    "복리후생비(식대)",
-    "비품비",
-    "소모품비",
-    "여비교통비",
-    "운반비",
-    "인쇄비",
-    "지급수수료",
-    "차량유지비",
-    "출장숙박비",
-    "출장식비",
-    "통신비",
-    "회의비",
+    "취미/쇼핑",
+    "미용",
+    "도서",
+    "전자제품/문구",
+    "교통",
+    "주유/교통",
+    "미용/생활",
+    "식비",
+    "레저",
+    "전자제품",
+    "식비/주류",
+    "식비/생활",
+    "생활/식비",
+    "의료",
+    "문화",
+    "식비/쇼핑",
 )
 
 CATEGORY_TO_DOCUMENT_TYPE = {
-    "교통비": "EXPENSE_REPORT",
-    "도서인쇄비": "EXPENSE_REPORT",
-    "복리후생비(간식)": "WELFARE_BENEFIT",
-    "복리후생비(식대)": "WELFARE_BENEFIT",
-    "비품비": "PURCHASE_REQUEST",
-    "소모품비": "PURCHASE_REQUEST",
-    "여비교통비": "TRAVEL_EXPENSE",
-    "운반비": "EXPENSE_REPORT",
-    "인쇄비": "EXPENSE_REPORT",
-    "지급수수료": "EXPENSE_REPORT",
-    "차량유지비": "EXPENSE_REPORT",
-    "출장숙박비": "TRAVEL_EXPENSE",
-    "출장식비": "TRAVEL_EXPENSE",
-    "통신비": "EXPENSE_REPORT",
-    "회의비": "EXPENSE_REPORT",
+    "취미/쇼핑": "PURCHASE_REQUEST",
+    "미용": "WELFARE_BENEFIT",
+    "도서": "WELFARE_BENEFIT",
+    "전자제품/문구": "PURCHASE_REQUEST",
+    "교통": "EXPENSE_REPORT",
+    "주유/교통": "EXPENSE_REPORT",
+    "미용/생활": "WELFARE_BENEFIT",
+    "식비": "WELFARE_BENEFIT",
+    "레저": "WELFARE_BENEFIT",
+    "전자제품": "PURCHASE_REQUEST",
+    "식비/주류": "WELFARE_BENEFIT",
+    "식비/생활": "WELFARE_BENEFIT",
+    "생활/식비": "WELFARE_BENEFIT",
+    "의료": "WELFARE_BENEFIT",
+    "문화": "WELFARE_BENEFIT",
+    "식비/쇼핑": "WELFARE_BENEFIT",
 }
 
-# Only unambiguous spelling/label variants are accepted. Broad legacy labels
-# such as 기타, 식비, 숙박비, 복리후생 and 취미/쇼핑 intentionally remain
-# unmapped because choosing a canonical category would require guessing.
+# Only unambiguous variants are accepted. The canonical labels above exactly
+# match receipt_dataset_verified/receipts.json.
 LEGACY_CATEGORY_ALIASES = {
-    "도서인쇄": "도서인쇄비",
-    "비품": "비품비",
-    "소모품": "소모품비",
-    "사무용품": "소모품비",
-    "여비교통": "여비교통비",
-    "출장숙박": "출장숙박비",
-    "출장식대": "출장식비",
-    "출장식사": "출장식비",
+    "교통비": "교통",
+    "여비교통비": "교통",
+    "차량유지비": "주유/교통",
+    "도서인쇄비": "도서",
+    "도서인쇄": "도서",
+    "복리후생": "식비/생활",
+    "복리후생비(간식)": "식비/생활",
+    "복리후생비(식대)": "식비",
+    "출장식비": "식비",
+    "출장식대": "식비",
+    "출장식사": "식비",
+    "회의비": "식비",
+    "비품비": "전자제품/문구",
+    "소모품비": "전자제품/문구",
+    "비품": "전자제품/문구",
+    "소모품": "전자제품/문구",
+    "사무용품": "전자제품/문구",
 }
 
 
@@ -90,20 +100,19 @@ def validate_classification(
     needs_review: Any = False,
 ) -> tuple[str | None, str | None, bool, str | None]:
     """Validate the SFT classification contract without silently correcting it."""
-    if bool(needs_review):
-        return None, None, True, "model_requested_review"
-
-    category = normalize_expense_category(expense_category)
-    if category is None:
-        return None, None, True, "invalid_expense_category"
-
     normalized_doc_type = str(doc_type or "").strip().upper()
-    if normalized_doc_type not in ALLOWED_DOCUMENT_TYPES:
-        return None, None, True, "invalid_document_type"
+    category = normalize_expense_category(expense_category)
+    if bool(needs_review) and category is None:
+        return None, None, True, "model_requested_review"
+    if category is None:
+        document_type = normalized_doc_type if normalized_doc_type in ALLOWED_DOCUMENT_TYPES else None
+        return document_type, None, True, "invalid_expense_category"
 
-    expected_doc_type = CATEGORY_TO_DOCUMENT_TYPE[category]
-    if normalized_doc_type != expected_doc_type:
-        return None, None, True, "category_document_type_mismatch"
+    if bool(needs_review):
+        document_type = normalized_doc_type if normalized_doc_type in ALLOWED_DOCUMENT_TYPES else CATEGORY_TO_DOCUMENT_TYPE[category]
+        return document_type, category, True, "model_requested_review"
+    if normalized_doc_type not in ALLOWED_DOCUMENT_TYPES:
+        return CATEGORY_TO_DOCUMENT_TYPE[category], category, False, "document_type_derived_from_category"
 
     return normalized_doc_type, category, False, None
 

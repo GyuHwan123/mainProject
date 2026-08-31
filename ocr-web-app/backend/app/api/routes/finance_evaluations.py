@@ -81,6 +81,25 @@ def _pipeline_trace(structured: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _raw_prediction_from_trace(
+    pipeline_trace: dict[str, Any], prediction: dict[str, Any],
+) -> dict[str, Any]:
+    """Rebuild legacy raw output without nesting ``items_raw.items`` twice."""
+    llm_trace = pipeline_trace.get("llm") or {}
+    summary_raw = llm_trace.get("summary_raw") or {}
+    items_raw = llm_trace.get("items_raw")
+    if isinstance(items_raw, dict):
+        raw_items = items_raw.get("items") or []
+    elif isinstance(items_raw, list):
+        raw_items = items_raw
+    else:
+        raw_items = prediction.get("items") or []
+    return {
+        **(summary_raw if isinstance(summary_raw, dict) else {}),
+        "items": raw_items if isinstance(raw_items, list) else [],
+    }
+
+
 
 class FinanceEvaluationRequest(BaseModel):
     document_id: str
@@ -430,12 +449,14 @@ def list_saved_finance_evaluations(
         prediction = row.get("prediction") or {}
         normalized_truth = row.get("normalized_ground_truth") or row.get("ground_truth") or {}
         pipeline_trace = row.get("pipeline_trace") or {}
-        llm_trace = pipeline_trace.get("llm") or {}
-        raw_prediction = {
-            **(llm_trace.get("summary_raw") or {}),
-            "items": llm_trace.get("items_raw") or prediction.get("items") or [],
-        }
-        replay_score = score_fields(prediction, normalized_truth, raw_prediction, document.get("bounding_boxes") or [])
+        stored_rubric = row.get("selection_rubric") or {}
+        replay_rubric = stored_rubric
+        if not replay_rubric:
+            raw_prediction = _raw_prediction_from_trace(pipeline_trace, prediction)
+            replay_rubric = score_fields(
+                prediction, normalized_truth, raw_prediction,
+                document.get("bounding_boxes") or [],
+            ).get("selection_rubric") or {}
         runs.append({
             "document_id": row["document_id"],
             "document_name": document.get("file_name") or "receipt",
@@ -467,7 +488,7 @@ def list_saved_finance_evaluations(
                         "evaluated_fields": row.get("evaluated_fields") or 0,
                         "field_accuracy": row.get("field_accuracy") or 0,
                         "complete_match": bool(row.get("complete_match")),
-                        "selection_rubric": replay_score.get("selection_rubric") or {},
+                        "selection_rubric": replay_rubric,
                     },
                     "ocr_impact": row.get("ocr_impact") or {},
                     "workbook": row.get("workbook_result") or {},

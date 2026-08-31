@@ -95,7 +95,6 @@ services:
     environment:
       OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-gemma2:2b}
       OLLAMA_RECEIPTS_MODEL: ${RECEIPTS_LLM_MODEL:-}
-      OLLAMA_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma}
       OLLAMA_RAG_MODEL: ${OLLAMA_RAG_MODEL:-}
       OLLAMA_RAG_GGUF_PATH: ${OLLAMA_RAG_GGUF_PATH:-}
     networks:

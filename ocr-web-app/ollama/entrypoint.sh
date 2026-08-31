@@ -10,11 +10,10 @@ done
 
 llm_model="${OLLAMA_LLM_MODEL:-gemma2:2b}"
 receipts_model="${OLLAMA_RECEIPTS_MODEL:-}"
-embedding_model="${OLLAMA_EMBEDDING_MODEL:-embeddinggemma}"
 rag_model="${OLLAMA_RAG_MODEL:-}"
 rag_gguf_path="${OLLAMA_RAG_GGUF_PATH:-}"
 
-for model in "$llm_model" "$embedding_model"; do
+for model in "$llm_model"; do
   if ! ollama list | grep -Fq "$model"; then
     echo "Preparing $model model..."
     ollama pull "$model"

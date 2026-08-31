@@ -12,6 +12,7 @@ const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%
 const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
 const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
 const SHOW_RAG_LLM_EVALUATION = false;
+const SHOW_LEGACY_EVALUATIONS = false;
 
 const createInitialMonitoringDateRange = () => {
   const endDate = new Date();
@@ -546,7 +547,7 @@ export default function ReportPage() {
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
   const [initialLoading, setInitialLoading] = useState(true);
   const [initialMonitoring, setInitialMonitoring] = useState(null);
   const [initialMonitoringError, setInitialMonitoringError] = useState('');
@@ -554,6 +555,7 @@ export default function ReportPage() {
   const [initialBatchHistory, setInitialBatchHistory] = useState(null);
   const [initialSingleHistory, setInitialSingleHistory] = useState(null);
   const [error, setError] = useState('');
+  const [evaluationsError, setEvaluationsError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(() => {
     try { return JSON.parse(localStorage.getItem(RAG_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
@@ -583,12 +585,12 @@ export default function ReportPage() {
   const [modelConfig, setModelConfig] = useState({ model: '미설정', embedding_model: '미설정', embedding_dimensions: null, rerank_model: null, prompt_version: '미설정', top_k: null, chunk_target_chars: null, ready: false });
 
   const loadEvaluations = useCallback(async () => {
-    setLoading(true); setError('');
+    setLoading(true); setEvaluationsError('');
     try {
       const { data } = await apiClient.get('/reports/evaluations', { params: { refresh: Date.now() } });
       setRuns(Array.isArray(data) ? data : []); setLastUpdated(new Date());
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || '평가 기록을 불러오지 못했습니다.');
+      setEvaluationsError(requestError.response?.data?.detail || '평가 기록을 불러오지 못했습니다.');
     } finally { setLoading(false); }
   }, []);
 
@@ -653,7 +655,7 @@ export default function ReportPage() {
       apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
     ];
 
-    if (isDeveloper) initialRequests.push(loadEvaluations());
+    if (isDeveloper && SHOW_LEGACY_EVALUATIONS) initialRequests.push(loadEvaluations());
     if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'monitoring') {
       initialRequests.push(loadInitialMonitoring());
     }
@@ -764,12 +766,16 @@ export default function ReportPage() {
           )}
 
           <button  className="refresh-report"  disabled={loading}
-            onClick={() => {
-              loadBusinessStats();
+            onClick={async () => {
+              setLoading(true);
+              const refreshRequests = [loadBusinessStats()];
 
-              if (isDeveloper) {loadEvaluations();}
+              if (isDeveloper && SHOW_LEGACY_EVALUATIONS) {refreshRequests.push(loadEvaluations());}
 
               if (developerReport === 'receipt') {window.dispatchEvent(new Event('finance-evaluations-updated'));}
+
+              await Promise.allSettled(refreshRequests);
+              setLoading(false);
             }}
           >
             <IoRefreshOutline />
@@ -814,7 +820,8 @@ export default function ReportPage() {
       <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />
       {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
-      {false && <>
+      {SHOW_LEGACY_EVALUATIONS && <>
+      {evaluationsError && <div className="report-access-error">{evaluationsError}</div>}
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>

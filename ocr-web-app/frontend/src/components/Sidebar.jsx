@@ -57,7 +57,7 @@ export default function Sidebar() {
   };
 
   return <aside className="sidebar">
-    <div className="brand-wrap"><picture className="brand-logo"><source media="(max-width: 1120px)" srcSet="/DocAI.png" /><img src="/DocAI_p-02.png" alt="DocAI" /></picture><div className="brand-name">DocAI</div></div>
+    <Link to="/dashboard" className="brand-wrap" aria-label="대시보드로 이동"><picture className="brand-logo"><source media="(max-width: 1120px)" srcSet="/DocAI.png" /><img src="/DocAI_p-02.png" alt="DocAI" /></picture><div className="brand-name">DocAI</div></Link>
     <nav className="sidebar-nav">{visibleItems.map((item) => {
       const opensReceiptReport = item.path === '/reports' && location.pathname === '/ocr' && isDeveloper;
       const destination = opensReceiptReport ? '/reports?view=developer&developerReport=receipt&receiptTab=experiment' : item.path;

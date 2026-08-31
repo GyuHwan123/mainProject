@@ -118,7 +118,18 @@ export default function DashboardPage() {
   }).format(new Date());
 
   if (loading) {
-    return <LoginLoading title="대시보드를 불러오는 중입니다." ariaLabel="대시보드 불러오는 중" />;
+    return (
+      <div className="app-shell dashboard-shell">
+        <Sidebar />
+        <main className="page-loading-region">
+          <LoginLoading
+            mode="content"
+            title="대시보드를 불러오는 중입니다."
+            ariaLabel="대시보드 불러오는 중"
+          />
+        </main>
+      </div>
+    );
   }
 
   return (

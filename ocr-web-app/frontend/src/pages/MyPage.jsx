@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { IoBookmarkOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoLockClosedOutline, IoRefreshOutline, IoServerOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
+import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import '../style/MyPage.scss';
@@ -10,6 +11,7 @@ export default function MyPage() {
   const navigate = useNavigate();
   const user = getAppUser();
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
   const [plansOpen, setPlansOpen] = useState(false);
   const [benefitsOpen, setBenefitsOpen] = useState(true);
@@ -19,6 +21,7 @@ export default function MyPage() {
   const [cancelSaving, setCancelSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
   const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
+  const initialRequestRef = useRef(null);
 
   const loadAccountData = useCallback(async () => {
     setLoading(true); setError('');
@@ -32,7 +35,10 @@ export default function MyPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { loadAccountData(); }, [loadAccountData]);
+  useEffect(() => {
+    if (!initialRequestRef.current) initialRequestRef.current = loadAccountData();
+    initialRequestRef.current.finally(() => setInitialLoading(false));
+  }, [loadAccountData]);
 
   const initials = useMemo(() => (user.name || user.email || 'U').trim().slice(0, 2).toUpperCase(), [user]);
   const isEnterprise = user.subscriptionTier === 'ENTERPRISE';
@@ -77,6 +83,18 @@ export default function MyPage() {
       setError(requestError.response?.data?.detail || '재무팀 확인 상태를 변경하지 못했습니다.');
     }
   };
+
+  if (initialLoading) {
+    return <div className="app-shell mypage-shell"><Sidebar />
+      <main className="page-loading-region">
+        <LoginLoading
+          mode="content"
+          title="내 정보를 불러오는 중입니다."
+          ariaLabel="내 정보 불러오는 중"
+        />
+      </main>
+    </div>;
+  }
 
   return <div className="app-shell mypage-shell"><Sidebar />
     <main className="mypage-workspace page-enter">

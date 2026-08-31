@@ -521,7 +521,7 @@ function rememberedBatchState() {
   return { activeBatchId, batchComplete: batchRunCount > 1 };
 }
 
-export default function FinanceEvaluationPage({ embedded = false }) {
+export default function FinanceEvaluationPage({ embedded = false, initialBatchHistory = null, initialSingleHistory = null }) {
   const imageRef = useRef(null);
   const folderRef = useRef(null);
   const imageUrlRef = useRef('');
@@ -537,8 +537,8 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const [batchComplete, setBatchComplete] = useState(() => rememberedBatchState().batchComplete);
   const [queuedBatchFiles, setQueuedBatchFiles] = useState(null);
   const [pendingReceipts, setPendingReceipts] = useState(() => readReceiptWorkspace().pendingEvaluations);
-  const [batchHistory, setBatchHistory] = useState([]);
-  const [singleHistory, setSingleHistory] = useState([]);
+  const [batchHistory, setBatchHistory] = useState(() => initialBatchHistory || []);
+  const [singleHistory, setSingleHistory] = useState(() => initialSingleHistory || []);
   const [evaluationMode, setEvaluationMode] = useState('single');
   const [hasSessionBatchResults, setHasSessionBatchResults] = useState(false);
   const [batchProgress, setBatchProgress] = useState(null);
@@ -646,8 +646,12 @@ export default function FinanceEvaluationPage({ embedded = false }) {
   const latestPendingReceipt = pendingReceipts[pendingReceipts.length - 1];
   const latestDocument = latestPendingReceipt || latestRun;
 
-  useEffect(() => { loadBatchHistory(); }, [loadBatchHistory]);
-  useEffect(() => { loadSingleHistory(); }, [loadSingleHistory]);
+  useEffect(() => {
+    if (initialBatchHistory == null) loadBatchHistory();
+  }, [initialBatchHistory, loadBatchHistory]);
+  useEffect(() => {
+    if (initialSingleHistory == null) loadSingleHistory();
+  }, [initialSingleHistory, loadSingleHistory]);
 
   useEffect(() => {
     if (!latestDocument?.document_id || imagePreview?.name === latestDocument.document_name) return undefined;

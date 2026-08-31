@@ -31,15 +31,12 @@ CATEGORY_EVIDENCE_PATTERNS = {
     "교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
     "주유/교통": re.compile(r"주유소|유종|휘발유|경유|주유|정비|oil", re.IGNORECASE),
     "미용/생활": re.compile(r"미용|생활|헤어|네일|뷰티", re.IGNORECASE),
-    "식비": re.compile(r"식대|식사|음식|메뉴|카페|음료|커피", re.IGNORECASE),
+    "식비": re.compile(r"식대|식사|음식|메뉴|카페|음료|커피|식품|마트|간식|생활", re.IGNORECASE),
     "레저": re.compile(r"레저|여가|스포츠|숙박|호텔|리조트", re.IGNORECASE),
     "전자제품": re.compile(r"전자제품|가전|컴퓨터|휴대폰|케이블", re.IGNORECASE),
     "식비/주류": re.compile(r"소주|맥주|와인|위스키|주류", re.IGNORECASE),
-    "식비/생활": re.compile(r"식품|생활|마트", re.IGNORECASE),
-    "생활/식비": re.compile(r"생활|식품|마트", re.IGNORECASE),
     "의료": re.compile(r"병원|의원|약국|의료|진료", re.IGNORECASE),
     "문화": re.compile(r"문화|공연|영화|전시", re.IGNORECASE),
-    "식비/쇼핑": re.compile(r"식품|마트|쇼핑", re.IGNORECASE),
 }
 OCR_DIGIT_CONFUSIONS = str.maketrans({
     "o": "0", "O": "0",

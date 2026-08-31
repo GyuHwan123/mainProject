@@ -15,7 +15,7 @@ from app.constants.finance_taxonomy import (  # noqa: E402
 
 class FinanceTaxonomyTests(unittest.TestCase):
     def test_canonical_taxonomy_is_complete(self):
-        self.assertEqual(len(ALLOWED_EXPENSE_CATEGORIES), 16)
+        self.assertEqual(len(ALLOWED_EXPENSE_CATEGORIES), 13)
         self.assertEqual(set(CATEGORY_TO_DOCUMENT_TYPE), set(ALLOWED_EXPENSE_CATEGORIES))
         self.assertTrue(set(CATEGORY_TO_DOCUMENT_TYPE.values()).issubset(ALLOWED_DOCUMENT_TYPES))
 
@@ -23,6 +23,9 @@ class FinanceTaxonomyTests(unittest.TestCase):
         self.assertEqual(normalize_expense_category("사무용품"), "전자제품/문구")
         self.assertIsNone(normalize_expense_category("기타"))
         self.assertEqual(normalize_expense_category("식비"), "식비")
+        self.assertEqual(normalize_expense_category("식비/생활"), "식비")
+        self.assertEqual(normalize_expense_category("생활/식비"), "식비")
+        self.assertEqual(normalize_expense_category("식비/쇼핑"), "식비")
 
     def test_keeps_valid_document_type_independent_from_receipt_category(self):
         doc_type, category, needs_review, reason = validate_classification(

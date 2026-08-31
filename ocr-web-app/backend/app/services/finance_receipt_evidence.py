@@ -319,7 +319,13 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
 
     amount_tokens = re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
     amounts = sorted({amount for token in amount_tokens if 100 <= (amount := _receipt_number(token)) <= 100_000_000})
-    won_amounts = [_receipt_number(token) for token in re.findall(r"(\d[\d.,\s]{0,15})\s*원", text)]
+    # Never let a won amount span OCR lines.  ``\s`` used to join fragments
+    # such as a phone/card number on one line with an amount on the next and
+    # could produce a plausible but enormous total.
+    won_amounts = [
+        _receipt_number(token)
+        for token in re.findall(r"(?<!\d)(\d[\d.,\t ]{0,15})[\t ]*원", text)
+    ]
     won_amounts = [amount for amount in won_amounts if 100 <= amount <= 100_000_000]
     triples: list[tuple[int, int, int]] = []
     for total in sorted(set(won_amounts + amounts), reverse=True):
@@ -334,23 +340,46 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         total = max(won_amounts)
 
     def labeled_amount(labels: str) -> int | None:
-        match = re.search(
-            rf"(?:{labels})\s*[:：]?\s*(?:금액\s*)?([0-9]{{1,3}}(?:\s*[.,]\s*[0-9]{{3}})+|[0-9]{{3,8}})\s*원?",
-            text,
-            re.IGNORECASE,
-        )
-        if not match:
-            return None
-        value = _receipt_number(match.group(1))
-        return value if value >= 100 else None
+        """Read a labelled amount without ever crossing an OCR line."""
+        lines = [line.strip() for line in text.splitlines()]
+        label_re = re.compile(rf"(?:{labels})", re.IGNORECASE)
+        amount_token = r"([0-9]{1,3}(?:[ \t]*[.,][ \t]*[0-9]{3})+|[0-9]{3,8})"
+        money_only = re.compile(rf"^[ \t]*{amount_token}[ \t]*원?[ \t]*[:：]?[ \t]*$", re.IGNORECASE)
+        for index, line in enumerate(lines):
+            label_match = label_re.search(line)
+            if not label_match:
+                continue
+            if re.search(r"(?:과세|면세|세금)\s*합계", line, re.IGNORECASE):
+                continue
+            # Prefer a value on the same line and only after the matched label.
+            same_line = re.search(
+                rf"^[ \t]*[:：]?[ \t]*(?:금액[ \t]*)?{amount_token}[ \t]*원?",
+                line[label_match.end():],
+                re.IGNORECASE,
+            )
+            if same_line:
+                value = _receipt_number(same_line.group(1))
+                if value >= 100:
+                    return value
+            # OCR frequently places the amount immediately above or below its
+            # label. Accept only an otherwise money-only adjacent line.
+            for adjacent in (index - 1, index + 1):
+                if 0 <= adjacent < len(lines):
+                    adjacent_match = money_only.fullmatch(lines[adjacent])
+                    if adjacent_match:
+                        value = _receipt_number(adjacent_match.group(1))
+                        if value >= 100:
+                            return value
+        return None
 
     labeled_final = labeled_amount(
         r"최종\s*결제(?:\s*금액)?|실\s*결제(?:\s*금액)?|받을\s*금액|"
         r"승인(?:\s*금액|\s*액)|결제(?:\s*금액|\s*액)|청구(?:\s*금액|\s*액)|"
-        r"신용\s*판매(?:\s*금액|\s*액)|현금\s*결제(?:\s*금액)?|카드\s*결제(?:\s*금액)?"
+        r"신용\s*판매(?:\s*금액|\s*액)|현금\s*결제(?:\s*금액)?|카드\s*결제(?:\s*금액)?|"
+        r"합계\s*(?:금액|급액)?|총\s*액"
     )
     labeled_discount = labeled_amount(r"할인(?:\s*금액|\s*액)?|쿠폰(?:\s*할인)?")
-    labeled_gross = labeled_amount(r"정가|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
+    labeled_gross = labeled_amount(r"정가|판매\s*금액|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
     if labeled_final:
         total = labeled_final
     total_amount_source = "labeled_final" if labeled_final else "arithmetic" if triples else "won_amount" if won_amounts else None

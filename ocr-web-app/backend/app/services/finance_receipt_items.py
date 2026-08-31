@@ -284,6 +284,7 @@ def _receipt_items_prompt(text: str, pages: list[dict[str, Any]] | None = None) 
 16. rel은 H=높음, M=검토 필요입니다. why는 T=표, R=품목영역, F=주유블록, D=도메인 서비스 추론, A=산술일치, C=품목수일치, S=합계일치, E=기타근거입니다. H 후보를 우선하고 M은 lines로 확인하세요.
 17. candidate_type이 fuel_sale_item이면 분리된 유종명·리터 수량·리터당 단가·결제금액을 하나의 주유 품목으로 유지하세요. arithmetic_tolerance 안의 반올림 차이는 허용하고 결제·세금·할인 행을 별도 품목으로 만들지 마세요.
 18. candidate_type이 single_service_charge이면 명확히 식별된 서비스 사업자와 단일 결제 총액을 한 건의 서비스 품목으로 해석하세요. 같은 서비스를 일반 후보로 중복 생성하지 말고 quantity_resolution이 single_service_default인 수량 1은 추론값으로 보존하세요.
+19. candidate_type이 measured_quantity_item이면 명시된 단가 × 측정량 ≈ 금액 관계를 한 품목으로 유지하세요. 소수 측정량을 개수로 반올림하지 말고, 단위가 OCR에 없으면 새로 추측하지 마세요.
 
 [품목 근거]
 {evidence}
@@ -370,6 +371,17 @@ def _item_parser_profile(candidate: dict[str, Any]) -> dict[str, Any]:
             ],
         }
 
+    if candidate.get("candidate_type") == "measured_quantity_item":
+        return {
+            "profile": "measured_quantity_inline_arithmetic_flat",
+            "rules": [
+                "Treat the explicitly multiplied unit price, measured quantity, and observed amount as one item.",
+                "Preserve the decimal quantity and its unit when observed; do not round it to a count.",
+                "Accept the documented arithmetic_tolerance for receipt rounding.",
+                "Do not turn tax, discount, settlement, or membership rows into additional items.",
+            ],
+        }
+
     if candidate.get("candidate_type") == "single_service_charge":
         return {
             "profile": "single_service_charge_unitemized_flat",
@@ -453,6 +465,7 @@ def _candidate_items(candidates: list[dict[str, Any]], resolution: str) -> list[
         "unit_price": candidate.get("unit_price_candidate"),
         "total_amount": candidate.get("amount_candidate"),
         "candidate_type": candidate.get("candidate_type"),
+        "item_type": candidate.get("item_type"),
         "structure_type": candidate.get("structure_type"),
         "service_type": candidate.get("service_type"),
         "inferred": candidate.get("inferred"),
@@ -491,6 +504,35 @@ def _deduplicate_model_items(items: list[dict[str, Any]], candidates: list[dict[
     return result
 
 
+def _conflicts_with_single_inferred_service(
+    items: list[dict[str, Any]], candidates: list[dict[str, Any]],
+) -> bool:
+    """Detect a fabricated item when OCR proves only one unitemized service."""
+    if len(candidates) != 1:
+        return False
+    candidate = candidates[0]
+    if not (
+        candidate.get("candidate_type") == "single_service_charge"
+        and candidate.get("structure_type") == "unitemized_charge"
+        and candidate.get("inferred")
+    ):
+        return False
+    if len(items) != 1:
+        return True
+    item = items[0]
+    item_name = _compact_evidence_text(item.get("name"))
+    candidate_name = _compact_evidence_text(candidate.get("name_candidate"))
+    name_matches = bool(
+        item_name and candidate_name
+        and (item_name == candidate_name or item_name in candidate_name or candidate_name in item_name)
+    )
+    amount_matches = abs(
+        _clean_number(item.get("total_amount"))
+        - _clean_number(candidate.get("amount_candidate"))
+    ) < .01
+    return not (name_matches and amount_matches)
+
+
 def _recover_items_when_grounded(
     candidates: list[dict[str, Any]], hints: dict[str, Any], stated_count: int | None,
 ) -> tuple[list[dict[str, Any]], str | None]:
@@ -511,6 +553,26 @@ def _recover_items_when_grounded(
     ):
         reason = "single_service_domain_recovery"
         return _candidate_items(inferred_services, reason), reason
+
+    # A collapsed OCR row with an explicit multiplication marker is already
+    # fully grounded even if the summary model selected a pre-discount total.
+    # Preserve it when the item-model call fails instead of returning no items.
+    if len(candidates) == 1:
+        candidate = candidates[0]
+        quantity = _clean_number(candidate.get("quantity_candidate"))
+        unit_price = _clean_number(candidate.get("unit_price_candidate"))
+        amount = _clean_number(candidate.get("amount_candidate"))
+        tolerance = _clean_number(candidate.get("arithmetic_tolerance")) or .01
+        if (
+            candidate.get("source") == "inline_arithmetic_fallback"
+            and candidate.get("rel") == "H"
+            and candidate.get("explicit_arithmetic_operator")
+            and candidate.get("name_candidate")
+            and quantity > 0 and unit_price > 0 and amount >= 100
+            and abs(quantity * unit_price - amount) <= tolerance
+        ):
+            reason = "grounded_inline_arithmetic_recovery"
+            return _candidate_items(candidates, reason), reason
 
     grounded = [candidate for candidate in candidates if candidate.get("rel") == "H"]
     if not grounded or len(grounded) != len(candidates) or not all(

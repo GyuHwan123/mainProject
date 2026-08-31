@@ -40,6 +40,7 @@ async def _classify_receipt_with_model(
     candidates, rejected_candidates = _reliable_item_candidates(_receipt_item_candidates(pages), hints)
     item_structure = _classify_item_structure(candidates, hints)
     result["semantic_evidence"] = _semantic_receipt_evidence(text, pages, candidates)
+    structured_evidence = result["semantic_evidence"]["structured_evidence"]
     stated_count = hints.get("stated_item_count")
 
     fast_path_items, fast_path_reason = _strict_grounded_item_fast_path(
@@ -50,6 +51,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(fast_path_items, result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": [],
@@ -84,7 +86,10 @@ async def _classify_receipt_with_model(
         model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
         result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
         fallback_reason = None
-        if len(result["items"]) < len(candidates):
+        if (
+            len(result["items"]) < len(candidates)
+            or _conflicts_with_single_inferred_service(result["items"], candidates)
+        ):
             recovered, recovered_reason = _recover_items_when_grounded(candidates, hints, stated_count)
             if recovered:
                 result["items"], fallback_reason = recovered, recovered_reason
@@ -99,6 +104,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(result["items"], result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": model_items_snapshot,
@@ -126,6 +132,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(result["items"], result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": [],

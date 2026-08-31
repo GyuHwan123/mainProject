@@ -220,9 +220,9 @@ class CollaborationMixin:
 
     def search_rag_chunks(
         self, user_email: str, embedding: list[float], rag_document_id: str | None, limit: int, *,
-        include_company_documents: bool = False,
+        include_company_documents: bool = True,
     ) -> list[dict[str, Any]]:
-        documents = self.list_rag_documents(user_email)
+        personal_documents = self.list_rag_documents(user_email)
         company_documents: list[dict[str, Any]] = []
         if include_company_documents:
             company_response = _legacy_httpx().get(
@@ -235,11 +235,15 @@ class CollaborationMixin:
             )
             self._raise_for_supabase(company_response, "RAG company documents lookup failed")
             company_documents = company_response.json()
-        documents.extend(company_documents)
-        document_by_id = {row["id"]: row for row in documents}
-        if rag_document_id and rag_document_id not in document_by_id:
+        personal_document_by_id = {row["id"]: row for row in personal_documents}
+        company_document_by_id = {row["id"]: row for row in company_documents}
+        accessible_document_by_id = {**personal_document_by_id, **company_document_by_id}
+        if rag_document_id and rag_document_id not in accessible_document_by_id:
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
-        allowed_document_ids = [rag_document_id] if rag_document_id else list(document_by_id)
+        document_by_id = dict(company_document_by_id)
+        if rag_document_id:
+            document_by_id[rag_document_id] = accessible_document_by_id[rag_document_id]
+        allowed_document_ids = list(document_by_id)
         if not allowed_document_ids:
             return []
         response = _legacy_httpx().post(

@@ -391,6 +391,15 @@ function ChatPageContent() {
   const summaryRequestsRef = useRef(new Set());
   const endRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
+  const selectEvidenceSource = (source) => {
+    if (!source) return;
+    setSelectedSource(source);
+    setUploadMode(false);
+    setDocumentViewMode('viewer');
+    if (documents.some((document) => document.id === source.ragDocumentId)) {
+      setActiveId(source.ragDocumentId);
+    }
+  };
   const previewSource = selectedSource || (activeDoc ? {
     documentId: activeDoc.documentId,
     source: activeDoc.name,
@@ -601,7 +610,8 @@ function ChatPageContent() {
       relevant = (matches || []).map((item) => ({
         id: item.id, content: item.content, source: item.source,
         index: item.chunk_index + 1, score: item.similarity,
-        documentId: item.document_id, pageNumber: item.page_number, bbox: item.bbox,
+        documentId: item.document_id, ragDocumentId: item.rag_document_id,
+        pageNumber: item.page_number, bbox: item.bbox,
       }));
       setSources(relevant);
       if (!sessionId) {
@@ -628,7 +638,7 @@ function ChatPageContent() {
       setMessages((items) => [...items, { role: 'assistant', text: data.reply, sourceCount: relevant.length, sources: relevant }]);
       if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
         role: 'assistant', content: data.reply, model_name: data.model,
-        sources: relevant.map(({ id, content, source, index, score, documentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, pageNumber, bbox })),
+        sources: relevant.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox })),
       }).catch(() => {});
       refreshSessions();
     } catch (error) {
@@ -643,7 +653,7 @@ function ChatPageContent() {
       if (sessionId) {
         apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
           role: 'assistant', content: fallback, model_name: 'fallback',
-          sources: best.map(({ id, content, source, index, score, documentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, pageNumber, bbox })),
+          sources: best.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox })),
         }).then(refreshSessions).catch(() => {});
       }
     } finally { setBusy(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20); }
@@ -817,13 +827,13 @@ function ChatPageContent() {
                 {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
               </div>
             </div>
-            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => setSelectedSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
+            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => selectEvidenceSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
           </div>
         </section>
 
         <section className="conversation-panel">
           <div className="rag-panel-title"><div><strong>AI RAG Chat</strong><small>{activeDoc ? activeDoc.name : '새 대화'}</small></div><button type="button" className="new-chat-button" disabled={busy} onClick={startNewChat}>＋ 새 채팅</button></div>
-          <div className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); setSelectedSource(messageSources[0] || null); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}<div ref={endRef} /></div>
+          <div className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); selectEvidenceSource(messageSources[0]); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}<div ref={endRef} /></div>
           <div className="chat-composer"><button className="attach-button" onClick={() => fileRef.current?.click()} title="문서 첨부">＋</button><textarea value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }} placeholder={documents.length ? '문서에 대해 질문해 보세요...' : '먼저 왼쪽 + 버튼 또는 이곳의 + 버튼으로 문서를 추가하세요'} /><button className="send-button" disabled={!query.trim() || busy} onClick={ask}>↑</button></div>
           <p className="composer-note">AI 답변은 부정확할 수 있습니다. 중요한 정보는 표시된 문서 근거에서 확인하세요.</p>
         </section>

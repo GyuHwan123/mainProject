@@ -41,6 +41,16 @@ def _looks_like_non_item_evidence(name: Any, raw: Any = None) -> bool:
     """Reject settlement/tax/meta rows even when OCR inserted spaces or noise."""
     name_text = str(name or "")
     raw_text = " ".join(filter(None, (name_text, str(raw or ""))))
+    stable_non_item_labels = re.compile(
+        r"(?:^|\s)(?:\uC18C\uACC4|\uD569\uACC4|\uCD1D\s*\uD569\uACC4|\uACB0\uC81C\s*\uAE08\uC561|"
+        r"\uCD5C\uC885\s*\uACB0\uC81C|\uC2B9\uC778\s*\uAE08\uC561|\uCCAD\uAD6C\s*\uAE08\uC561|"
+        r"\uACF5\uAE09\uAC00\uC561|\uBD80\uAC00\uC138|\uC138\uAE08|\uACFC\uC138|\uBA74\uC138|"
+        r"\uD560\uC778|\uCFE0\uD3F0|\uAC70\uC2A4\uB984\uB3C8|\uCE74\uB4DC\s*\uBC88\uD638|"
+        r"\uC2B9\uC778\s*\uBC88\uD638|\uAC70\uB798\s*\uBC88\uD638)(?:\s|:|$)",
+        re.IGNORECASE,
+    )
+    if stable_non_item_labels.search(raw_text):
+        return True
     compact_name = _compact_evidence_text(name_text)
     compact_raw = _compact_evidence_text(raw_text)
     exact_or_prefix = (
@@ -693,7 +703,9 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
             "quantity_candidate": quantity,
             "quantity_resolution": quantity_resolution,
             "unit_price_candidate": unit_price,
+            "list_price_candidate": unit_price,
             "amount_candidate": final_amount,
+            "paid_price_candidate": final_amount,
             "discount_amount_candidate": negative[-1],
             "column_resolution": "discount_arithmetic",
         }

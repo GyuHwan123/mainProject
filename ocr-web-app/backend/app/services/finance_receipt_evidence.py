@@ -380,6 +380,26 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     )
     labeled_discount = labeled_amount(r"할인(?:\s*금액|\s*액)?|쿠폰(?:\s*할인)?")
     labeled_gross = labeled_amount(r"정가|판매\s*금액|할인\s*전(?:\s*금액)?|상품\s*합계|총\s*상품\s*금액")
+    # Re-evaluate the core financial labels with encoding-stable patterns.
+    # Explicit paid totals outrank arithmetic triples, while product subtotals
+    # must not be mistaken for the final amount.
+    labeled_final = labeled_amount(
+        r"\uCD5C\uC885\s*\uACB0\uC81C(?:\s*\uAE08\uC561)?|"
+        r"\uCD1D\s*\uACB0\uC81C(?:\s*\uAE08\uC561)?|"
+        r"\uBC1B\uC744\s*\uAE08\uC561|\uC2B9\uC778(?:\s*\uAE08\uC561|\s*\uC561)?|"
+        r"\uCCAD\uAD6C(?:\s*\uAE08\uC561|\s*\uC561)?|"
+        r"\uC2E0\uC6A9\s*\uD310\uB9E4(?:\s*\uAE08\uC561|\s*\uC561)?|"
+        r"\uD604\uAE08\s*\uACB0\uC81C(?:\s*\uAE08\uC561)?|"
+        r"\uCE74\uB4DC\s*\uACB0\uC81C(?:\s*\uAE08\uC561)?|"
+        r"(?<!\uC0C1\uD488)(?<!\uBB3C\uD488)\uD569\uACC4(?:\s*\uAE08\uC561)?|\uCD1D\s*\uC561"
+    )
+    labeled_discount = labeled_amount(
+        r"\uD560\uC778(?:\s*\uAE08\uC561|\s*\uC561)?|\uCFE0\uD3F0(?:\s*\uD560\uC778)?"
+    ) or labeled_discount
+    labeled_gross = labeled_amount(
+        r"\uC815\uAC00|\uD310\uB9E4\s*\uAE08\uC561|\uD560\uC778\s*\uC804(?:\s*\uAE08\uC561)?|"
+        r"\uC0C1\uD488\s*\uD569\uACC4|\uCD1D\s*\uC0C1\uD488\s*\uAE08\uC561"
+    ) or labeled_gross
     if labeled_final:
         total = labeled_final
     total_amount_source = "labeled_final" if labeled_final else "arithmetic" if triples else "won_amount" if won_amounts else None

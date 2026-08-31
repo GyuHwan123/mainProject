@@ -463,6 +463,9 @@ def _candidate_items(candidates: list[dict[str, Any]], resolution: str) -> list[
         "quantity": candidate.get("quantity_candidate"),
         "unit": candidate.get("unit"),
         "unit_price": candidate.get("unit_price_candidate"),
+        "list_price": candidate.get("list_price_candidate"),
+        "discount_amount": candidate.get("discount_amount_candidate"),
+        "paid_unit_price": candidate.get("paid_price_candidate"),
         "total_amount": candidate.get("amount_candidate"),
         "candidate_type": candidate.get("candidate_type"),
         "item_type": candidate.get("item_type"),
@@ -473,6 +476,7 @@ def _candidate_items(candidates: list[dict[str, Any]], resolution: str) -> list[
         "quantity_resolution": candidate.get("quantity_resolution"),
         "arithmetic_tolerance": candidate.get("arithmetic_tolerance"),
         "product_code": candidate.get("product_code"),
+        "options": candidate.get("option_candidates") or None,
         "specification": " · ".join([
             *candidate.get("alias_candidates", []),
             *candidate.get("specification_candidates", []),
@@ -480,6 +484,33 @@ def _candidate_items(candidates: list[dict[str, Any]], resolution: str) -> list[
         ]) or None,
         "item_resolution": resolution,
     } for candidate in candidates]
+
+
+def _receipt_items_retry_prompt(candidates: list[dict[str, Any]], stated_count: int | None) -> str:
+    """Build a compact retry prompt from grounded OCR candidate facts."""
+    compact_candidates = [{
+        "id": f"I{index + 1:03d}",
+        "name": candidate.get("name_candidate"),
+        "quantity": candidate.get("quantity_candidate"),
+        "unit": candidate.get("unit"),
+        "unit_price": candidate.get("unit_price_candidate"),
+        "list_price": candidate.get("list_price_candidate"),
+        "discount_amount": candidate.get("discount_amount_candidate"),
+        "paid_price": candidate.get("paid_price_candidate"),
+        "amount": candidate.get("amount_candidate"),
+        "product_code": candidate.get("product_code"),
+        "options": candidate.get("option_candidates") or [],
+        "raw": [str(value)[:120] for value in (candidate.get("raw_cells") or [])[:3]],
+    } for index, candidate in enumerate(candidates)]
+    payload = json.dumps(compact_candidates, ensure_ascii=False, separators=(",", ":"))
+    return (
+        "Return one JSON object with an items array only. Use only the supplied OCR candidates. "
+        "Do not add totals, tax, payment, approval, discount-summary, or metadata rows as items. "
+        "Preserve candidate order and use null for unknown values. "
+        f"Printed item count: {stated_count if stated_count is not None else 'unknown'}. "
+        "Item keys: name,specification,quantity,unit,unit_price,supply_amount,tax_amount,total_amount,note.\n"
+        f"Candidates:{payload}"
+    )
 
 
 def _deduplicate_model_items(items: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:

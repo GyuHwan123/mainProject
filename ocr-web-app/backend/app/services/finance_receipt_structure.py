@@ -126,7 +126,11 @@ def _structured_receipt_evidence(lines: list[dict[str, Any]], candidates: list[d
         row_ids = [rows[row_index]["row_id"] for row_index in matches[index]]
         consumed.update(row_ids)
         fields = {}
-        for output_name, candidate_name in (("name", "name"), ("quantity", "quantity"), ("unit_price", "unit_price"), ("amount", "amount"), ("discount", "discount_amount")):
+        for output_name, candidate_name in (
+            ("name", "name"), ("quantity", "quantity"), ("unit_price", "unit_price"),
+            ("list_price", "list_price"), ("discount", "discount_amount"),
+            ("paid_price", "paid_price"), ("amount", "amount"),
+        ):
             value = candidate.get(f"{candidate_name}_candidate")
             field = _field(value, row_ids, _field_confidence(candidate, candidate_name), _field_source(candidate, candidate_name))
             if field:

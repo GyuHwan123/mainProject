@@ -82,6 +82,7 @@ async def generate(
     num_predict: int = 600,
     model_name: str | None = None,
     question: str | None = None,
+    request_timeout_seconds: float = 120,
 ) -> str:
     effective_model = model_name or MODEL_NAME
     payload: dict[str, Any] = {
@@ -101,7 +102,7 @@ async def generate(
 
     base_url = settings.OLLAMA_BASE_URL.rstrip("/")
     try:
-        async with httpx.AsyncClient(base_url=base_url, timeout=120) as client:
+        async with httpx.AsyncClient(base_url=base_url, timeout=request_timeout_seconds) as client:
             # Diagnostic block: remove after runtime duplicate-call verification.
             sequence = next(_ollama_call_sequence)
             question_preview = " ".join((question or "").split())[:40]

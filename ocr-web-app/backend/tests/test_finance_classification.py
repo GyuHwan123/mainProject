@@ -375,6 +375,27 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["total_amount"], 19900)
         self.assertEqual(result["item_extraction_diagnostics"]["fallback_used"], "validated_table_candidate_recovery")
 
+    async def test_retries_failed_item_json_with_compact_candidate_prompt(self):
+        pages = [{"page": 1, "tables": [{"rows": [["USB cable", "1", "7,900", "7,900"]]}]}]
+        responses = [
+            '{"merchant":"shop","total_amount":7900}',
+            '{invalid-json',
+            '{"items":[{"name":"USB cable","quantity":1,"unit_price":7900,"total_amount":7900}]}',
+        ]
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
+            result = await _classify_receipt_with_model("shop receipt", "receipt.jpg", "test-model", pages)
+
+        self.assertEqual(mocked.await_count, 3)
+        self.assertEqual(result["items"][0]["name"], "USB cable")
+        self.assertEqual(
+            [attempt["status"] for attempt in result["llm_trace"]["items_attempts"]],
+            ["failed", "success"],
+        )
+        self.assertLess(
+            result["llm_trace"]["items_attempts"][1]["prompt_chars"],
+            result["llm_trace"]["items_attempts"][0]["prompt_chars"],
+        )
+
     def test_prefers_table_and_does_not_rescan_page_metadata(self):
         candidates = _receipt_item_candidates([{
             "page": 1,
@@ -1376,6 +1397,9 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([candidate["unit_price_candidate"] for candidate in candidates], [135000, 105000, 100])
         self.assertEqual([candidate["amount_candidate"] for candidate in candidates], [94500, 63000, 100])
         self.assertEqual([candidate["quantity_candidate"] for candidate in candidates], [1, 1, 1])
+        self.assertEqual([candidate.get("list_price_candidate") for candidate in candidates[:2]], [135000, 105000])
+        self.assertEqual([candidate.get("paid_price_candidate") for candidate in candidates[:2]], [94500, 63000])
+        self.assertEqual([candidate.get("discount_amount_candidate") for candidate in candidates[:2]], [40500, 42000])
 
     def test_recovers_items_when_structured_candidate_total_matches_receipt(self):
         candidates = [

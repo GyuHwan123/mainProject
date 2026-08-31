@@ -389,7 +389,7 @@ function ChatPageContent() {
   const evaluationRunningRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
   const summaryRequestsRef = useRef(new Set());
-  const endRef = useRef(null);
+  const messagesRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const selectEvidenceSource = (source) => {
     if (!source) return;
@@ -656,7 +656,13 @@ function ChatPageContent() {
           sources: best.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox })),
         }).then(refreshSessions).catch(() => {});
       }
-    } finally { setBusy(false); setTimeout(() => endRef.current?.scrollIntoView({ behavior: 'smooth' }), 20); }
+    } finally {
+      setBusy(false);
+      setTimeout(() => {
+        const container = messagesRef.current;
+        container?.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+      }, 20);
+    }
   };
 
   const requestDelete = (target, mode, id = null) => {
@@ -833,7 +839,7 @@ function ChatPageContent() {
 
         <section className="conversation-panel">
           <div className="rag-panel-title"><div><strong>AI RAG Chat</strong><small>{activeDoc ? activeDoc.name : '새 대화'}</small></div><button type="button" className="new-chat-button" disabled={busy} onClick={startNewChat}>＋ 새 채팅</button></div>
-          <div className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); selectEvidenceSource(messageSources[0]); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}<div ref={endRef} /></div>
+          <div ref={messagesRef} className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); selectEvidenceSource(messageSources[0]); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}</div>
           <div className="chat-composer"><button className="attach-button" onClick={() => fileRef.current?.click()} title="문서 첨부">＋</button><textarea value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }} placeholder={documents.length ? '문서에 대해 질문해 보세요...' : '먼저 왼쪽 + 버튼 또는 이곳의 + 버튼으로 문서를 추가하세요'} /><button className="send-button" disabled={!query.trim() || busy} onClick={ask}>↑</button></div>
           <p className="composer-note">AI 답변은 부정확할 수 있습니다. 중요한 정보는 표시된 문서 근거에서 확인하세요.</p>
         </section>

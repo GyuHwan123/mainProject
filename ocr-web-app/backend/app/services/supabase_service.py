@@ -10,6 +10,7 @@ import httpx
 from fastapi import HTTPException, status
 
 from app.core.config import settings
+from app.services.finance_pipeline import FINANCE_PIPELINE_VERSION
 
 
 COMPANY_RAG_DOCUMENT_IDS = (
@@ -403,6 +404,7 @@ class SupabaseService:
                     "model_name": str(result.get("model_name") or record.get("model_name") or "unknown"),
                     "model_version": result.get("model_version"),
                     "prompt_version": result.get("prompt_version"),
+                    "pipeline_version": FINANCE_PIPELINE_VERSION,
                     "correct_fields": int(score.get("correct_fields") or 0),
                     "evaluated_fields": int(score.get("evaluated_fields") or 0),
                     "field_accuracy": float(score.get("field_accuracy") or 0),

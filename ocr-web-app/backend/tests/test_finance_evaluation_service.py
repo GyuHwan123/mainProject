@@ -41,7 +41,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             ],
             "총 물품 수량": 7,
             "총 결제액": 81300,
-            "카테고리": "취미/쇼핑",
+            "카테고리": "소모품비",
             "결제방식": "현금",
             "카드번호": None,
         })
@@ -51,7 +51,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(truth["total_amount"], 81300)
         self.assertEqual(truth["payment_method"], "현금")
         self.assertEqual(truth["total_quantity"], 7)
-        self.assertEqual(truth["expense_category"], "취미/쇼핑")
+        self.assertEqual(truth["expense_category"], "소모품비")
         self.assertIsNone(truth["discount_amount"])
         self.assertIsNone(truth["card_number"])
         self.assertEqual(truth["items"][1], {
@@ -66,11 +66,11 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             "총 결제액": 6000,
             "결제방식": "현금",
             "구매물품": [{"상품명": "상품", "단가": 6000, "수량": 1, "금액": 6000}],
-            "카테고리": "취미/쇼핑",
+            "카테고리": "소모품비",
         })
         score = score_fields({
             "document_type": "PURCHASE_REQUEST",
-            "expense_category": "취미/쇼핑",
+            "expense_category": "소모품비",
             "merchant": "테스트 상점",
             "transaction_date": "2025-12-14",
             "total_amount": 6000,
@@ -83,22 +83,39 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertNotIn("document_type", score["fields"])
         self.assertIn("expense_category", score["fields"])
 
+    def test_normalizes_only_unambiguous_legacy_ground_truth_categories(self):
+        cases = {
+            "사무용품": "소모품비",
+            "출장숙박": "출장숙박비",
+            "출장식대": "출장식비",
+        }
+
+        for ground_truth_category, expected in cases.items():
+            with self.subTest(category=ground_truth_category):
+                truth = normalize_ground_truth({"카테고리": ground_truth_category})
+                self.assertEqual(truth["expense_category"], expected)
+                score = score_fields(
+                    {"expense_category": expected},
+                    {"expense_category": ground_truth_category},
+                )
+                self.assertTrue(score["fields"]["expense_category"]["correct"])
+
     def test_calculates_test01_test20_weighted_selection_rubric(self):
         truth = normalize_ground_truth({
             "가게명": "테스트 상점", "구매일자": "2025-10-03", "총 물품 수량": 1,
-            "총 결제액": 6000, "카테고리": "식비", "결제방식": "카드", "카드번호": None,
+            "총 결제액": 6000, "카테고리": "회의비", "결제방식": "카드", "카드번호": None,
             "구매물품": [{"상품명": "국수", "단가": 6000, "수량": 1, "금액": 6000}],
         })
         prediction = {
             "merchant": "테스트 상점", "transaction_date": "2025-10-03", "total_quantity": 1,
-            "discount_amount": None, "total_amount": 6000, "expense_category": "식비",
+            "discount_amount": None, "total_amount": 6000, "expense_category": "회의비",
             "payment_method": "신한카드", "card_number": None,
             "items": [{"name": "국수", "unit_price": 6000, "quantity": 1, "total_amount": 6000}],
         }
         raw = {
             "image": "test01.jpg", "merchant": "테스트 상점", "transaction_date": "2025-10-03",
             "items": prediction["items"], "total_quantity": 1, "total_amount": 6000,
-            "expense_category": "식비", "payment_method": "신한카드", "card_number": None,
+            "expense_category": "회의비", "payment_method": "신한카드", "card_number": None,
         }
 
         rubric = score_fields(prediction, truth, raw)["selection_rubric"]
@@ -120,12 +137,12 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         score = score_fields(
             {
                 "merchant": "KORAIL",
-                "expense_category": "교통비",
+                "expense_category": "소모품비",
                 "items": [{"name": "KTX125 일반실 1호차입석"}],
             },
             {
                 "merchant": "한국철도공사",
-                "expense_category": "교통",
+                "expense_category": "사무용품",
                 "items": [{"name": "KTX 125 일반실 승차권"}],
             },
         )
@@ -304,6 +321,37 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         score = score_fields(
             {"items": [{"name": "탑승요금", "quantity": 1, "total_amount": 5300}]},
             {"items": [{"name": "택시 이용", "quantity": 1, "total_amount": 5300}]},
+        )
+
+        self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+        self.assertTrue(score["complete_match"])
+
+    def test_matches_taxi_fee_and_corporate_taxi_to_taxi_use(self):
+        for predicted_name in ("택시 이용료", "법인택시"):
+            with self.subTest(predicted_name=predicted_name):
+                score = score_fields(
+                    {"items": [{"name": predicted_name, "quantity": 1, "total_amount": 5300}]},
+                    {"items": [{"name": "택시 이용", "quantity": 1, "total_amount": 5300}]},
+                )
+
+                self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+                self.assertTrue(score["complete_match"])
+
+    def test_matches_tmoney_mobility_names_to_intercity_bus_ticket(self):
+        for predicted_name in ("티머니 모빌리티", "티머니 모빌리티 승차권"):
+            with self.subTest(predicted_name=predicted_name):
+                score = score_fields(
+                    {"items": [{"name": predicted_name, "quantity": 1, "total_amount": 16200}]},
+                    {"items": [{"name": "시외/고속버스 승차권", "quantity": 1, "total_amount": 16200}]},
+                )
+
+                self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+                self.assertTrue(score["complete_match"])
+
+    def test_matches_soil_brand_name_to_generic_fuel_item(self):
+        score = score_fields(
+            {"items": [{"name": "에쓰오일", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}]},
+            {"items": [{"name": "유류", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}]},
         )
 
         self.assertTrue(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])

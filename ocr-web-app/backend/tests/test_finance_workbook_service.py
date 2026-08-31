@@ -52,7 +52,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         content = build_finance_workbook([{
             "document_id": "receipt-travel-001",
             "document_type": "TRAVEL_EXPENSE",
-            "expense_category": "일비/식대",
+            "expense_category": "출장식비",
             "merchant": "카페마마스 광화문점",
             "transaction_date": "2025-10-05",
             "total_amount": 31400,
@@ -65,7 +65,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         self.assertEqual(workbook.active.title, "출장여비교통비정산서")
         self.assertEqual(sheet["A12"].value, "receipt-travel-001")
         self.assertEqual(sheet["B12"].value, 1)
-        self.assertEqual(sheet["C12"].value, "일비/식대")
+        self.assertEqual(sheet["C12"].value, "출장식비")
         self.assertEqual(sheet["D12"].value, "2025-10-05")
         self.assertEqual(sheet["E12"].value, "서울 종로구")
         self.assertEqual(sheet["G12"].value, "카페마마스 광화문점")
@@ -76,7 +76,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         content = build_finance_workbook([{
             "document_id": "receipt-purchase-001",
             "document_type": "PURCHASE_REQUEST",
-            "expense_category": "사무용품",
+            "expense_category": "소모품비",
             "merchant": "한국문구",
             "transaction_date": "2026-08-20",
             "total_amount": 8800,
@@ -100,11 +100,12 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
 
     def test_uses_receipt_id_and_item_sequence_for_all_document_types(self):
         records = []
+        category_by_type = {"EXPENSE_REPORT": "회의비", "TRAVEL_EXPENSE": "출장식비", "WELFARE_BENEFIT": "복리후생비(간식)"}
         for document_type in ("EXPENSE_REPORT", "TRAVEL_EXPENSE", "WELFARE_BENEFIT"):
             records.append({
                 "document_id": f"receipt-{document_type.lower()}",
                 "document_type": document_type,
-                "expense_category": "테스트",
+                "expense_category": category_by_type[document_type],
                 "merchant": "테스트 거래처",
                 "transaction_date": "2026-08-20",
                 "total_amount": 3000,

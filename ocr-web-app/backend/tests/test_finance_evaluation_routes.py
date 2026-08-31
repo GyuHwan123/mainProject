@@ -6,9 +6,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance_evaluations import _pipeline_trace, _prediction_from_finance_record  # noqa: E402
+from app.services.finance_pipeline import FINANCE_PIPELINE_VERSION  # noqa: E402
 
 
 class FinanceEvaluationRouteTests(unittest.TestCase):
+    def test_current_semantic_receipt_pipeline_is_v2_5(self):
+        self.assertEqual(FINANCE_PIPELINE_VERSION, "v2.5")
+
     def test_record_prediction_preserves_structured_schema_and_quantity(self):
         prediction, raw = _prediction_from_finance_record({
             "merchant": "문구점",

@@ -23,6 +23,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const EMPTY_FILE_NAME = '영수증을 선택해주세요';
 const EMPTY_ITEMS = [];
+const MIN_PREVIEW_ZOOM = 0.25;
 const RECEIPT_STRONG_PATTERN = /(영수증|매출\s*전표|승인\s*번호|카드\s*번호|사업자\s*(?:NO|번호|등록번호)|결제\s*금액|승인\s*금액|받을\s*금액|현금\s*영수증|공급\s*가액|부가\s*세(?:액)?|총\s*구매\s*금액)/i;
 const RECEIPT_WEAK_PATTERNS = [
   /(20\d{2})\s*(?:년|[-./])\s*\d{1,2}\s*(?:월|[-./])\s*\d{1,2}\s*일?/,
@@ -46,6 +47,39 @@ const FINANCE_DOCUMENTS = {
 };
 
 const financeMoney = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
+
+const RECEIPT_SEMANTICS = {
+  issuer: { label: '발행처·사업자', color: '#7c3aed', sections: ['issuer', 'business_info'] },
+  transaction: { label: '거래 정보', color: '#16a34a', sections: ['transaction', 'service_detail'] },
+  items: { label: '구매 품목', color: '#ef4444', sections: ['items'] },
+  adjustments: { label: '할인·조정', color: '#db2777', sections: ['adjustments'] },
+  tax: { label: '공급가액·세금', color: '#f97316', sections: ['tax_summary'] },
+  settlement: { label: '합계·결제액', color: '#65a30d', sections: ['settlement'] },
+  payment: { label: '결제수단·카드', color: '#475569', sections: ['payment'] },
+  auxiliary: { label: '부가 안내', color: '#0891b2', sections: ['auxiliary'] },
+};
+
+const semanticText = (value) => String(value || '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+
+function receiptSemanticItems(items, semanticEvidence) {
+  const lines = Array.isArray(semanticEvidence?.lines) ? semanticEvidence.lines : [];
+  const sections = semanticEvidence?.sections || {};
+  const sectionByLine = {};
+  Object.entries(sections).forEach(([section, lineIds]) => (lineIds || []).forEach((lineId) => {
+    sectionByLine[lineId] ||= [];
+    sectionByLine[lineId].push(section);
+  }));
+  const semanticOrder = ['items', 'settlement', 'tax', 'adjustments', 'payment', 'transaction', 'issuer', 'auxiliary'];
+  return items.map((item) => {
+    const needle = semanticText(item.text);
+    const matchingSections = lines.flatMap((line) => {
+      const lineText = semanticText(line.text);
+      return needle && lineText && (lineText.includes(needle) || needle.includes(lineText)) ? (sectionByLine[line.id] || []) : [];
+    });
+    const semanticKey = semanticOrder.find((key) => RECEIPT_SEMANTICS[key].sections.some((section) => matchingSections.includes(section))) || null;
+    return { ...item, semanticKey, semanticColor: semanticKey ? RECEIPT_SEMANTICS[semanticKey].color : null };
+  });
+}
 
 function financeRecordCells(record, itemNumber, rowItem = null) {
   const data = record.structured_data || {};
@@ -95,6 +129,47 @@ function FinanceReceiptWorksheet({ records, user }) {
     <div className="receipt-form-table"><table><thead><tr>{definition.headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{financeRecordRows(records).map((row, rowIndex) => <tr key={`${record.id}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell ?? '-'}</td>)}</tr>)}</tbody></table></div>
     <p>현재 영수증에서 선별한 값만 표시됩니다.</p>
   </div>;
+}
+
+function ReceiptExtractionInsights({ record, ocrItems, onSemanticSelect }) {
+  const data = record?.structured_data || {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const candidates = data.item_extraction_diagnostics?.candidates || [];
+  const confidences = ocrItems.map((item) => Number(item.confidence)).filter((value) => Number.isFinite(value) && value >= 0 && value <= 1);
+  const ocrConfidence = confidences.length ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : null;
+  const reliableCandidates = candidates.filter((candidate) => candidate.rel === 'H').length;
+  const arithmeticChecks = items.filter((item) => Number(item.quantity) > 0 && Number(item.unit_price) > 0 && Number(item.total_amount) > 0);
+  const arithmeticPassed = arithmeticChecks.filter((item) => Math.abs(Number(item.quantity) * Number(item.unit_price) - Number(item.total_amount)) < .01).length;
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+  const totalMatches = itemTotal > 0 && Math.abs(itemTotal - Number(record.total_amount || 0)) < .01;
+  const evidenceRate = candidates.length ? reliableCandidates / candidates.length : null;
+  const validationParts = [arithmeticChecks.length ? arithmeticPassed / arithmeticChecks.length : null, items.length ? Number(totalMatches) : null].filter((value) => value != null);
+  const validationRate = validationParts.length ? validationParts.reduce((sum, value) => sum + value, 0) / validationParts.length : null;
+  const confidenceParts = [ocrConfidence, evidenceRate, validationRate].filter((value) => value != null);
+  const groundedConfidence = confidenceParts.length ? confidenceParts.reduce((sum, value) => sum + value, 0) / confidenceParts.length : null;
+  const confidenceLabel = groundedConfidence == null ? '근거 부족' : groundedConfidence >= .9 ? '높음' : groundedConfidence >= .7 ? '검토 권장' : '확인 필요';
+  const mainFields = [
+    ['issuer', '가게명', record.merchant || '확인 필요'],
+    ['transaction', '구매일자', record.transaction_date || '확인 필요'],
+    ['settlement', '총 결제액', financeMoney(record.total_amount)],
+    ['tax', '공급가액 · 부가세', `${financeMoney(record.supply_amount)} · ${financeMoney(record.tax_amount)}`],
+    ['payment', '결제방법', record.payment_method || '확인 필요'],
+    ['payment', '카드번호', data.card_number || '근거 없음'],
+  ];
+  return <section className="receipt-extraction-insights">
+    <article className="receipt-key-information">
+      <header><div><strong>추출된 주요 정보</strong><small>색상 항목을 누르면 영수증 근거 영역이 강조됩니다.</small></div><span>{record.status === 'CONFIRMED' ? '사용자 확정' : '검토 전'}</span></header>
+      <dl>{mainFields.map(([semantic, label, value]) => <button type="button" key={label} onClick={() => onSemanticSelect?.(semantic)} style={{ '--semantic-color': RECEIPT_SEMANTICS[semantic].color }}><dt>{label}</dt><dd>{value}</dd></button>)}</dl>
+    </article>
+    <article className="receipt-item-details">
+      <header><div><strong>구매 항목 상세</strong><small>구조화된 품목명·수량·단가·금액</small></div><span>총 {items.length}건</span></header>
+      <div className="receipt-item-table"><table><thead><tr><th>상품명</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name || '확인 필요'}<small>{item.specification || item.option || ''}</small></td><td>{Number(item.quantity || 0).toLocaleString('ko-KR')}</td><td>{financeMoney(item.unit_price)}</td><td>{financeMoney(item.total_amount)}</td></tr>)}</tbody></table>{!items.length && <p>구조화된 구매 항목이 없습니다.</p>}</div>
+    </article>
+    <article className="receipt-confidence-card">
+      <header><div><strong>근거 기반 신뢰도</strong><small>정답 정확도가 아닌 OCR·후보·산술 검증 상태입니다.</small></div><span className={`confidence-${confidenceLabel.replaceAll(' ', '-')}`}>{confidenceLabel}</span></header>
+      <div className="receipt-confidence-content"><div className="confidence-ring" style={{ '--confidence': `${Math.round((groundedConfidence || 0) * 100)}%` }}><strong>{groundedConfidence == null ? '-' : `${Math.round(groundedConfidence * 100)}%`}</strong><small>검증 신뢰도</small></div><dl><div><dt>OCR 인식 신뢰도</dt><dd>{ocrConfidence == null ? '미제공' : `${Math.round(ocrConfidence * 100)}%`}</dd></div><div><dt>고신뢰 품목 후보</dt><dd>{candidates.length ? `${reliableCandidates}/${candidates.length}` : '후보 없음'}</dd></div><div><dt>품목 산술 검산</dt><dd>{arithmeticChecks.length ? `${arithmeticPassed}/${arithmeticChecks.length}` : '검산 대상 없음'}</dd></div><div><dt>품목 합계와 결제액</dt><dd className={totalMatches ? 'ok' : 'warning'}>{items.length ? (totalMatches ? '일치' : '확인 필요') : '검산 대상 없음'}</dd></div></dl></div>
+    </article>
+  </section>;
 }
 
 function buildReadingOrder(content, viewport) {
@@ -187,7 +262,7 @@ function buildReadingOrder(content, viewport) {
   ];
 }
 
-function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false, items = [], selectedItemIndex = null, onSelectItem }) {
+function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false, items = [], selectedItemIndex = null, onSelectItem, activeSemantic = null }) {
   const canvasRef = useRef(null);
   const selectedOverlayRef = useRef(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -226,14 +301,14 @@ function PdfCanvas({ pdf, pageNumber, scale = 1.25, thumbnail = false, items = [
         const y0 = Math.min(...ys);
         const x1 = Math.max(...xs);
         const y1 = Math.max(...ys);
-        return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max((x1 - x0) * scale, 2), height: Math.max((y1 - y0) * scale, 2) }} onClick={() => onSelectItem?.(index)} aria-label={`${item.text} 위치`} />;
+        return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''} ${item.semanticKey ? 'semantic' : ''} ${activeSemantic && item.semanticKey !== activeSemantic ? 'semantic-muted' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max((x1 - x0) * scale, 2), height: Math.max((y1 - y0) * scale, 2), '--semantic-color': item.semanticColor }} onClick={() => onSelectItem?.(index)} aria-label={`${item.text} 위치`} />;
       })}
     </div>
   );
 }
 
 
-function ImagePreview({ src, fileName, scale, items = [], selectedItemIndex, onSelectItem, loading }) {
+function ImagePreview({ src, fileName, scale, items = [], selectedItemIndex, onSelectItem, loading, activeSemantic = null }) {
   const [naturalSize, setNaturalSize] = useState({ width: 0, height: 0 });
   const selectedOverlayRef = useRef(null);
 
@@ -271,7 +346,7 @@ function ImagePreview({ src, fileName, scale, items = [], selectedItemIndex, onS
         // A single OCR line cannot reasonably cover most of the page height.
         // Ignore malformed detector coordinates instead of obscuring the image.
         if (boxHeight > naturalSize.height * 0.2 || boxWidth * boxHeight > naturalSize.width * naturalSize.height * 0.18) return null;
-        return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max(boxWidth * scale, 2), height: Math.max(boxHeight * scale, 2) }} onClick={(event) => { event.stopPropagation(); onSelectItem?.(index); }} aria-label={`${item.text} 위치`} />;
+        return <button ref={selectedItemIndex === index ? selectedOverlayRef : null} key={`${index}-${item.text}`} type="button" className={`bbox-overlay ${selectedItemIndex === index ? 'selected' : ''} ${item.semanticKey ? 'semantic' : ''} ${activeSemantic && item.semanticKey !== activeSemantic ? 'semantic-muted' : ''}`} style={{ left: x0 * scale, top: y0 * scale, width: Math.max(boxWidth * scale, 2), height: Math.max(boxHeight * scale, 2), '--semantic-color': item.semanticColor }} onClick={(event) => { event.stopPropagation(); onSelectItem?.(index); }} aria-label={`${item.text} 위치`} />;
       })}
       {loading && <div className="image-processing"><span />OCR 처리 중...</div>}
     </div>
@@ -490,6 +565,7 @@ export default function OCRPage() {
   const [financeRecords, setFinanceRecords] = useState(() => readReceiptWorkspace().financeRecords);
   const [financeReviewOpen, setFinanceReviewOpen] = useState(false);
   const [financeReviewDraft, setFinanceReviewDraft] = useState(null);
+  const [financeTaxonomy, setFinanceTaxonomy] = useState({ document_types: [], expense_categories: [], category_to_document_type: {} });
   const [savedFinanceOpen, setSavedFinanceOpen] = useState(false);
   const [savedFinanceRecords, setSavedFinanceRecords] = useState([]);
   const [savedFinanceLoading, setSavedFinanceLoading] = useState(false);
@@ -498,6 +574,7 @@ export default function OCRPage() {
   const [evaluationDatasetFile, setEvaluationDatasetFile] = useState(null);
   const [receiptBatchStatus, setReceiptBatchStatus] = useState('');
   const [receiptBatchActive, setReceiptBatchActive] = useState(false);
+  const [activeReceiptSemantic, setActiveReceiptSemantic] = useState(null);
   const inputRef = useRef(null);
   const imagePreviewRef = useRef('');
   const projectTransitionTimerRef = useRef(null);
@@ -512,6 +589,14 @@ export default function OCRPage() {
   useEffect(() => {
     saveReceiptRecords(financeRecord, financeRecords);
   }, [financeRecord, financeRecords]);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/finance/taxonomy')
+      .then(({ data }) => { if (active) setFinanceTaxonomy(data); })
+      .catch(() => { if (active) setFinanceTaxonomy({ document_types: [], expense_categories: [], category_to_document_type: {} }); });
+    return () => { active = false; };
+  }, []);
 
   const openReceiptBatchEvaluation = async (fileList) => {
     const files = Array.from(fileList || []).filter((file) => /\.(png|jpe?g|webp|bmp|pdf)$/i.test(file.name));
@@ -1076,6 +1161,16 @@ export default function OCRPage() {
   };
   const currentText = pageTexts[pageNumber - 1] || '';
   const currentItems = pageItems[pageNumber - 1] || EMPTY_ITEMS;
+  const semanticEvidence = financeRecord?.structured_data?.semantic_evidence;
+  const semanticCurrentItems = useMemo(
+    () => receiptSemanticItems(currentItems, semanticEvidence),
+    [currentItems, semanticEvidence],
+  );
+  const semanticOcrItems = useMemo(
+    () => pageItems.flatMap((items) => receiptSemanticItems(items || [], semanticEvidence)),
+    [pageItems, semanticEvidence],
+  );
+  const availableReceiptSemantics = useMemo(() => new Set(semanticOcrItems.map((item) => item.semanticKey).filter(Boolean)), [semanticOcrItems]);
   const currentRows = pageRows[pageNumber - 1];
   const currentFinanceRecords = financeRecord ? [financeRecord] : [];
   const pageCount = pdf?.numPages || pageTexts.length;
@@ -1217,6 +1312,10 @@ export default function OCRPage() {
 
   const confirmFinanceRecord = async () => {
     if (!financeRecord || financeRecord.status === 'CONFIRMED') return;
+    if (!financeRecord.document_type || !financeRecord.expense_category) {
+      setError('문서 유형과 카테고리를 검토 화면에서 선택해 주세요.');
+      return;
+    }
     let nextBatchFile = null;
     let completedEvaluationEntries = null;
     setLoading(true);
@@ -1224,7 +1323,7 @@ export default function OCRPage() {
     try {
       const { data } = await apiClient.patch(`/finance/records/${financeRecord.id}`, {
         document_type: financeRecord.document_type,
-        expense_category: financeRecord.expense_category || '기타',
+        expense_category: financeRecord.expense_category,
         merchant: financeRecord.merchant || null,
         transaction_date: financeRecord.transaction_date || null,
         supply_amount: Number(financeRecord.supply_amount || 0),
@@ -1364,7 +1463,7 @@ export default function OCRPage() {
                   <button className={previewVariant === 'original' ? 'active' : ''} onClick={() => setPreviewVariant('original')}>원본</button>
                   <button className={previewVariant === 'processed' ? 'active' : ''} onClick={() => setPreviewVariant('processed')}>전처리</button>
                 </div>}
-                <button onClick={() => setZoom((z) => Math.max(0.55, z - 0.15))} aria-label="축소">−</button>
+                <button onClick={() => setZoom((z) => Math.max(MIN_PREVIEW_ZOOM, z - 0.15))} disabled={zoom <= MIN_PREVIEW_ZOOM} aria-label="축소">−</button>
                 <span>{Math.round(zoom * 100)}%</span>
                 <button onClick={() => setZoom((z) => Math.min(2, z + 0.15))} aria-label="확대">＋</button>
               </div>
@@ -1382,8 +1481,9 @@ export default function OCRPage() {
               <input ref={evaluationDatasetRef} hidden type="file" accept=".json,application/json" onChange={(event) => { const file = event.target.files?.[0] || null; setEvaluationDatasetFile(file); setEvaluationStatus(file ? `${file.name} 정답 데이터를 불러왔습니다.` : ''); setError(''); }} />
             </div>}
             {processingMode === 'receipt' && financeDuplicateNotice && <div className="receipt-duplicate-notice"><strong>중복 문서</strong><span>{financeDuplicateNotice}</span></div>}
+            {processingMode === 'receipt' && financeRecord && <div className="receipt-semantic-legend"><div><strong>영역 범례</strong><small>의미 분류별 OCR 근거</small></div><nav><button type="button" className={!activeReceiptSemantic ? 'active' : ''} onClick={() => setActiveReceiptSemantic(null)}>전체</button>{Object.entries(RECEIPT_SEMANTICS).map(([key, definition]) => <button type="button" key={key} className={activeReceiptSemantic === key ? 'active' : ''} disabled={!availableReceiptSemantics.has(key)} onClick={() => setActiveReceiptSemantic((current) => current === key ? null : key)} style={{ '--semantic-color': definition.color }}><i />{definition.label}</button>)}</nav></div>}
             <div className="preview-stage">
-              {generatedWorkbook ? <GeneratedWorkbookPreview title={generatedWorkbook.title} rows={generatedWorkbook.rows} onBack={() => setGeneratedWorkbook(null)} onDownload={() => { const anchor = document.createElement('a'); anchor.href = generatedWorkbook.url; anchor.download = generatedWorkbook.fileName; anchor.click(); }} /> : projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : displayedImageUrl ? <ImagePreview src={displayedImageUrl} fileName={fileName} scale={zoom} items={previewVariant === 'processed' ? [] : currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} loading={loading} /> : hasResult ? (
+              {generatedWorkbook ? <GeneratedWorkbookPreview title={generatedWorkbook.title} rows={generatedWorkbook.rows} onBack={() => setGeneratedWorkbook(null)} onDownload={() => { const anchor = document.createElement('a'); anchor.href = generatedWorkbook.url; anchor.download = generatedWorkbook.fileName; anchor.click(); }} /> : projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} activeSemantic={activeReceiptSemantic} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : displayedImageUrl ? <ImagePreview src={displayedImageUrl} fileName={fileName} scale={zoom} items={previewVariant === 'processed' ? [] : semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} loading={loading} activeSemantic={activeReceiptSemantic} /> : hasResult ? (
                 <div className="loader">OCR 텍스트 추출이 완료되었습니다.</div>
               ) : pendingFile ? (
                 <div className="pending-document" role="status">
@@ -1426,9 +1526,8 @@ export default function OCRPage() {
             {preprocessingInfo && <div className="receipt-preprocess-status"><strong>영수증 전처리 완료</strong><span>{(preprocessingInfo.applied_steps || []).map((step) => ({ perspective_correction: '원근', deskew: '기울기', crop: '여백', upscale: '확대', illumination_correction: '조명', contrast_enhancement: '대비', closing: '획 연결', sharpen: '선명화' }[step] || step)).join(' · ')}</span></div>}
             {resultTab === 'text' ? (financeRecord ? <FinanceReceiptWorksheet records={currentFinanceRecords} user={user} /> : processingMode === 'receipt' ? <div className="receipt-document-empty"><span>＋</span><strong>선별값이 들어갈 재무 문서</strong><p>영수증을 분석하면 날짜, 상호, 카테고리와 금액을 선별해<br />해당 재무 양식의 새로운 행으로 자동 추가합니다.</p><div><b>01</b> 영수증 인식 <i>→</i><b>02</b> 값 선별 <i>→</i><b>03</b> 행 추가</div></div> : <ExtractionWorksheet rows={validationRows} onChange={setValidationRows} selectedIds={selectedRowIds} onSelectRange={setSelectedRowIds} onEvidence={(itemIndex) => { setSelectedItemIndex(itemIndex); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />) : <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>{hasResult ? (currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : (currentText || '현재 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 OCR 원문이 표시됩니다.'}</div>}
             <div className="text-note"><b>i</b><p>{resultTab === 'text' ? (financeRecord ? '영수증에서 선별한 값이 재무 양식의 새로운 행으로 저장되었습니다.' : '행 번호를 누른 채 위아래로 드래그해 범위를 선택하고, 새 Excel 문서 만들기를 누르세요.') : 'OCR 원문을 선택하면 오른쪽 원본의 해당 근거 영역이 강조됩니다.'}</p></div>
-            {processingMode === 'receipt' && <section className="receipt-raw-result">
-              <header><div><strong>텍스트 추출 결과</strong><small>영수증 OCR 원문</small></div><span>{currentItems.length}개 항목</span></header>
-              <div>{currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={selectedItemIndex === index ? 'selected' : ''} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : <p>영수증을 업로드하면 추출된 텍스트가 여기에 표시됩니다.</p>}</div>
+            {processingMode === 'receipt' && <section className="receipt-insights-dock">
+              {financeRecord ? <ReceiptExtractionInsights record={financeRecord} ocrItems={semanticOcrItems} onSemanticSelect={(semantic) => { setActiveReceiptSemantic(semantic); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /> : <div className="receipt-insights-empty"><strong>추출 정보 대기</strong><p>영수증 분석이 끝나면 주요 정보, 구매 항목과 검증 신뢰도가 여기에 표시됩니다.</p></div>}
             </section>}
           </aside>
           {processingMode === 'receipt' && <aside className="receipt-agent-panel">
@@ -1453,8 +1552,8 @@ export default function OCRPage() {
             <header><div><span>AI FINANCE AGENT</span><h2 id="finance-review-title">추출 정보 검토·수정</h2><p>AI가 선별한 값을 확인하고 필요한 항목만 수정해주세요.</p></div><button type="button" aria-label="닫기" disabled={loading} onClick={() => setFinanceReviewOpen(false)}><IoCloseOutline /></button></header>
             <form onSubmit={saveFinanceReview}>
               <div className="finance-review-grid">
-                <label><span>문서 유형</span><select value={financeReviewDraft.document_type} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, document_type: event.target.value }))}>{Object.entries(FINANCE_DOCUMENTS).map(([value, definition]) => <option key={value} value={value}>{definition.title}</option>)}</select></label>
-                <label><span>카테고리</span><input required maxLength="100" value={financeReviewDraft.expense_category} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))} /></label>
+                <label><span>문서 유형</span><select required value={financeReviewDraft.document_type || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, document_type: event.target.value, expense_category: '' }))}><option value="" disabled>선택</option>{Object.entries(FINANCE_DOCUMENTS).filter(([value]) => !financeTaxonomy.document_types.length || financeTaxonomy.document_types.includes(value)).map(([value, definition]) => <option key={value} value={value}>{definition.title}</option>)}</select></label>
+                <label><span>카테고리</span><select required value={financeReviewDraft.expense_category || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))}><option value="" disabled>선택</option>{financeTaxonomy.expense_categories.filter((category) => !financeReviewDraft.document_type || financeTaxonomy.category_to_document_type[category] === financeReviewDraft.document_type).map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label><span>상호(가맹점)</span><input maxLength="200" value={financeReviewDraft.merchant} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, merchant: event.target.value }))} /></label>
                 <label><span>결제일</span><input type="date" value={financeReviewDraft.transaction_date} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, transaction_date: event.target.value }))} /></label>
                 <label><span>공급가액</span><input type="number" min="0" value={financeReviewDraft.supply_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, supply_amount: event.target.value }))} /></label>

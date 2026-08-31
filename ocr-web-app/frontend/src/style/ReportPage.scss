@@ -77,17 +77,18 @@
   }
 }
 .report-view-toggle {
-  width: 300px;
+  width: auto;
   padding: 3px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  align-items: center;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
   button {
-    width: 100%;
+    width: auto;
     min-height: 27px;
-    padding: 0 11px;
+    padding: 0 12px;
+    white-space: nowrap;
     color: #9eafc7;
     background: transparent;
     border: 0;
@@ -100,7 +101,7 @@
 .developer-report-select {
   min-width: 0;
   min-height: 27px;
-  padding: 0 7px 0 11px;
+  padding: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -108,34 +109,145 @@
   color: #9eafc7;
   border-radius: 6px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 650;
+  margin-right: 5px;
   cursor: pointer;
-  > span {
-    flex: none;
-    display: inline;
-    margin-top: 0;
-    line-height: 1;
-  }
   &.active {
-    color: #17304c;
-    background: #fff;
-  }
-  select {
-    min-width: 0;
-    flex: 1;
-    padding: 2px 14px 2px 4px;
-    color: inherit;
     background: transparent;
+  }
+  .report-dropdown {
+    width: 190px;
+  }
+}
+.report-dropdown {
+  position: relative;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 650;
+}
+.report-dropdown-trigger {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px 0 11px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 7px;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  > .report-dropdown-prefix {
+    flex: none;
+    margin-right: auto;
+    overflow: visible;
+    color: #526981;
+  }
+  > .report-dropdown-value {
+    margin-left: auto;
+  }
+  > i {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform 0.16s ease;
+  }
+}
+.report-dropdown.open .report-dropdown-trigger > i {
+  transform: translateY(2px) rotate(225deg);
+}
+.report-dropdown.open .report-dropdown-trigger {
+  border-radius: 7px 7px 0 0;
+}
+.report-dropdown-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% - 1px);
+  left: 0;
+  min-width: 100%;
+  padding: 0;
+  display: block;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #ccd7e3;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  box-shadow: 0 6px 14px rgba(20, 39, 64, 0.11);
+  > button {
+    width: 100%;
+    min-height: 35px;
+    padding: 0 12px;
+    overflow: hidden;
+    color: #29435f;
+    background: #fff;
     border: 0;
-    outline: 0;
+    border-radius: 0;
+    box-shadow: none;
     font: inherit;
-    line-height: 1;
+    outline: 0;
+    text-align: left;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: pointer;
   }
-  option {
-    color: #17304c;
-    background: #fff;
+  > button:not(:last-child) {
+    border-bottom: 1px solid #edf1f5;
   }
+  > button:hover,
+  > button.focused {
+    background: #f3f7fb;
+  }
+  > button.selected {
+    color: #1767df;
+    background: #edf4fd;
+  }
+}
+.report-dropdown.light {
+  .report-dropdown-trigger {
+    color: #173f68;
+    background: #fff;
+    border: 1px solid #ccd7e3;
+  }
+  .report-dropdown-trigger:hover:not(:disabled),
+  &.open .report-dropdown-trigger {
+    background: #f8fbfe;
+    border-color: #9fb8d2;
+  }
+  .report-dropdown-trigger:focus-visible {
+    border-color: #3270a6;
+    box-shadow: 0 0 0 2px rgba(50, 112, 166, 0.14);
+    outline: 0;
+  }
+  .report-dropdown-menu {
+    width: 100%;
+    color: #29435f;
+  }
+}
+.developer-report-select .report-dropdown-trigger {
+  width: 100%;
+  min-height: 25px;
+  border-radius: 6px;
+}
+.developer-report-select .report-dropdown.open .report-dropdown-trigger {
+  border-radius: 6px 6px 0 0;
+}
+.developer-report-select .report-dropdown-menu {
+  width: 100%;
+}
+.developer-report-select .report-dropdown-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
 }
 .receipt-report-tab-bar {
   margin-bottom: 13px;
@@ -1394,13 +1506,13 @@
   margin-bottom: 14px;
 }
 .rag-llm-controls {
-  padding: 15px 17px;
+  padding: 11px 17px;
   display: grid;
-  grid-template-columns: auto minmax(180px, 1fr) minmax(190px, 0.7fr) auto;
-  align-items: end;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(250px, 0.8fr) auto;
+  align-items: center;
   gap: 11px;
   border-bottom: 1px solid #e5ebf1;
-  button {
+  > button {
     min-height: 36px;
     padding: 0 14px;
     color: #245e9d;
@@ -1411,22 +1523,20 @@
     font-weight: 800;
     cursor: pointer;
   }
-  button.run {
+  > button.run {
     color: #fff;
     background: #1767df;
     border-color: #1767df;
   }
-  button:disabled {
+  > button:disabled {
     cursor: not-allowed;
     opacity: 0.48;
   }
-  label,
   .rag-llm-file {
     min-width: 0;
     display: grid;
     gap: 5px;
   }
-  label > span,
   .rag-llm-file span {
     color: #77869a;
     font-size: 11px;
@@ -1438,14 +1548,25 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  select {
-    min-height: 36px;
-    padding: 0 10px;
-    color: #33475f;
-    background: #fff;
-    border: 1px solid #ccd7e3;
-    border-radius: 7px;
-    font-size: 12px;
+  .rag-llm-model-select {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    > span {
+      flex: none;
+      color: #66788a;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .report-dropdown {
+      flex: 1;
+    }
+  }
+  .report-dropdown-trigger:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
   }
 }
 .rag-llm-progress {
@@ -1772,13 +1893,19 @@
   .report-view-toggle {
     width: 100%;
   }
-  .report-view-toggle button,
+  .report-view-toggle > button {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+  }
   .report-view-toggle .developer-report-select {
-    flex: 1 1 50%;
+    flex: 1 1 190px;
     box-sizing: border-box;
   }
   .developer-report-select {
     justify-content: flex-start;
+  }
+  .developer-report-select .report-dropdown {
+    width: 100%;
   }
   .recent-business-docs > div > div {
     grid-template-columns: minmax(130px, 1fr) 80px;

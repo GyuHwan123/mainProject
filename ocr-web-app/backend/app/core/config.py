@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
     RAG_EMBEDDING_MODEL: str = "BAAI/bge-m3"
     RAG_EMBEDDING_DIMENSIONS: int = 1024
-    RAG_LLM_MODEL: str = "gemma2:2b"
+    RAG_LLM_MODEL: str = "gemma2-rag:latest"
+    DASHBOARD_AGENT_MODEL: str = "gemma2:2b"
     RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
     RECEIPTS_LLM_MODEL: str = ""
     RAG_PROMPT_VERSION: str = "baseline-v1"
@@ -30,7 +31,10 @@ class Settings(BaseSettings):
     RAG_EVALUATION_ANSWER_THRESHOLD: float = 0.75
     # Docker Compose overrides this with the internal `ocr` service address.
     OCR_BASE_URL: str = "http://127.0.0.1:8001"
-    CORS_ORIGINS: list[str] = ["http://localhost:3000"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
     SUPABASE_URL: str = ""
     SUPABASE_ANON_KEY: str = ""
     SUPABASE_SERVICE_ROLE_KEY: str = ""

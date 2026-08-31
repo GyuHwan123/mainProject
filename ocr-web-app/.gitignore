@@ -1,4 +1,14 @@
 .env
+*.env
+!.env.example
+*.safetensors
+*.gguf
+models/rag/*
+!models/rag/README.md
+# Hugging Face authentication files and tokens
+.huggingface/
+hf_token
+*huggingface*token*
 node_modules/
 dist/
 __pycache__/

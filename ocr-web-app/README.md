@@ -1,5 +1,54 @@
 # PicToText
 
+## Docker Compose 실행
+
+이 프로젝트는 외부 Supabase PostgreSQL/Storage만 사용합니다. Compose에는 로컬
+DB 서비스가 없으므로 `.env`에 Supabase 프로젝트 값을 설정해야 합니다.
+
+```powershell
+cd ocr-web-app
+Copy-Item .env.example .env
+# .env에서 SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+# VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY, SECRET_KEY를 실제 값으로 교체
+docker compose up --build
+```
+
+접속 주소는 frontend `http://localhost:3000`, backend health
+`http://localhost:8000/health`, OCR health `http://localhost:8001/health`,
+Ollama `http://localhost:11434`입니다. 브라우저의 frontend는
+`VITE_API_BASE_URL=http://localhost:8000/api/v1`로 backend에 연결하고,
+backend 컨테이너는 `http://ocr:8001`, `http://ollama:11434` 내부 주소를
+사용합니다.
+
+기본 RAG 모델은 `gemma2:2b`이며 첫 기동 시 Ollama가 이를 내려받습니다.
+`ollama_data` named volume에 모델 데이터가 보존되므로 이후 기동에서는 다시
+받지 않습니다. 상태는 다음으로 확인할 수 있습니다.
+
+```powershell
+docker compose ps
+docker compose exec ollama ollama list
+```
+
+## QLoRA GGUF RAG 모델 설치
+
+1. 변환한 GGUF 파일을 `models/rag/my-qlora-rag.gguf`에 둡니다. 이 파일은 Git에
+   포함되지 않습니다.
+2. `.env`에 아래처럼 별도 Ollama 모델명과 경로를 지정합니다.
+
+```env
+RAG_LLM_MODEL=my-qlora-rag:latest
+OLLAMA_RAG_MODEL=my-qlora-rag:latest
+OLLAMA_RAG_GGUF_PATH=/models/rag/my-qlora-rag.gguf
+```
+
+3. `docker compose up --build`를 실행합니다. Ollama 시작 스크립트가 GGUF를
+   `my-qlora-rag:latest`로 한 번 등록합니다. `ollama_data` volume을 유지하는 한
+   재등록하지 않습니다. 기본 `gemma2:2b`로 돌아가려면 위 세 값을 비우고
+   `RAG_LLM_MODEL=gemma2:2b`로 설정합니다.
+
+보안상 `.env`, `.safetensors`, `.gguf`, Hugging Face 인증 정보는 Git에 추가하지
+마세요.
+
 PicToText는 OCR 기반 문서 처리 웹 애플리케이션입니다. React + FastAPI 구조이며, 영구 데이터는 Supabase PostgreSQL과 Storage에 저장합니다.
 
 ## 문서

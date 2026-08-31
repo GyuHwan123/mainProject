@@ -7,6 +7,7 @@ RUN apt-get update \
         fonts-noto-cjk \
         libglib2.0-0 \
         libgl1 \
+        libgomp1 \
         libreoffice-writer \
     && rm -rf /var/lib/apt/lists/*
 

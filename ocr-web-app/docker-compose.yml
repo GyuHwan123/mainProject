@@ -13,9 +13,16 @@ services:
       VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
       VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - ocr-network
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   backend:
     build:
@@ -45,10 +52,18 @@ services:
       SUPABASE_OCR_DOCUMENTS_TABLE: ${SUPABASE_OCR_DOCUMENTS_TABLE:-ocr_documents}
       SUPABASE_DOCUMENTS_BUCKET: ${SUPABASE_DOCUMENTS_BUCKET:-documents}
     depends_on:
-      - ollama
-      - ocr
+      ollama:
+        condition: service_healthy
+      ocr:
+        condition: service_healthy
     networks:
       - ocr-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 25s
 
   ocr:
     build:
@@ -59,6 +74,12 @@ services:
       - "${OCR_PORT:-8001}:8001"
     networks:
       - ocr-network
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
   ollama:
     build:
@@ -69,12 +90,22 @@ services:
       - "${OLLAMA_PORT:-11434}:11434"
     volumes:
       - ollama_data:/root/.ollama
+      # Place local QLoRA GGUF files in models/rag; they are never copied into images.
+      - ./models/rag:/models/rag:ro
     environment:
-      OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-llama3b-receipt-v3:latest}
+      OLLAMA_LLM_MODEL: ${RAG_LLM_MODEL:-gemma2:2b}
       OLLAMA_RECEIPTS_MODEL: ${RECEIPTS_LLM_MODEL:-}
       OLLAMA_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL:-embeddinggemma}
+      OLLAMA_RAG_MODEL: ${OLLAMA_RAG_MODEL:-}
+      OLLAMA_RAG_GGUF_PATH: ${OLLAMA_RAG_GGUF_PATH:-}
     networks:
       - ocr-network
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/ollama-models-ready && ollama list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
 
 volumes:
   ollama_data:

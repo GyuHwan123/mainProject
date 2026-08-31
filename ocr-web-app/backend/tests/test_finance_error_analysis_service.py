@@ -27,12 +27,12 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
     def test_classifies_receipt_failures_without_unknown_or_unclassified_fields(self):
         truth = {
             "merchant": "늘좋은주유소", "transaction_date": "2018-01-10",
-            "expense_category": "차량유지비", "total_quantity": 48.936,
+            "expense_category": "주유/교통", "total_quantity": 48.936,
             "items": [{"name": "유류", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}],
         }
         prediction = {
             "merchant": "늘좋은주유소", "transaction_date": "2017-11-09",
-            "expense_category": "회의비", "total_quantity": None,
+            "expense_category": "식비", "total_quantity": None,
             "items": [{"name": "NS-OIL", "quantity": 2, "unit_price": 10000, "total_amount": 22000}],
         }
         result = analyze_finance_evaluation_failure(

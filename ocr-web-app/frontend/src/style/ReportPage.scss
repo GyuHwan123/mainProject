@@ -45,7 +45,6 @@
   }
   span {
     display: block;
-    margin-top: 4px;
     color: #9eafc7;
     font-size: 13px;
   }
@@ -97,6 +96,14 @@
     color: #17304c;
     background: #fff;
   }
+  > button:not(.active) {
+    transform: scale(1);
+    transition: transform 0.16s ease;
+
+    &:hover {
+      transform: scale(1.015);
+    }
+  }
 }
 .developer-report-select {
   min-width: 0;
@@ -116,7 +123,35 @@
     background: transparent;
   }
   .report-dropdown {
-    width: 190px;
+    width: 160px;
+  }
+
+  &:not(.active) {
+    .report-dropdown.light {
+      .report-dropdown-trigger,
+      .report-dropdown-trigger:focus,
+      .report-dropdown-trigger:focus-visible {
+        color: #9eafc7;
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+        outline: 0;
+        transform: scale(1);
+      }
+
+      .report-dropdown-trigger:hover:not(:disabled) {
+        color: #9eafc7;
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+        outline: 0;
+        transform: scale(1.015);
+      }
+
+      .report-dropdown-prefix {
+        color: inherit;
+      }
+    }
   }
 }
 .report-dropdown {
@@ -136,7 +171,7 @@
   border-radius: 7px;
   font: inherit;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
   > span {
     min-width: 0;
     overflow: hidden;

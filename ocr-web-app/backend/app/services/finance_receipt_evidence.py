@@ -18,6 +18,7 @@ from app.api.routes.chatbot import generate
 from app.constants.finance_taxonomy import (
     ALLOWED_DOCUMENT_TYPES,
     ALLOWED_EXPENSE_CATEGORIES,
+    CATEGORY_CLASSIFICATION_POLICIES,
     CATEGORY_TO_DOCUMENT_TYPE,
     normalize_expense_category,
     validate_classification,
@@ -31,34 +32,16 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
-FINANCE_PROMPT_VERSION = "receipt-v11-beauty-service-guidance"
+FINANCE_PROMPT_VERSION = "receipt-v14-grounded-category-measured-items"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 _ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
 _ITEM_COLUMN_HEADER = re.compile(rf"(?:{_ITEM_COLUMN_LABEL}[\s|:/·-]*){{2,}}", re.IGNORECASE)
 
 
-ALCOHOL_EVIDENCE_PATTERN = re.compile(
-    r"소주|맥주|생맥|와인|위스키|보드카|막걸리|사케|청주|양주|하이볼|칵테일|"
-    r"주류|알코올|alcohol|beer|wine|whisk(?:e)?y|vodka|sake|cocktail",
-    re.IGNORECASE,
-)
-NON_ALCOHOL_PATTERN = re.compile(r"무\s*알코올|무\s*알콜|논\s*알코올|논\s*알콜|non[-\s]?alcohol", re.IGNORECASE)
-
-
-def _has_alcohol_evidence(text: Any) -> bool:
-    evidence = NON_ALCOHOL_PATTERN.sub("", str(text or ""))
-    return ALCOHOL_EVIDENCE_PATTERN.search(evidence) is not None
-
-
 def _normalize_expense_category(value: Any, evidence_text: Any = None) -> str | None:
     """Normalize to the single receipt_dataset_verified taxonomy."""
-    normalized = normalize_expense_category(value)
-    if normalized is None:
-        return None
-    if normalized == "식비/주류" and not _has_alcohol_evidence(evidence_text):
-        return "식비"
-    return normalized
+    return normalize_expense_category(value)
 
 
 def _clean_item_name_evidence(value: Any) -> tuple[str, list[str]]:
@@ -320,7 +303,25 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
                 pass
 
     amount_tokens = re.findall(r"(?<!\d)(\d{1,3}(?:[.,]\d{3})+|\d{3,8})(?!\d)", text)
-    amounts = sorted({amount for token in amount_tokens if 100 <= (amount := _receipt_number(token)) <= 100_000_000})
+
+    def is_compact_calendar_date(token: str) -> bool:
+        digits = re.sub(r"\D", "", token)
+        if len(digits) != 8 or not digits.startswith(("19", "20")):
+            return False
+        try:
+            date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
+            return True
+        except ValueError:
+            return False
+
+    # A compact date such as 20190328 is neither money nor valid evidence for
+    # a supply+tax=total relationship. Keeping it in the generic amount pool
+    # can overwrite a correctly extracted labelled/model total downstream.
+    amounts = sorted({
+        amount for token in amount_tokens
+        if not is_compact_calendar_date(token)
+        and 100 <= (amount := _receipt_number(token)) <= 100_000_000
+    })
     # Never let a won amount span OCR lines.  ``\s`` used to join fragments
     # such as a phone/card number on one line with an amount on the next and
     # could produce a plausible but enormous total.
@@ -419,7 +420,31 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     document_type_source = None
     document_type_confidence = None
     expense_category = None
-    if any(keyword in name for keyword in ("출장", "여비", "교통", "숙박", "ktx", "srt", "택시")):
+    transport_ticket_evidence = (
+        bool(re.search(r"승차권|승차표", text, re.IGNORECASE))
+        and (
+            bool(re.search(r"출발지", text, re.IGNORECASE) and re.search(r"도착지", text, re.IGNORECASE))
+            or bool(re.search(r"총\s*매수|예매\s*번호", text, re.IGNORECASE))
+        )
+    )
+    taxi_evidence = (
+        bool(re.search(r"택시", text, re.IGNORECASE))
+        and sum(bool(re.search(pattern, text, re.IGNORECASE)) for pattern in (
+            r"차량\s*번호", r"탑승\s*시간", r"미터\s*요금", r"주행\s*(?:거리|요금)",
+        )) >= 2
+    )
+    fuel_transaction_evidence = bool(
+        re.search(r"초저유황\s*경유|고급\s*휘발유|보통\s*휘발유|자동차용\s*경유|휘발유|경유|등유|LPG|유류", text, re.IGNORECASE)
+        and re.search(r"\d{1,4}(?:\.\d{1,3})?\s*[lℓ](?![A-Za-z])", text, re.IGNORECASE)
+        and re.search(r"단\s*가\s*[:：]?\s*\d{3,5}|\d{3,5}\s*원?\s*/\s*[lℓ]", text, re.IGNORECASE)
+        and total >= 100
+    )
+    if transport_ticket_evidence or taxi_evidence or fuel_transaction_evidence:
+        document_type = "TRAVEL_EXPENSE"
+        document_type_source = "OCR_TRANSPORT_CONTEXT"
+        document_type_confidence = 0.98
+        expense_category = "교통"
+    elif any(keyword in name for keyword in ("출장", "여비", "교통", "숙박", "ktx", "srt", "택시")):
         document_type = "TRAVEL_EXPENSE"
         if any(keyword in name for keyword in ("출장", "여비")):
             document_type_source = "FILENAME_BUSINESS_CONTEXT"
@@ -505,10 +530,17 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     payment_method = None
     payment_method_rejected_by_policy = False
     card_transaction_pattern = (
-        r"카드\s*(?:결제|승인|매출표)|신용\s*카드|체크\s*카드|"
+        r"카드\s*(?:결제|승인|매출표|거래\s*영수증)|신용\s*카드|체크\s*카드|"
         r"신용\s*(?:승인|송인|매출표)"
     )
-    if re.search(card_transaction_pattern, text, re.IGNORECASE):
+    explicit_card_transaction = bool(
+        re.search(card_transaction_pattern, text, re.IGNORECASE)
+        or (
+            re.search(r"카드\s*번호\s*[:：]", text, re.IGNORECASE)
+            and re.search(r"승인\s*(?:번호|금액|액)\s*[:：]", text, re.IGNORECASE)
+        )
+    )
+    if explicit_card_transaction:
         payment_method = "카드"
     elif re.search(r"현금\s*(?:결제|영수증)|현금영수증", text, re.IGNORECASE):
         payment_method = "현금"
@@ -521,7 +553,7 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
     transactional_card_found = any(
         not policy_context.search(line)
         and re.search(
-            r"카드\s*(?:결제|승인)(?:액|금액|번호)?|카드\s*매출표|"
+            r"카드\s*(?:결제|승인)(?:액|금액|번호)?|카드\s*(?:매출표|거래\s*영수증)|"
             r"신용\s*(?:판매액|승인|송인|매출표)",
             line,
             re.IGNORECASE,
@@ -561,6 +593,28 @@ def _normalize_merchant(value: Any, text: str) -> str | None:
     host-facility name.
     """
     merchant = str(value or "").strip()
+    labeled_merchant = None
+    for line in text.splitlines():
+        match = re.search(
+            r"(?:상호(?:명)?|가맹점(?:명)?|업체명|매장명)\s*[:：]\s*(.+)$",
+            line.strip(),
+            re.IGNORECASE,
+        )
+        if not match:
+            continue
+        candidate = re.split(
+            r"\s+(?:사업자(?:등록)?번호|대표자|전화(?:번호)?|주소)\s*[:：]",
+            match.group(1).strip(),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0].strip()
+        candidate = re.sub(r"^\(\s*\(\s*(?=주\s*\))", "(", candidate)
+        candidate = re.sub(r"\s*\((?:과세|면세)\)\s*$", "", candidate, flags=re.IGNORECASE).strip()
+        if candidate and not re.fullmatch(r"[-–—:：]+", candidate):
+            labeled_merchant = candidate[:200]
+            break
+    if labeled_merchant:
+        merchant = labeled_merchant
     compact_merchant = re.sub(r"[^0-9a-z가-힣]", "", merchant.lower())
     compact_text = re.sub(r"[^0-9a-z가-힣]", "", text.lower())
     tenant_aliases = {
@@ -610,6 +664,7 @@ def _validator_snapshot(result: dict[str, Any]) -> dict[str, Any]:
         "supply_amount", "tax_amount", "discount_amount", "total_amount", "payment_method",
         "card_number", "description", "receipt_summary", "items", "needs_review",
         "classification_review_reason", "card_number_evidence",
+        "category_evidence_line_ids", "category_evidence_validation",
     )
     return {
         key: json.loads(json.dumps(result.get(key), ensure_ascii=False))
@@ -674,6 +729,44 @@ def _validator_trace(before: dict[str, Any], after: dict[str, Any]) -> dict[str,
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     validator_input = _validator_snapshot(result)
     hints = _receipt_hints(text, filename)
+    semantic_evidence = result.get("semantic_evidence") if isinstance(result.get("semantic_evidence"), dict) else {}
+    available_line_ids = {
+        str(line.get("id"))
+        for line in semantic_evidence.get("lines") or []
+        if isinstance(line, dict) and line.get("id")
+    }
+    evidence_was_provided = "category_evidence_line_ids" in result
+    requested_evidence = result.get("category_evidence_line_ids")
+    requested_ids = list(dict.fromkeys(
+        str(line_id).strip()
+        for line_id in (requested_evidence if isinstance(requested_evidence, list) else [])
+        if str(line_id).strip()
+    ))[:3]
+    valid_evidence_ids = [line_id for line_id in requested_ids if line_id in available_line_ids]
+    invalid_evidence_ids = [line_id for line_id in requested_ids if line_id not in available_line_ids]
+    category_was_selected = bool(_normalize_expense_category(result.get("expense_category"), text))
+    if not category_was_selected:
+        evidence_status = "not_applicable"
+    elif not evidence_was_provided:
+        evidence_status = "not_provided"
+    elif not requested_ids:
+        evidence_status = "missing"
+    elif invalid_evidence_ids and valid_evidence_ids:
+        evidence_status = "partially_invalid"
+    elif invalid_evidence_ids:
+        evidence_status = "invalid"
+    else:
+        evidence_status = "valid"
+    result["category_evidence_line_ids"] = valid_evidence_ids
+    result["category_evidence_validation"] = {
+        "status": evidence_status,
+        "requested_ids": requested_ids,
+        "valid_ids": valid_evidence_ids,
+        "invalid_ids": invalid_evidence_ids,
+        "max_ids": 3,
+        "enforcement": "advisory",
+        "review_recommended": evidence_status in {"missing", "partially_invalid", "invalid"},
+    }
     receipt_summary = result.get("receipt_summary") if isinstance(result.get("receipt_summary"), dict) else {}
     stated_item_count = hints.get("stated_item_count") or _clean_number(receipt_summary.get("stated_item_count"))
     items = result.get("items") if isinstance(result.get("items"), list) else []
@@ -886,9 +979,10 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         })
         result["receipt_summary"] = receipt_summary
     model_doc_type = result.get("doc_type") or result.get("document_type")
-    candidate_category = _normalize_expense_category(
-        result.get("expense_category") or hints.get("expense_category"), text,
-    )
+    category_value = result.get("expense_category") or hints.get("expense_category")
+    if hints.get("document_type_source") == "OCR_TRANSPORT_CONTEXT":
+        category_value = hints.get("expense_category")
+    candidate_category = _normalize_expense_category(category_value, text)
     document_type, expense_category, needs_review, review_reason = validate_classification(
         model_doc_type,
         candidate_category,

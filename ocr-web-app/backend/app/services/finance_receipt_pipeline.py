@@ -3,6 +3,54 @@ from __future__ import annotations
 from app.services.finance_receipt_items import *
 
 
+RECEIPT_SUMMARY_TIMEOUT_SECONDS = 600
+RECEIPT_ITEMS_TIMEOUT_SECONDS = 600
+RECEIPT_ITEMS_RETRY_TIMEOUT_SECONDS = 300
+
+
+def _generation_metrics(response: Any) -> dict[str, Any]:
+    metrics = getattr(response, "ollama_metrics", None)
+    if not isinstance(metrics, dict):
+        return {}
+    durations = {
+        key.removesuffix("_duration") + "_duration_ms": round(value / 1_000_000, 2)
+        for key, value in metrics.items()
+        if key.endswith("_duration") and isinstance(value, (int, float))
+    }
+    return {
+        "prompt_eval_count": int(metrics.get("prompt_eval_count") or 0),
+        "eval_count": int(metrics.get("eval_count") or 0),
+        "done_reason": str(metrics.get("done_reason") or ""),
+        **durations,
+    }
+
+
+def _items_without_model_notes(items: Any) -> list[dict[str, Any]]:
+    """Discard free-form model notes; deterministic post-processing may add its own."""
+    if not isinstance(items, list):
+        return []
+    cleaned: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        cleaned_item = dict(item)
+        cleaned_item.pop("note", None)
+        cleaned.append(cleaned_item)
+    return cleaned
+
+
+def _is_generation_timeout(error: BaseException) -> bool:
+    """Recognize a wrapped httpx/Ollama timeout without coupling to one client type."""
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, TimeoutError) or "timeout" in type(current).__name__.lower():
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 async def _generate_receipt_json(*args: Any, **kwargs: Any) -> str:
     """Resolve through the public route module for patch/injection compatibility."""
     import sys
@@ -25,8 +73,9 @@ async def _classify_receipt_with_model(
         json_format=True,
         num_predict=500,
         model_name=model_name,
-        request_timeout_seconds=240,
+        request_timeout_seconds=RECEIPT_SUMMARY_TIMEOUT_SECONDS,
     )
+    summary_metrics = _generation_metrics(raw)
     summary_latency_ms = round((perf_counter() - summary_started) * 1000)
     result = json.loads(raw)
     if not isinstance(result, dict):
@@ -40,6 +89,7 @@ async def _classify_receipt_with_model(
         "summary_latency_ms": summary_latency_ms,
         "summary_prompt_chars": len(summary_prompt),
         "summary_response_chars": len(raw),
+        "summary_ollama": summary_metrics,
     }
     result.pop("items", None)
     hints = _receipt_hints(text, filename)
@@ -70,6 +120,7 @@ async def _classify_receipt_with_model(
             "items_latency_ms": 0,
             "items_prompt_chars": 0,
             "items_response_chars": 0,
+            "items_ollama": {},
             "items_call_status": "skipped_grounded_fast_path",
             "items_skip_reason": fast_path_reason,
             "item_structure": item_structure,
@@ -82,10 +133,21 @@ async def _classify_receipt_with_model(
     try:
         items_raw = ""
         items_result: dict[str, Any] | None = None
+        items_metrics: dict[str, Any] = {}
         prompts = [
-            ("full", items_prompt, min(max(400, 220 + len(candidates) * 75), 750), 300),
-            ("compact_retry", _receipt_items_retry_prompt(candidates, stated_count), min(max(240, 120 + len(candidates) * 55), 600), 180),
+            (
+                "recovery_full" if not candidates else "full",
+                items_prompt,
+                min(max(400, 220 + len(candidates) * 75), 750),
+                RECEIPT_ITEMS_TIMEOUT_SECONDS,
+            ),
         ]
+        if candidates:
+            prompts.append((
+                "compact_retry", _receipt_items_retry_prompt(candidates, stated_count),
+                min(max(240, 120 + len(candidates) * 55), 600),
+                RECEIPT_ITEMS_RETRY_TIMEOUT_SECONDS,
+            ))
         for attempt_name, attempt_prompt, num_predict, timeout_seconds in prompts:
             attempt_started = perf_counter()
             try:
@@ -96,29 +158,37 @@ async def _classify_receipt_with_model(
                     model_name=model_name,
                     request_timeout_seconds=timeout_seconds,
                 )
+                attempt_metrics = _generation_metrics(candidate_raw)
                 candidate_result = json.loads(candidate_raw)
                 if not isinstance(candidate_result, dict) or not isinstance(candidate_result.get("items"), list):
                     raise ValueError("items array expected")
                 items_raw, items_result = candidate_raw, candidate_result
+                items_metrics = attempt_metrics
                 item_attempts.append({
                     "name": attempt_name, "status": "success",
                     "prompt_chars": len(attempt_prompt),
                     "latency_ms": round((perf_counter() - attempt_started) * 1000),
+                    "ollama": attempt_metrics,
                 })
                 break
             except Exception as attempt_error:
+                timed_out = _is_generation_timeout(attempt_error)
                 item_attempts.append({
                     "name": attempt_name, "status": "failed",
                     "prompt_chars": len(attempt_prompt),
                     "latency_ms": round((perf_counter() - attempt_started) * 1000),
                     "failure_type": type(attempt_error).__name__,
+                    "timed_out": timed_out,
                 })
-                if attempt_name == "compact_retry":
+                # A timed-out request already consumed the safe request budget.
+                # With no candidates, a compact retry would also have no facts.
+                if timed_out or not candidates or attempt_name == "compact_retry":
                     raise
         if items_result is None:
             raise ValueError("item extraction produced no result")
         items_latency_ms = round((perf_counter() - items_started) * 1000)
-        raw_model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
+        raw_model_items = _items_without_model_notes(items_result.get("items"))
+        items_result["items"] = raw_model_items
         model_items = _deduplicate_model_items(raw_model_items, candidates)
         model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
         result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
@@ -154,6 +224,7 @@ async def _classify_receipt_with_model(
             "items_latency_ms": items_latency_ms,
             "items_prompt_chars": len(items_prompt),
             "items_response_chars": len(items_raw),
+            "items_ollama": items_metrics,
             "items_call_status": "success",
             "items_attempts": item_attempts,
             "item_structure": item_structure,
@@ -185,6 +256,7 @@ async def _classify_receipt_with_model(
             "items_latency_ms": items_latency_ms,
             "items_prompt_chars": len(items_prompt),
             "items_response_chars": 0,
+            "items_ollama": {},
             "items_call_status": "failed",
             "items_attempts": item_attempts,
             "items_failure_type": type(exc).__name__,

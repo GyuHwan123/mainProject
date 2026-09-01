@@ -17,12 +17,8 @@ ALLOWED_EXPENSE_CATEGORIES = (
     "도서",
     "전자제품/문구",
     "교통",
-    "주유/교통",
-    "미용/생활",
     "식비",
     "레저",
-    "전자제품",
-    "식비/주류",
     "의료",
     "문화",
 )
@@ -33,14 +29,24 @@ CATEGORY_TO_DOCUMENT_TYPE = {
     "도서": "WELFARE_BENEFIT",
     "전자제품/문구": "PURCHASE_REQUEST",
     "교통": "TRAVEL_EXPENSE",
-    "주유/교통": "EXPENSE_REPORT",
-    "미용/생활": "WELFARE_BENEFIT",
     "식비": "WELFARE_BENEFIT",
     "레저": "WELFARE_BENEFIT",
-    "전자제품": "PURCHASE_REQUEST",
-    "식비/주류": "WELFARE_BENEFIT",
     "의료": "WELFARE_BENEFIT",
     "문화": "WELFARE_BENEFIT",
+}
+
+# Compact accounting policies for the summary LLM. These define transaction
+# boundaries without accumulating merchant-specific or receipt-specific examples.
+CATEGORY_CLASSIFICATION_POLICIES = {
+    "취미/쇼핑": "취미·의류·선물·일반 쇼핑 거래. 다른 전용 카테고리의 대상이 명확하면 제외",
+    "미용": "외모·모발·피부·손발 관리 거래. 관련 상품만 보이면 상호 업종만으로 확정하지 않음",
+    "도서": "책·서적·출판물 구매 거래",
+    "전자제품/문구": "전자기기·컴퓨터 주변기기·사무용품·문구 구매 거래",
+    "교통": "승객 운송·승차 또는 차량 연료·유지 거래",
+    "식비": "식사·식품·간식·음료·주류 구매 거래",
+    "레저": "스포츠·여가 활동·숙박 이용 거래",
+    "의료": "진료·검사·치료·의약품 등 의료 목적 거래",
+    "문화": "공연·영화·전시 등 문화 콘텐츠 이용 거래",
 }
 
 # Only unambiguous variants are accepted. The canonical labels above exactly
@@ -48,7 +54,7 @@ CATEGORY_TO_DOCUMENT_TYPE = {
 LEGACY_CATEGORY_ALIASES = {
     "교통비": "교통",
     "여비교통비": "교통",
-    "차량유지비": "주유/교통",
+    "차량유지비": "교통",
     "도서인쇄비": "도서",
     "도서인쇄": "도서",
     "복리후생": "식비",
@@ -58,6 +64,11 @@ LEGACY_CATEGORY_ALIASES = {
     "출장식대": "식비",
     "출장식사": "식비",
     "회의비": "식비",
+    # Removed overlapping canonical labels remain safe input aliases.
+    "주유/교통": "교통",
+    "미용/생활": "미용",
+    "전자제품": "전자제품/문구",
+    "식비/주류": "식비",
     # Historical overlapping food labels now share one canonical category.
     "식비/생활": "식비",
     "생활/식비": "식비",
@@ -146,5 +157,7 @@ def validate_classification(
 
 if set(CATEGORY_TO_DOCUMENT_TYPE) != set(ALLOWED_EXPENSE_CATEGORIES):
     raise RuntimeError("Every canonical expense category must have one document type")
+if set(CATEGORY_CLASSIFICATION_POLICIES) != set(ALLOWED_EXPENSE_CATEGORIES):
+    raise RuntimeError("Every canonical expense category must have one classification policy")
 if not set(CATEGORY_TO_DOCUMENT_TYPE.values()).issubset(ALLOWED_DOCUMENT_TYPES):
     raise RuntimeError("Category mapping contains an unknown document type")

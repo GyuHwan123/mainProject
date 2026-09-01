@@ -1,6 +1,19 @@
 """Finance HTTP endpoints; receipt processing lives in the service layer."""
 
+import asyncio
+
 from app.services.finance_receipt_pipeline import *
+
+
+RECEIPT_CLASSIFICATION_BUDGET_SECONDS = 1560
+_receipt_classification_lock = asyncio.Lock()
+
+
+async def _classify_receipt_serialized(
+    text: str, filename: str, pages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    async with _receipt_classification_lock:
+        return await _classify_receipt(text, filename, pages)
 
 @router.post("/records/classify", response_model=FinanceRecord)
 async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depends(require_current_user)) -> dict[str, Any]:
@@ -26,11 +39,23 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
             duplicate_record = existing
             break
 
-    classified = await _classify_receipt(
-        extracted_text,
-        document.get("file_name") or "receipt",
-        document.get("bounding_boxes") or [],
-    )
+    try:
+        classified = await asyncio.wait_for(
+            _classify_receipt_serialized(
+                extracted_text,
+                document.get("file_name") or "receipt",
+                document.get("bounding_boxes") or [],
+            ),
+            timeout=RECEIPT_CLASSIFICATION_BUDGET_SECONDS,
+        )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                f"영수증 분류가 안전 처리 시간 {RECEIPT_CLASSIFICATION_BUDGET_SECONDS}초를 "
+                "초과해 중단되었습니다. 다음 영수증은 이전 Ollama 작업 종료 후 처리할 수 있습니다."
+            ),
+        ) from exc
     normalized = _normalize(classified, document.get("file_name") or "receipt", extracted_text)
     normalized["structured_data"]["receipt_fingerprint"] = fingerprint
     normalized["structured_data"]["receipt_identity_key"] = identity_key

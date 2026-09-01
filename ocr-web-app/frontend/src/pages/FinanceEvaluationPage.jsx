@@ -14,7 +14,6 @@ const LABELS = {
   total_quantity: '총 물품 수량', discount_amount: '할인액', card_number: '카드번호',
   evaluation_status: '평가 상태',
 };
-const OCR_PREVIEW_CONTEXT = new WeakMap();
 
 function impactLabel(field) {
   const itemMatch = /^items\[(\d+)]\.(.+)$/.exec(field);
@@ -151,66 +150,78 @@ function normalizedEvidence(value) {
   return String(value || '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
 }
 
-const RESOLUTION_LABELS = {
-  arithmetic: '수량 × 단가 산술 관계로 열 역할 결정', header: '표 머리글 위치로 열 역할 결정',
-  plausibility: '값의 범위와 조합 가능성으로 결정', item_block: '여러 OCR 행을 하나의 품목 블록으로 결합',
-  single_amount_default_quantity: '금액 하나만 인식되어 수량을 1로 보정',
-  discount_arithmetic: '할인 전후 금액의 산술 관계로 결정', ambiguous: '열 역할을 확정하지 못함',
-};
-
-function candidateLocations(candidate, pages) {
-  const needles = (candidate?.raw_cells || []).map(normalizedEvidence).filter(Boolean);
-  if (!needles.length) return [];
-  return (Array.isArray(pages) ? pages : []).flatMap((page, pageIndex) => (page?.items || []).flatMap((item, itemIndex) => {
-    const evidence = normalizedEvidence(item?.text);
-    if (!evidence || !needles.some((needle) => needle.includes(evidence) || evidence.includes(needle))) return [];
-    const points = Array.isArray(item?.bbox) ? item.bbox : [];
-    const xs = points.map((point) => Number(point?.[0])).filter(Number.isFinite);
-    const ys = points.map((point) => Number(point?.[1])).filter(Number.isFinite);
-    return [{ page: page?.page || pageIndex + 1, item: itemIndex + 1, text: item.text, bbox: xs.length && ys.length ? [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] : null, confidence: item.confidence ?? item.score ?? null }];
-  })).slice(0, 12);
-}
-
-function CandidateTrace({ candidate, index, pages, predicted, view }) {
-  const locations = candidateLocations(candidate, pages);
-  const quantity = Number(candidate?.quantity_candidate);
-  const unitPrice = Number(candidate?.unit_price_candidate);
-  const amount = Number(candidate?.amount_candidate);
-  const calculable = Number.isFinite(quantity) && Number.isFinite(unitPrice) && Number.isFinite(amount);
-  const calculated = calculable ? quantity * unitPrice : null;
-  const rawName = candidate?.raw_name_candidate || candidate?.raw_cells?.[0] || '-';
-  const normalizedName = candidate?.name_candidate || '-';
-  const changes = [];
-  if (String(rawName) !== String(normalizedName)) changes.push(`품목명 정리: “${rawName}” → “${normalizedName}”`);
-  if (candidate?.column_resolution) changes.push(RESOLUTION_LABELS[candidate.column_resolution] || `열 판정 규칙: ${candidate.column_resolution}`);
-  (candidate?.uncertainty || []).forEach((item) => changes.push(`불확실성 감지: ${item}`));
-  return <article className="candidate-trace-card">
-    <header><div><strong>품목 {index + 1} · {normalizedName}</strong><span>{candidate?.uncertainty?.length ? '검토 필요' : '자동 판정'}</span></div><small>발생 단계: {candidate?.uncertainty?.length ? '후보 생성·열 판정' : 'OCR 후처리·구조화'}</small></header>
-    {view === 'flow' && <div className="candidate-trace-flow"><section><small>OCR 원문</small><code>{(candidate?.raw_cells || []).join(' | ') || '-'}</code></section><b>→</b><section><small>정규화·후보</small><code>{normalizedName} / {quantity || '-'} / {unitPrice || '-'} / {amount || '-'}</code></section><b>→</b><section><small>최종 구조화</small><code>{predicted ? `${predicted.name ?? '-'} / ${predicted.quantity ?? '-'} / ${predicted.unit_price ?? '-'} / ${predicted.total_amount ?? '-'}` : '미제공'}</code></section></div>}
-    {view === 'calculation' && <div className="candidate-trace-grid single"><section><h4>수량·단가·금액 검증식</h4><p className={calculable && calculated !== amount ? 'trace-error' : 'trace-ok'}>{calculable ? `${quantity.toLocaleString()} × ${unitPrice.toLocaleString()} = ${calculated.toLocaleString()} / 인식 금액 ${amount.toLocaleString()}${calculated === amount ? ' · 일치' : ` · ${Math.abs(calculated - amount).toLocaleString()} 차이`}` : '계산에 필요한 수량·단가·금액 일부가 없습니다.'}</p></section></div>}
-    {view === 'rules' && <div className="candidate-trace-grid"><section><h4>적용된 보정·판정</h4>{changes.length ? <ul>{changes.map((change) => <li key={change}>{change}</li>)}</ul> : <p>명시적으로 기록된 보정 내역이 없습니다.</p>}</section><section><h4>오류 및 불확실성</h4><p>{candidate?.uncertainty?.length ? candidate.uncertainty.join(', ') : '감지된 불확실성이 없습니다.'}</p></section></div>}
-    {view === 'location' && <div className="candidate-trace-grid"><section><h4>원본 위치 · OCR 신뢰도</h4>{locations.length ? <ul>{locations.map((location) => <li key={`${location.page}-${location.item}`}>P{location.page} #{location.item} · {location.bbox ? `bbox [${location.bbox.map(Math.round).join(', ')}]` : '좌표 미제공'} · 신뢰도 {location.confidence == null ? '미제공' : `${Math.round(Number(location.confidence) * 100)}%`}</li>)}</ul> : <p>후보와 연결되는 OCR 박스 위치가 없습니다.</p>}</section><section><h4>원본 행·결합 정보</h4><p>{candidate?.source || candidate?.row_source || candidate?.column_resolution ? `출처: ${candidate.source || candidate.row_source || candidate.column_resolution}` : '원본 행 번호와 결합 이력은 현재 응답에 미제공'}</p></section></div>}
-  </article>;
-}
-
-function OcrSheetPreview({ pages, text, diagnostics, prediction, truth }) {
-  const previewContext = Array.isArray(pages) ? OCR_PREVIEW_CONTEXT.get(pages) : null;
-  diagnostics ||= previewContext?.diagnostics;
-  prediction ||= previewContext?.prediction;
-  truth ||= previewContext?.truth;
-  const [selectedView, setSelectedView] = useState('raw');
+function OcrSheetPreview({ pages, text }) {
   const rows = useMemo(() => buildOcrGrid(pages, text), [pages, text]);
   const columnCount = Math.max(1, ...rows.map((row) => row.length));
-  const candidates = diagnostics?.candidates || [];
-  const predictedItems = Array.isArray(prediction?.items) ? prediction.items : [];
-  const tabs = [['raw', '원문 배치'], ['flow', '변환 흐름'], ['calculation', '산술 검증'], ['rules', '보정·판정'], ['location', '원본 위치']];
-  return <div className="ocr-sheet-mini ocr-structure-preview">
-    <div className="ocr-view-tabs">{tabs.map(([key, label]) => <button className={selectedView === key ? 'active' : ''} type="button" key={key} onClick={() => setSelectedView(key)}>{label}</button>)}</div>
-    {diagnostics?.summary && <div className="ocr-diagnostic-summary"><span>박스 {diagnostics.summary.ocr_boxes || 0}</span><span>표 {diagnostics.summary.tables || 0}</span><span>표 행 {diagnostics.summary.table_rows || 0}</span><span>품목 후보 {diagnostics.summary.item_candidates || 0}</span><span className={diagnostics.summary.uncertain_candidates ? 'warning' : ''}>불확실 {diagnostics.summary.uncertain_candidates || 0}</span></div>}
-    <div className="ocr-view-scroll">
-      {selectedView === 'raw' && <table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex} title={row[columnIndex] || ''}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table>}
-      {selectedView !== 'raw' && <div className="candidate-trace-list">{candidates.length ? candidates.map((candidate, index) => <CandidateTrace candidate={candidate} index={index} pages={pages} predicted={predictedItems[index]} view={selectedView} key={index} />) : <div className="eval-preview-empty">추적할 품목 후보가 없습니다.</div>}</div>}
-    </div>
+  return <div className="ocr-sheet-mini"><table><thead><tr><th>#</th>{Array.from({ length: columnCount }, (_, index) => <th key={index}>{columnLabel(index)}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}><th>{rowIndex + 1}</th>{Array.from({ length: columnCount }, (_, columnIndex) => <td key={columnIndex} title={row[columnIndex] || ''}>{row[columnIndex] || ''}</td>)}</tr>)}</tbody></table></div>;
+}
+
+const PIPELINE_STAGE_LABELS = {
+  OCR_ERROR: 'OCR 인식', CANDIDATE_ERROR: '후보 선택', LLM_ERROR: 'LLM 판단',
+  VALIDATION_ERROR: '후처리 검증', NORMALIZATION_ERROR: '값 정규화', UNKNOWN: '최종 결과',
+};
+
+function fieldEvidenceLines(field, semanticEvidence, actual, expected) {
+  const lines = Array.isArray(semanticEvidence?.lines) ? semanticEvidence.lines : [];
+  const sections = semanticEvidence?.sections || {};
+  const sectionNames = field === 'merchant' ? ['issuer', 'business_info']
+    : field === 'payment_method' || field === 'card_number' ? ['payment', 'settlement']
+      : field === 'expense_category' ? ['service_detail', 'items', 'issuer']
+        : field === 'transaction_date' ? ['transaction', 'service_detail']
+          : /amount|tax|supply|discount/.test(field) ? ['settlement', 'tax_summary', 'adjustments']
+            : field.startsWith('items') ? ['items'] : [];
+  const ids = new Set(sectionNames.flatMap((name) => sections[name] || []));
+  const needles = [actual, expected].map(normalizedEvidence).filter((value) => value && value !== 'null');
+  const categoryPattern = field === 'expense_category'
+    ? /승차권|택시|출발지|도착지|총매수|미용|헤어|병원|도서|식당|카페|주유/i : null;
+  return lines.filter((line) => {
+    const lineValue = normalizedEvidence(line?.text);
+    return ids.has(line?.id)
+      || needles.some((needle) => lineValue.includes(needle) || needle.includes(lineValue))
+      || Boolean(categoryPattern?.test(String(line?.text || '')));
+  }).slice(0, 5);
+}
+
+function PipelineDiagnosis({ pages, text, diagnostics, prediction, truth, score, pipelineTrace, errorTags }) {
+  const [tab, setTab] = useState('diagnosis');
+  const [selectedField, setSelectedField] = useState('');
+  const semanticEvidence = pipelineTrace?.semantic_evidence || {};
+  const llmSummary = pipelineTrace?.llm?.summary_raw || {};
+  const validatorInput = pipelineTrace?.validator?.input || {};
+  const validatorOutput = pipelineTrace?.validator?.output || {};
+  const comparisons = flattenedMatches(score);
+  const changedFields = new Set((pipelineTrace?.validator?.changes || []).map((change) => change?.field).filter((field) => LABELS[field]));
+  const diagnosticRows = comparisons.filter((row) => !row.correct || changedFields.has(row.field)).map((row) => {
+    const tags = tagsForMismatch(row.field, errorTags || []);
+    const primaryTag = tags[0] || null;
+    const evidence = fieldEvidenceLines(row.field, semanticEvidence, row.actual, row.expected);
+    const llmValue = llmSummary?.[row.field] ?? validatorInput?.[row.field];
+    const validatorValue = validatorOutput?.[row.field] ?? row.actual;
+    const corrected = row.correct && changedFields.has(row.field);
+    return { ...row, tags, primaryTag, evidence, llmValue, validatorValue, corrected };
+  });
+  const issueCount = diagnosticRows.filter((row) => !row.correct).length;
+  const correctedCount = diagnosticRows.filter((row) => row.corrected).length;
+  const active = diagnosticRows.find((row) => row.field === selectedField) || diagnosticRows[0] || null;
+  const normalCount = Math.max(comparisons.length - issueCount, 0);
+  const tabs = [['diagnosis', '오류 분석'], ['flow', '필드 흐름'], ['evidence', 'OCR 근거'], ['raw', '원본 표']];
+  return <div className="pipeline-diagnosis">
+    <div className="pipeline-diagnosis-tabs">{tabs.map(([key, label]) => <button type="button" className={tab === key ? 'active' : ''} onClick={() => setTab(key)} key={key}>{label}</button>)}</div>
+    {tab !== 'raw' && <div className="pipeline-diagnosis-summary"><strong className={issueCount ? 'has-issues' : ''}>{issueCount ? `확인 필요 ${issueCount}개` : '오류 없음'}</strong><span>보정 {correctedCount}개 · 정상 {normalCount}개</span></div>}
+    {tab === 'diagnosis' && <div className="pipeline-diagnosis-scroll">
+      {diagnosticRows.length ? diagnosticRows.map((row) => <button type="button" className={`pipeline-issue-card ${row.corrected ? 'corrected' : 'failed'}`} onClick={() => { setSelectedField(row.field); setTab('flow'); }} key={row.field}>
+        <span><b>{row.label}</b><em>{row.corrected ? '자동 보정' : PIPELINE_STAGE_LABELS[row.primaryTag?.category || 'UNKNOWN']}</em></span>
+        <strong>{row.corrected ? `${displayEvaluationValue(row.llmValue)} → ${displayEvaluationValue(row.actual)}` : row.primaryTag?.message || `기대값과 최종값이 다릅니다.`}</strong>
+        <small>OCR 근거 {row.evidence.length}개 · 결과 {displayEvaluationValue(row.actual)} · 정답 {displayEvaluationValue(row.expected)}</small>
+      </button>) : <div className="pipeline-diagnosis-empty"><strong>모든 필드가 정상 처리됐습니다.</strong><span>OCR 근거와 최종 결과가 일치합니다.</span></div>}
+    </div>}
+    {tab === 'flow' && <div className="pipeline-diagnosis-scroll">{active ? <article className="field-flow-card">
+      <header><div><strong>{active.label}</strong><span>{active.corrected ? '자동 보정 완료' : '확인 필요'}</span></div>{active.primaryTag?.message && <p>{active.primaryTag.message}</p>}</header>
+      <div className="field-flow-steps"><section><small>OCR 근거</small><b>{active.evidence.map((line) => line.text).join(' · ') || '직접 연결된 근거 없음'}</b></section><i>→</i><section><small>LLM 출력</small><b>{displayEvaluationValue(active.llmValue)}</b></section><i>→</i><section><small>후처리</small><b>{displayEvaluationValue(active.validatorValue)}</b></section><i>→</i><section className={active.correct ? 'success' : 'failure'}><small>최종값</small><b>{displayEvaluationValue(active.actual)}</b></section></div>
+      <footer><span>정답 {displayEvaluationValue(active.expected)}</span>{active.tags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.code}-${index}`} />)}</footer>
+    </article> : <div className="pipeline-diagnosis-empty">확인할 필드가 없습니다.</div>}</div>}
+    {tab === 'evidence' && <div className="pipeline-diagnosis-scroll evidence-list">{diagnosticRows.length ? diagnosticRows.map((row) => <section key={row.field}><header><strong>{row.label}</strong><span>{row.evidence.length}개 근거</span></header>{row.evidence.length ? row.evidence.map((line) => <p key={`${row.field}-${line.id}`}><b>{line.id}</b>{line.text}</p>) : <p className="no-evidence">연결된 OCR 근거가 없습니다.</p>}</section>) : <div className="pipeline-diagnosis-empty">확인 필요한 OCR 근거가 없습니다.</div>}</div>}
+    {tab === 'raw' && <OcrSheetPreview pages={pages} text={text} diagnostics={diagnostics} prediction={prediction} truth={truth} />}
   </div>;
 }
 
@@ -331,7 +342,7 @@ function PendingReceiptEvaluation({ receipt }) {
   }, [receipt.document_id]);
   return <article className="pending-receipt-evaluation">
     <div>{previewUrl ? <img src={previewUrl} alt={receipt.document_name} /> : <span>이미지를 불러오는 중입니다.</span>}</div>
-    <section><small>분석 대기</small><h3>{receipt.document_name}</h3><p>정답 데이터가 없습니다.</p><em>정답 JSON을 입력하면 정확도, 필드 매칭 및 OCR 영향 분석을 진행할 수 있습니다.</em><strong>{receipt.model_name || '영수증 모델'}</strong></section>
+    <section><small>분석 대기</small><h3>{receipt.document_name}</h3><p>정답 데이터가 없습니다.</p><em>정답 JSON을 입력하면 정확도와 필드 매칭 분석을 진행할 수 있습니다.</em><strong>{receipt.model_name || '영수증 모델'}</strong></section>
   </article>;
 }
 
@@ -345,18 +356,12 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   const [exportingExcel, setExportingExcel] = useState(false);
   const [activeSemantic, setActiveSemantic] = useState(null);
   const score = result.system?.score || {};
-  const impact = result.system?.ocr_impact;
   const workbook = result.system?.workbook;
   const errorAnalysis = result.system?.error_analysis || {};
   const errorTags = Array.isArray(errorAnalysis.error_tags) ? errorAnalysis.error_tags : [];
   const pipelineTrace = result.system?.pipeline_trace || {};
   const semanticEvidence = pipelineTrace.semantic_evidence || {};
   const availableSemantics = new Set((run.ocr_pages || []).flatMap((page) => page?.items || []).map((item) => semanticForText(item.text, semanticEvidence)).filter(Boolean));
-  if (Array.isArray(run.ocr_pages)) OCR_PREVIEW_CONTEXT.set(run.ocr_pages, {
-    diagnostics: run.ocr_diagnostics,
-    prediction: result.system?.prediction,
-    truth: run.normalized_ground_truth || run.ground_truth,
-  });
   const fieldMatches = flattenedMatches(score);
   const matched = fieldMatches
     .filter((field) => field.correct)
@@ -374,12 +379,12 @@ function ModelPipelineResult({ run, result, imagePreview }) {
       anchor.href = url; anchor.download = `finance-receipt-${run.record_id}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
     } finally { setExportingExcel(false); }
   };
-  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>OCR 영향</dt><dd>{impact?.counts?.LIKELY_OCR_ERROR || 0}개 가능</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section className="semantic-image-panel"><h3>1. 입력 이미지 · 의미별 OCR 박스 · 클릭해서 확대</h3><EvaluationSemanticLegend active={activeSemantic} available={availableSemantics} onChange={setActiveSemantic} /><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 파이프라인</h3><OcrSheetPreview pages={run.ocr_pages} text={run.ocr_text} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /></div>}</article>;
+  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section className="semantic-image-panel"><h3>1. 입력 이미지 · 의미별 OCR 박스 · 클릭해서 확대</h3><EvaluationSemanticLegend active={activeSemantic} available={availableSemantics} onChange={setActiveSemantic} /><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 판단 과정</h3><PipelineDiagnosis pages={run.ocr_pages} text={run.ocr_text} diagnostics={run.ocr_diagnostics} prediction={result.system?.prediction} truth={run.normalized_ground_truth || run.ground_truth} score={score} pipelineTrace={pipelineTrace} errorTags={errorTags} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /></div>}</article>;
 }
 
 function PipelineEmpty() {
   return <article className="model-pipeline-result pipeline-empty-result">
-    <header><div><small>FINAL SERVICE</small><h2>평가 결과 대기</h2></div><dl><div><dt>정확도</dt><dd>—</dd></div><div><dt>필드 매칭</dt><dd>—/—</dd></div><div><dt>OCR 영향</dt><dd>—</dd></div><div><dt>응답시간</dt><dd>—</dd></div></dl></header>
+    <header><div><small>FINAL SERVICE</small><h2>평가 결과 대기</h2></div><dl><div><dt>정확도</dt><dd>—</dd></div><div><dt>필드 매칭</dt><dd>—/—</dd></div><div><dt>응답시간</dt><dd>—</dd></div></dl></header>
     <div className="pipeline-boxes">
       <section><h3>1. 입력 이미지 · OCR 박스</h3><div className="image-mini"><span className="eval-preview-empty">평가할 이미지를 선택해 주세요.</span></div></section>
       <section><h3>2. OCR-LLM 파이프라인</h3><div className="pipeline-empty-content">OCR 결과가 여기에 표시됩니다.</div></section>
@@ -744,7 +749,7 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     const classifyStartedAt = performance.now();
     const { data: record } = await apiClient.post('/finance/records/classify', {
       document_id: ocr.document_id,
-    }, { timeout: 180000 });
+    }, { timeout: 1560000 });
     const classifyLatencyMs = Math.max(1, Math.round(performance.now() - classifyStartedAt));
     rememberReceiptRecord(record);
     const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
@@ -1028,14 +1033,14 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     {evaluationMode === 'single' && <section className="latest-pipeline-results"><header><div><h2>{pipelineProgress ? '현재 평가 진행 상황' : '최근 실행 결과'}</h2><p>입력 이미지, OCR 원문, 실제 생성된 Excel을 나란히 확인합니다.</p></div><span>{pipelineProgress?.document_name || latestRun?.document_name || '평가 대기'}</span></header>{pipelineProgress ? <PipelineLoading progress={pipelineProgress} models={models.length ? models : ['최종 서비스']} imagePreview={imagePreview} /> : latestRun ? (latestRun.results || []).map((result) => <ModelPipelineResult key={`${latestRun.evaluated_at}-${result.model_name}`} run={latestRun} result={result} imagePreview={imagePreview} />) : <PipelineEmpty />}</section>}
 
     {evaluationMode === 'single' && <section className="eval-results single-evaluation-history"><header><div><h2>최근 단일 평가 이력</h2><p>DB에 저장된 최근 단일 평가 결과입니다.</p></div><span>{singleHistory.length}건</span></header>
-      <div className="eval-table replayable-evaluation-table" onClick={(event) => { const row = event.target.closest('.eval-row:not(.eval-head)'); if (!row) return; const index = [...event.currentTarget.querySelectorAll('.eval-row:not(.eval-head)')].indexOf(row); if (singleHistory[index]) replaySingleEvaluation(singleHistory[index]); }}><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>
-      {singleHistory.flatMap((run) => (run.results || []).map((result) => { const impact = result.system?.ocr_impact; const likelyOcrErrors = impact?.counts?.LIKELY_OCR_ERROR || 0; const score = result.system?.score || {}; const workbook = result.system?.workbook || {}; return <div className="eval-row" key={`single-${run.evaluation_id || run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{Number(run.dataset_index || 0) + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{score.field_accuracy == null ? '-' : `${(score.field_accuracy * 100).toFixed(1)}%`}</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields ?? 0}/{score.evaluated_fields ?? 0}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span className={likelyOcrErrors ? 'ocr-error' : 'ok'}>{impact ? `${likelyOcrErrors}개 가능` : '-'}</span><span>{result.latency_ms == null ? '-' : `${(result.latency_ms / 1000).toFixed(1)}초`}</span></div>; }))}
+      <div className="eval-table replayable-evaluation-table" onClick={(event) => { const row = event.target.closest('.eval-row:not(.eval-head)'); if (!row) return; const index = [...event.currentTarget.querySelectorAll('.eval-row:not(.eval-head)')].indexOf(row); if (singleHistory[index]) replaySingleEvaluation(singleHistory[index]); }}><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>응답시간</span></div>
+      {singleHistory.flatMap((run) => (run.results || []).map((result) => { const score = result.system?.score || {}; const workbook = result.system?.workbook || {}; return <div className="eval-row" key={`single-${run.evaluation_id || run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{Number(run.dataset_index || 0) + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{score.field_accuracy == null ? '-' : `${(score.field_accuracy * 100).toFixed(1)}%`}</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields ?? 0}/{score.evaluated_fields ?? 0}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span>{result.latency_ms == null ? '-' : `${(result.latency_ms / 1000).toFixed(1)}초`}</span></div>; }))}
       {!singleHistory.length && <p className="eval-empty">저장된 단일 평가 이력이 없습니다.</p>}</div>
     </section>}
 
     {evaluationMode === 'batch' && <section className="eval-results"><header><div><h2>누적 결과</h2><p>브라우저에 자동 저장됩니다. 같은 이미지도 실행 날짜와 시간이 다르면 별도 결과로 누적됩니다.</p></div><span>{runs.length}회</span></header>
-      <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>OCR 영향</span><span>응답시간</span></div>
-      {[...runs].sort((a, b) => String(b.evaluated_at || '').localeCompare(String(a.evaluated_at || ''))).flatMap((run) => (run.results || []).map((result) => { const impact = result.system.ocr_impact; const likelyOcrErrors = impact?.counts?.LIKELY_OCR_ERROR || 0; const score = result.system.score; const workbook = result.system.workbook; return <div className="eval-row" key={`${run.dataset_name}-${run.dataset_index}-${run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{run.dataset_index + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{(score.field_accuracy * 100).toFixed(1)}%</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields}/{score.evaluated_fields}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span className={likelyOcrErrors ? 'ocr-error' : 'ok'}>{impact ? `${likelyOcrErrors}개 가능` : '-'}</span><span>{(result.latency_ms / 1000).toFixed(1)}초</span><details><summary>매칭 상세 보기</summary><div>{Object.entries(score.fields || {}).map(([field, value]) => field === 'items' ? <p className={value.count_correct ? 'ok' : 'bad'} key={field}><b>품목 수</b><span>{value.actual_count}</span><em>정답 {value.expected_count} · 초과 {value.false_positive_count || 0}</em></p> : <p className={value.correct ? 'ok' : 'bad'} key={field}><b>{LABELS[field] || field}</b><span>{String(value.actual ?? '-')}</span><em>정답 {String(value.expected ?? '-')}</em></p>)}</div></details></div>; }))}
+      <div className="eval-table"><div className="eval-row eval-head"><span>데이터</span><span>모델</span><span>최종 정확도</span><span>필드 매칭</span><span>생성 Excel 문서</span><span>응답시간</span></div>
+      {[...runs].sort((a, b) => String(b.evaluated_at || '').localeCompare(String(a.evaluated_at || ''))).flatMap((run) => (run.results || []).map((result) => { const score = result.system.score; const workbook = result.system.workbook; return <div className="eval-row" key={`${run.dataset_name}-${run.dataset_index}-${run.evaluated_at}-${result.model_name}`}><span title={evaluatedTime(run.evaluated_at)}>{run.dataset_index + 1}. {run.document_name}<small>{evaluatedTime(run.evaluated_at)}</small></span><strong>{result.model_name}</strong><span>{(score.field_accuracy * 100).toFixed(1)}%</span><span className={score.complete_match ? 'ok' : 'bad'}>{score.correct_fields}/{score.evaluated_fields}</span><span className={workbook.success ? 'ok' : 'bad'}>{workbook.active_sheet || '생성 실패'}</span><span>{(result.latency_ms / 1000).toFixed(1)}초</span><details><summary>매칭 상세 보기</summary><div>{Object.entries(score.fields || {}).map(([field, value]) => field === 'items' ? <p className={value.count_correct ? 'ok' : 'bad'} key={field}><b>품목 수</b><span>{value.actual_count}</span><em>정답 {value.expected_count} · 초과 {value.false_positive_count || 0}</em></p> : <p className={value.correct ? 'ok' : 'bad'} key={field}><b>{LABELS[field] || field}</b><span>{String(value.actual ?? '-')}</span><em>정답 {String(value.expected ?? '-')}</em></p>)}</div></details></div>; }))}
       {!runs.length && <p className="eval-empty">아직 저장된 평가 결과가 없습니다.</p>}</div>
     </section>}
   </main></div>;

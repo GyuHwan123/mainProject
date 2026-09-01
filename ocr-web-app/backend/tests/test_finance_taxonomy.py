@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.constants.finance_taxonomy import (  # noqa: E402
     ALLOWED_DOCUMENT_TYPES,
     ALLOWED_EXPENSE_CATEGORIES,
+    CATEGORY_CLASSIFICATION_POLICIES,
     CATEGORY_TO_DOCUMENT_TYPE,
     normalize_expense_category,
     validate_classification,
@@ -15,8 +16,9 @@ from app.constants.finance_taxonomy import (  # noqa: E402
 
 class FinanceTaxonomyTests(unittest.TestCase):
     def test_canonical_taxonomy_is_complete(self):
-        self.assertEqual(len(ALLOWED_EXPENSE_CATEGORIES), 13)
+        self.assertEqual(len(ALLOWED_EXPENSE_CATEGORIES), 9)
         self.assertEqual(set(CATEGORY_TO_DOCUMENT_TYPE), set(ALLOWED_EXPENSE_CATEGORIES))
+        self.assertEqual(set(CATEGORY_CLASSIFICATION_POLICIES), set(ALLOWED_EXPENSE_CATEGORIES))
         self.assertTrue(set(CATEGORY_TO_DOCUMENT_TYPE.values()).issubset(ALLOWED_DOCUMENT_TYPES))
 
     def test_transport_category_selects_travel_expense(self):
@@ -38,6 +40,10 @@ class FinanceTaxonomyTests(unittest.TestCase):
         self.assertEqual(normalize_expense_category("식비/생활"), "식비")
         self.assertEqual(normalize_expense_category("생활/식비"), "식비")
         self.assertEqual(normalize_expense_category("식비/쇼핑"), "식비")
+        self.assertEqual(normalize_expense_category("식비/주류"), "식비")
+        self.assertEqual(normalize_expense_category("주유/교통"), "교통")
+        self.assertEqual(normalize_expense_category("미용/생활"), "미용")
+        self.assertEqual(normalize_expense_category("전자제품"), "전자제품/문구")
 
     def test_marks_model_document_type_conflict_for_review(self):
         doc_type, category, needs_review, reason = validate_classification(

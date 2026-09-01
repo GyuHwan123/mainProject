@@ -32,7 +32,8 @@ _NON_ITEM_EVIDENCE = re.compile(
     r"영수증\s*번호|승차권\s*번호|발행\s*일시|사업자|주소|소재지|대표자|TEL\b|FAX\b|"
     r"전화|합계|소계|결제|공급가액|부가세|세액|할인|쿠폰|포인트|플랫폼|에누리|증정|"
     r"매출전표|신용매출|SSGPAY|안내|법\s*제\d+조|Help\s*Desk|고객\s*센터|"
-    r"금융결제원|여신금융협회|현금영수증\s*문의",
+    r"금융결제원|여신금[융응]협회|현금영수증\s*문의|신고\s*안내|포상금|"
+    r"고객\s*센터|Help\s*Desk",
     re.IGNORECASE,
 )
 
@@ -142,11 +143,18 @@ def _reliable_item_candidates(
             name,
         ))
         looks_like_short_amount_label = len(compact_name) <= 4 and compact_name.endswith("금")
+        looks_like_contact_or_identifier = bool(re.search(
+            r"(?:TEL|전화|문의|협회|고객\s*센터|Help\s*Desk|신고\s*안내|포상금)|"
+            r"(?:^|[^\d])\(?\d{2,4}\)?[- ]\d{3,4}[- ]\d{4}(?:[^\d]|$)",
+            raw,
+            re.IGNORECASE,
+        ))
         reliable = bool(
             name and compact_name not in {"수", "금", "계"} and len(compact_name) >= 1 and amount >= 100
             and not _NON_ITEM_EVIDENCE.search(f"{name} {raw}")
             and not _looks_like_non_item_evidence(name, raw)
             and not looks_like_location and not looks_like_short_amount_label
+            and not (looks_like_contact_or_identifier and not arithmetic)
             and (structured_source or arithmetic)
         )
         if source == "single_amount_item_row" and (amount < 1000 or re.search(r"행복을\s*만나다|가맹점|매장", name)):
@@ -303,6 +311,10 @@ def _semantic_prompt_payload(
     referenced_ids = {
         line_id for section, line_ids in sections.items() if section in wanted for line_id in line_ids
     }
+    # Category selection should prioritize what was purchased over merchant
+    # industry. Include only a bounded sample so summary latency stays stable.
+    category_item_ids = list(sections.get("items") or [])[:8] if not item_pass else []
+    referenced_ids.update(category_item_ids)
     payload: dict[str, Any] = {
         # Coordinates remain in semantic_evidence for diagnostics but do not
         # consume model context. Meaning selection needs only stable IDs/text.
@@ -312,6 +324,8 @@ def _semantic_prompt_payload(
         ],
         "sections": {section: ids for section, ids in sections.items() if section in wanted and ids},
     }
+    if category_item_ids:
+        payload["sections"]["items"] = category_item_ids
     if item_pass:
         payload["item_candidates"] = candidates
         payload["item_summary"] = evidence["item_summary"]
@@ -325,30 +339,55 @@ def _fuel_sale_item_candidate(
     text: str, hints: dict[str, Any], page_number: Any = None,
 ) -> dict[str, Any] | None:
     """Recover a fuel item whose name, volume, unit price, and total are split."""
-    fuel_match = re.search(
+    fuel_matches = list(re.finditer(
         r"(?:초저유황\s*경유|고급\s*휘발유|보통\s*휘발유|자동차용\s*경유|"
         r"휘발유|경유|등유|LPG|유류)",
         text,
         re.IGNORECASE,
-    )
-    if not fuel_match:
+    ))
+    if not fuel_matches:
         return None
 
-    # Fuel receipts usually print volume and price per litre close to the fuel
-    # name, while the paid total appears in a separate settlement/tax block.
-    nearby = text[fuel_match.start():fuel_match.end() + 120]
-    quantity_match = re.search(r"(\d{1,3}(?:\.\d{1,3})?)\s*[lℓ](?![A-Za-z])", nearby, re.IGNORECASE)
-    if not quantity_match:
-        return None
-    price_tail = nearby[quantity_match.end():]
-    unit_price_match = re.search(
-        r"(?<!\d)(\d{1,3}(?:[,.]\d{3})|\d{3,5})\s*원?(?:\s*/?\s*[lℓ])?",
-        price_tail,
-        re.IGNORECASE,
-    )
-    if not unit_price_match:
+    # Treat the fuel row as an unordered relationship. OCR commonly emits
+    # ``fuel + unit price + volume`` even though other receipts print volume
+    # before price. A labelled price is preferred; an unlabelled price is only
+    # accepted when the final arithmetic relation proves it.
+    resolved = None
+    for fuel_match in fuel_matches:
+        line_start = text.rfind("\n", 0, fuel_match.start()) + 1
+        line_end = text.find("\n", fuel_match.end())
+        if line_end < 0:
+            line_end = len(text)
+        nearby = text[line_start:min(len(text), line_end + 120)]
+        quantity_match = re.search(r"(\d{1,4}(?:\.\d{1,3})?)\s*[lℓ](?![A-Za-z])", nearby, re.IGNORECASE)
+        if not quantity_match:
+            continue
+        unit_price_match = re.search(
+            r"(?:단\s*가|리터\s*당)\s*[:：]?\s*"
+            r"(?<!\d)(\d{1,3}(?:[,.]\d{3})|\d{3,5})\s*원?",
+            nearby,
+            re.IGNORECASE,
+        )
+        if not unit_price_match:
+            numeric_prices = list(re.finditer(
+                r"(?<![\d.])(\d{1,3}(?:[,.]\d{3})|\d{3,5})\s*(?:원|/?\s*[lℓ])(?![A-Za-z])",
+                nearby,
+                re.IGNORECASE,
+            ))
+            unit_price_match = next(
+                (match for match in numeric_prices if not (
+                    match.start() <= quantity_match.start() < match.end()
+                    or quantity_match.start() <= match.start() < quantity_match.end()
+                )),
+                None,
+            )
+        if unit_price_match:
+            resolved = (fuel_match, nearby, quantity_match, unit_price_match)
+            break
+    if not resolved:
         return None
 
+    fuel_match, nearby, quantity_match, unit_price_match = resolved
     quantity = _quantity_number(quantity_match.group(1))
     unit_price = _receipt_number(unit_price_match.group(1))
     amount = _clean_number(hints.get("total_amount")) or _clean_number(hints.get("stated_total_amount"))

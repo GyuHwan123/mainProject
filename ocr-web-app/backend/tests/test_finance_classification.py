@@ -3,6 +3,8 @@ import sys
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance import (  # noqa: E402
@@ -39,18 +41,44 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_receipt_prompt_restricts_expense_category_to_managed_list(self):
         prompt = _receipt_prompt("브러쉬드 알파카 실", "receipt.jpg")
 
-        self.assertIn("고정 목록 중 정확히 하나", prompt)
+        self.assertIn("고정 목록 중 하나를 선택", prompt)
         self.assertIn("취미/쇼핑", prompt)
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
         self.assertIn("needs_review", prompt)
 
-    def test_receipt_prompt_guides_beauty_services_without_capturing_products(self):
+    def test_receipt_prompt_uses_canonical_beauty_category_without_industry_examples(self):
         prompt = _receipt_prompt("가맹점명 예쁘다헤어샵 합계 140,000원", "receipt.jpg")
 
-        self.assertIn("expense_category=`미용`", prompt)
-        self.assertIn("헤어샵", prompt)
-        self.assertIn("네일샵", prompt)
-        self.assertIn("상품을 구매했다는 이유만으로 `미용`을 선택하지 말고", prompt)
+        self.assertIn('"미용"', prompt)
+        self.assertNotIn("헤어샵·미용실", prompt)
+        self.assertNotIn("네일샵·에스테틱", prompt)
+
+    def test_receipt_prompt_requests_bounded_category_evidence(self):
+        prompt = _receipt_prompt("미용 서비스 25,000원", "receipt.jpg")
+
+        self.assertIn("category_evidence_line_ids", prompt)
+        self.assertIn("실제 결제 품목·서비스를 우선", prompt)
+        self.assertIn("최대 3개", prompt)
+        self.assertIn("- 미용:", prompt)
+        self.assertIn("- 교통:", prompt)
+
+    def test_receipt_prompt_keeps_category_when_evidence_id_is_unavailable(self):
+        prompt = _receipt_prompt("유종 경유 단가 1410원 48.936L", "receipt.jpg")
+
+        self.assertIn("근거가 완벽하지 않다는 이유만으로 null을 선택하지 마세요", prompt)
+        self.assertIn("유효한 expense_category를 null로 바꾸지 말고", prompt)
+        self.assertIn("둘 이상의 정책이 비슷하게 충돌", prompt)
+
+    def test_summary_prompt_limits_item_evidence_to_eight_lines(self):
+        lines = [f"상품{i} 1 {i + 1},000" for i in range(10)]
+        candidates = [
+            {"name_candidate": f"상품{i}", "raw_cells": [lines[i]], "amount_candidate": (i + 1) * 1000}
+            for i in range(10)
+        ]
+
+        payload = _semantic_prompt_payload("\n".join(lines), None, candidates, item_pass=False)
+
+        self.assertEqual(len(payload["sections"]["items"]), 8)
 
     def test_unknown_expense_category_requires_review_without_guessing(self):
         self.assertEqual(_normalize_expense_category("사무용품"), "전자제품/문구")
@@ -71,6 +99,28 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(normalized["expense_category"], "취미/쇼핑")
         self.assertEqual(normalized["document_type"], "PURCHASE_REQUEST")
+
+    def test_category_evidence_validation_keeps_only_real_line_ids(self):
+        normalized = _normalize(
+            {
+                "doc_type": "WELFARE_BENEFIT",
+                "expense_category": "미용",
+                "category_evidence_line_ids": ["L001", "L999", "L001", "L002"],
+                "semantic_evidence": {
+                    "lines": [
+                        {"id": "L001", "text": "미용 서비스"},
+                        {"id": "L002", "text": "결제금액 25,000원"},
+                    ]
+                },
+            },
+            "receipt.jpg",
+            "미용 서비스 결제금액 25,000원",
+        )
+
+        structured = normalized["structured_data"]
+        self.assertEqual(structured["category_evidence_line_ids"], ["L001", "L002"])
+        self.assertEqual(structured["category_evidence_validation"]["status"], "partially_invalid")
+        self.assertEqual(structured["expense_category"], "미용")
 
     def test_model_category_is_primary_over_filename_category_hint(self):
         normalized = _normalize(
@@ -97,7 +147,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(decision["category_document_type"], "WELFARE_BENEFIT")
         self.assertEqual(decision["status"], "CONFLICT")
 
-    def test_requires_explicit_alcohol_evidence_for_food_and_alcohol_category(self):
+    def test_consolidates_food_and_alcohol_into_food_category(self):
         food = _normalize(
             {"expense_category": "식비/주류", "items": [{"name": "초콜릿", "quantity": 2, "total_amount": 6900}]},
             "receipt.jpg",
@@ -115,7 +165,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(food["expense_category"], "식비")
-        self.assertEqual(alcohol["expense_category"], "식비/주류")
+        self.assertEqual(alcohol["expense_category"], "식비")
         self.assertEqual(non_alcohol["expense_category"], "식비")
 
     def test_collapses_overlapping_food_categories_to_food(self):
@@ -160,6 +210,8 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"parser_profile":"3-column_single-line_flat"', items_prompt)
         self.assertIn('"applicable_rules"', items_prompt)
         self.assertIn('"common_rules"', items_prompt)
+        self.assertNotIn('"note"', items_prompt)
+        self.assertNotIn('"text":"볼펜 2 1,000"', items_prompt)
 
     def test_semantic_evidence_uses_line_ids_and_allows_multiple_roles(self):
         ocr = "문구점 사업자번호 123-45-67890\n볼펜 2 1,000 2,000\n결제금액 신용카드 2,000원"
@@ -210,7 +262,18 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"non_item_blocks"', prompt)
         self.assertIn('"row_ids"', prompt)
 
-    def test_summary_and_item_payloads_do_not_repeat_item_lines(self):
+    def test_no_candidate_item_prompt_uses_small_recovery_payload(self):
+        text = "상호 미상\n승인번호 12345678\n결제금액 25,000원"
+
+        prompt = _receipt_items_prompt(text, [{"page": 1, "text": text, "tables": []}])
+
+        self.assertIn("신뢰 가능한 품목 candidate가 없습니다", prompt)
+        self.assertIn('"ocr_excerpt"', prompt)
+        self.assertNotIn('"evidence_bundles"', prompt)
+        self.assertNotIn('"applicable_rules"', prompt)
+        self.assertLess(len(prompt), 4000)
+
+    def test_summary_receives_bounded_item_lines_without_full_candidates(self):
         ocr = "상호명 문구점\n볼펜 2 1,000 2,000\n결제금액 2,000원\n신용카드 승인번호 12345678"
         pages = [{"page": 1, "tables": [{"rows": [["볼펜", "2", "1,000", "2,000"]]}]}]
         candidates = _receipt_item_candidates(pages)
@@ -218,7 +281,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         summary = _semantic_prompt_payload(ocr, pages, candidates, item_pass=False)
         items = _semantic_prompt_payload(ocr, pages, candidates, item_pass=True)
 
-        self.assertNotIn("items", summary["sections"])
+        self.assertEqual(summary["sections"]["items"], ["L002"])
         self.assertIn("items", items["sections"])
         self.assertNotIn("item_candidates", summary)
         self.assertEqual(items["item_candidates"][0]["name_candidate"], "볼펜")
@@ -413,13 +476,14 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         responses = [
             '{"merchant":"shop","total_amount":7900}',
             '{invalid-json',
-            '{"items":[{"name":"USB cable","quantity":1,"unit_price":7900,"total_amount":7900}]}',
+            '{"items":[{"name":"USB cable","quantity":1,"unit_price":7900,"total_amount":7900,"note":"copy all OCR text"}]}',
         ]
         with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
             result = await _classify_receipt_with_model("shop receipt", "receipt.jpg", "test-model", pages)
 
         self.assertEqual(mocked.await_count, 3)
         self.assertEqual(result["items"][0]["name"], "USB cable")
+        self.assertNotIn("note", result["items"][0])
         self.assertEqual(
             [attempt["status"] for attempt in result["llm_trace"]["items_attempts"]],
             ["failed", "success"],
@@ -428,6 +492,32 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
             result["llm_trace"]["items_attempts"][1]["prompt_chars"],
             result["llm_trace"]["items_attempts"][0]["prompt_chars"],
         )
+
+    async def test_item_timeout_does_not_start_compact_retry(self):
+        pages = [{"page": 1, "tables": [{"rows": [["USB cable", "1", "7,900", "7,900"]]}]}]
+        timeout_error = HTTPException(status_code=503, detail="Ollama timeout")
+        timeout_error.__cause__ = TimeoutError("read timeout")
+        responses = ['{"merchant":"shop","total_amount":7900}', timeout_error]
+
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
+            result = await _classify_receipt_with_model("shop receipt", "receipt.jpg", "test-model", pages)
+
+        self.assertEqual(mocked.await_count, 2)
+        self.assertEqual(result["llm_trace"]["items_call_status"], "failed")
+        self.assertEqual(len(result["llm_trace"]["items_attempts"]), 1)
+        self.assertTrue(result["llm_trace"]["items_attempts"][0]["timed_out"])
+
+    async def test_no_candidate_failure_does_not_start_empty_compact_retry(self):
+        responses = ['{"merchant":"shop","total_amount":7900}', "{invalid-json"]
+
+        with patch("app.api.routes.finance.generate", new=AsyncMock(side_effect=responses)) as mocked:
+            result = await _classify_receipt_with_model(
+                "승인번호 123456 결제금액 7,900원", "receipt.jpg", "test-model", [],
+            )
+
+        self.assertEqual(mocked.await_count, 2)
+        self.assertEqual(result["llm_trace"]["items_attempts"][0]["name"], "recovery_full")
+        self.assertEqual(len(result["llm_trace"]["items_attempts"]), 1)
 
     def test_prefers_table_and_does_not_rescan_page_metadata(self):
         candidates = _receipt_item_candidates([{
@@ -686,6 +776,38 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(candidate["amount_candidate"], 72000)
         self.assertEqual(candidate["rel"], "H")
         self.assertTrue({"F", "A", "S"}.issubset(candidate["why"]))
+
+    def test_builds_fuel_candidate_when_unit_price_precedes_decimal_litres(self):
+        text = """신용승인
+합계: 69,000원
+가맹점명:늘좋은주유소 TEL:033 335 1666
+유종:경유 단가:1410원 21E1:48.936L"""
+        pages = [{
+            "page": 1,
+            "text": text,
+            "tables": [{"rows": [["에쓰오일", "여신금응협회(02-2011-0777)"]]}],
+        }]
+
+        raw_candidates = _receipt_item_candidates(pages)
+        candidates, rejected = _reliable_item_candidates(raw_candidates, _receipt_hints(text, "receipt_012.jpg"))
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate["candidate_type"], "fuel_sale_item")
+        self.assertEqual(candidate["name_candidate"], "경유")
+        self.assertEqual(candidate["quantity_candidate"], 48.936)
+        self.assertEqual(candidate["unit_price_candidate"], 1410)
+        self.assertEqual(candidate["amount_candidate"], 69000)
+        self.assertEqual(candidate["rel"], "H")
+        self.assertTrue(any(row.get("name_candidate") == "에쓰오일" for row in rejected))
+
+        evidence = _semantic_receipt_evidence(text, pages, candidates)
+        fuel_line = next(line for line in evidence["lines"] if "48.936L" in line["text"])
+        self.assertIn(fuel_line["id"], evidence["sections"]["items"])
+
+        hints = _receipt_hints(text, "receipt_012.jpg")
+        self.assertEqual(hints["expense_category"], "교통")
+        self.assertEqual(hints["document_type_source"], "OCR_TRANSPORT_CONTEXT")
 
     def test_recovers_collapsed_measured_quantity_row_by_arithmetic(self):
         text = """*** 영수증(판매-고객용)***
@@ -1126,6 +1248,18 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(hints["transaction_date"], "2018-01-10")
         self.assertEqual(normalized["transaction_date"], "2018-01-10")
+
+    def test_compact_calendar_date_is_not_promoted_to_total_amount(self):
+        ocr = "거래일자 20190328\nKTX 운임 50,800"
+        hints = _receipt_hints(ocr, "receipt_010.jpg")
+        normalized = _normalize(
+            {"transaction_date": "2019-03-28", "total_amount": 50800, "items": []},
+            "receipt_010.jpg",
+            ocr,
+        )
+
+        self.assertNotEqual(hints["total_amount"], 20190328)
+        self.assertEqual(normalized["total_amount"], 50800)
 
     def test_limits_items_to_stated_ocr_item_count_without_reinterpreting_them(self):
         ocr = "총품목/총수량 총구매금액\n2/7 81,300"
@@ -1601,6 +1735,63 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(normalized["structured_data"]["items"], items)
+
+    def test_recovers_transport_merchant_and_card_from_explicit_ticket_evidence(self):
+        ocr = """티머니모빌리티
+승차권 거래 영수증
+상호:(주)티머니모빌리티
+카드 거래 영수증(고객용)
+카드번호:4870-****-3394
+승인번호:10505542
+승인금액:16,200원
+출발지:홍천
+도착지:동서울
+총매수:2매"""
+
+        normalized = _normalize(
+            {"expense_category": "식비", "payment_method": "티머니모빌리티"},
+            "receipt_007.jpg",
+            ocr,
+        )
+
+        self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
+        self.assertEqual(normalized["expense_category"], "교통")
+        self.assertEqual(normalized["merchant"], "(주)티머니모빌리티")
+        self.assertEqual(normalized["payment_method"], "카드")
+
+    def test_recovers_taxi_merchant_and_transport_only_with_trip_evidence(self):
+        ocr = """영수증(보관용)
+가맹점명:법인택시
+차량번호:경북12바2673
+탑승시간:01:09~01:13
+미터요금:5,300원
+카드번호:9440-31**-****-1808
+승인번호:44333900"""
+
+        normalized = _normalize({}, "receipt_006.jpg", ocr)
+
+        self.assertEqual(normalized["expense_category"], "교통")
+        self.assertEqual(normalized["merchant"], "법인택시")
+        self.assertEqual(normalized["payment_method"], "카드")
+
+    def test_does_not_infer_transport_from_isolated_ticket_word(self):
+        normalized = _normalize(
+            {"merchant": "문구점"},
+            "receipt.jpg",
+            "승차권 모양 스티커 할인 행사\n현금 결제",
+        )
+
+        self.assertIsNone(normalized["expense_category"])
+        self.assertEqual(normalized["merchant"], "문구점")
+        self.assertEqual(normalized["payment_method"], "현금")
+
+    def test_does_not_infer_card_from_card_policy_text(self):
+        hints = _receipt_hints(
+            "환불 시 결제 카드를 지참해 주세요.",
+            "receipt.jpg",
+        )
+
+        self.assertIsNone(hints["payment_method"])
 
 
 if __name__ == "__main__":

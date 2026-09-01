@@ -1641,7 +1641,7 @@ export default function OCRPage() {
             <header>
               <span>AI FINANCE AGENT</span>
               <h2>3. AI 재무 에이전트</h2>
-              <p>영수증에서 추출한 재무 정보를 AI 에이전트가 자동으로 Excel 파일로 변환합니다.</p>
+              <p>AI 에이전트가 정리한 재무 정보를 검토하고 Excel 변환 내용을 최종 확정합니다.</p>
             </header>
             <div className="receipt-result-space">
               {financeRecord ? <div className="agent-decision">
@@ -1653,16 +1653,16 @@ export default function OCRPage() {
                 <p>{financeRecord.structured_data?.finance_workflow?.submitted_at ? '전달된 문서는 마이페이지 재무 히스토리에서 확인할 수 있습니다.' : '내용을 검토한 뒤 사용자가 직접 최종 확정합니다.'}</p>
               </div> : <div className="receipt-result-waiting" role="status">
                 <span className="receipt-excel-mark">XLSX</span>
-                <strong>Excel 변환 결과가 여기에 표시됩니다</strong>
-                <p>영수증 문서화가 완료되면 AI 에이전트가 정리한 Excel 파일과 주요 결과를 이 화면에서 확인할 수 있습니다.</p>
-                <div className="receipt-result-flow" aria-label="결과 생성 과정">
+                <strong>Excel 변환 내용을 최종 확정합니다</strong>
+                <p>영수증 문서화가 완료되면 AI 에이전트가 정리한 재무 정보를 검토하고, 필요한 내용을 수정한 뒤 최종 확정할 수 있습니다.</p>
+                <div className="receipt-result-flow" aria-label="변환 내용 확정 과정">
                   <span><b>01</b> 재무 정보 정리</span>
                   <i>→</i>
-                  <span><b>02</b> Excel 변환</span>
+                  <span><b>02</b> 내용 검토</span>
                   <i>→</i>
-                  <span><b>03</b> 결과 확인</span>
+                  <span><b>03</b> 최종 확정</span>
                 </div>
-                <small>영수증 분석을 시작하면 이 대기 화면이 결과 화면으로 바뀝니다.</small>
+                <small>영수증 분석을 시작하면 검토 및 최종 확정 화면으로 바뀝니다.</small>
               </div>}
               <section className="receipt-archive-panel" aria-labelledby="receipt-archive-title">
                 <header>

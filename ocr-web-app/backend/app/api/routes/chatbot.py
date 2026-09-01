@@ -21,6 +21,32 @@ logger = logging.getLogger(__name__)
 _ollama_call_sequence = count(1)
 
 
+class GeneratedText(str):
+    """Text-compatible Ollama response carrying optional runtime metrics."""
+
+    ollama_metrics: dict[str, Any]
+
+    def __new__(cls, value: str, metrics: dict[str, Any] | None = None) -> "GeneratedText":
+        instance = super().__new__(cls, value)
+        instance.ollama_metrics = metrics or {}
+        return instance
+
+
+def _ollama_metrics(body: dict[str, Any]) -> dict[str, Any]:
+    """Keep only stable Ollama timing/token fields; durations are nanoseconds."""
+    integer_fields = (
+        "total_duration",
+        "load_duration",
+        "prompt_eval_count",
+        "prompt_eval_duration",
+        "eval_count",
+        "eval_duration",
+    )
+    metrics = {field: int(body.get(field) or 0) for field in integer_fields}
+    metrics["done_reason"] = str(body.get("done_reason") or "")
+    return metrics
+
+
 class ChatMessage(BaseModel):
     message: str
     context: str | None = None
@@ -119,11 +145,12 @@ async def generate(
             )
             response = await client.post("/api/generate", json=payload)
             response.raise_for_status()
-            answer = response.json().get("response", "").strip()
+            body = response.json()
+            answer = str(body.get("response") or "").strip()
             logger.warning("Ollama raw response: model=%s response=%s", effective_model, answer)
             if not answer:
                 raise ValueError("empty model response")
-            return answer
+            return GeneratedText(answer, _ollama_metrics(body))
     except (httpx.HTTPError, ValueError) as exc:
         last_error = exc
     raise HTTPException(
@@ -167,7 +194,7 @@ async def generate_with_metadata(
             answer = str(body.get("response") or "").strip()
             if not answer:
                 raise ValueError("empty model response")
-            return {"response": answer, "eval_count": int(body.get("eval_count") or 0)}
+            return {"response": answer, **_ollama_metrics(body)}
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(
             status_code=503,

@@ -12,7 +12,10 @@ class CollaborationMixin:
         user_id = self.get_public_user_id(user_email)
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/chat_sessions",
-            params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"},
+            params={
+                "select": "*", "user_id": f"eq.{user_id}", "deleted_at": "is.null",
+                "order": "created_at.desc", "limit": "100",
+            },
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "채팅 기록 조회 실패")
@@ -88,12 +91,16 @@ class CollaborationMixin:
         }
 
     def delete_chat_session(self, user_email: str, session_id: str) -> None:
-        self.get_chat_session(user_email, session_id)
-        response = _legacy_httpx().delete(
-            f"{self.url}/rest/v1/chat_sessions", params={"id": f"eq.{session_id}"},
-            headers=self._service_headers(), timeout=15,
+        session = self.get_chat_session(user_email, session_id)
+        response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/chat_sessions",
+            params={"id": f"eq.{session_id}", "user_id": f"eq.{session['user_id']}"},
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={"deleted_at": datetime.now(timezone.utc).isoformat()}, timeout=15,
         )
         self._raise_for_supabase(response, "채팅 세션 삭제 실패")
+        if not response.json():
+            raise HTTPException(status_code=404, detail="채팅 세션을 찾을 수 없습니다.")
 
     def list_knowledge_scraps(self, user_email: str) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)

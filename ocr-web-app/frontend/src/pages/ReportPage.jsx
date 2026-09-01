@@ -11,6 +11,8 @@ import '../style/ReportPage.scss';
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
 const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
 const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
+const SHOW_RAG_LLM_EVALUATION = false;
+const SHOW_LEGACY_EVALUATIONS = false;
 
 const createInitialMonitoringDateRange = () => {
   const endDate = new Date();
@@ -78,7 +80,7 @@ function ReportDropdown({ value, options, onChange, disabled = false, ariaLabel,
   </div>;
 }
 
-function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) {
+function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, onExportPdf }) {
   const metrics = useMemo(() => {
     if (!evaluation) return null;
     const cases = Array.isArray(evaluation.cases) ? evaluation.cases : [];
@@ -97,21 +99,25 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
       hitAt4: summary.hit_at_4 ?? hitAt(4),
       recall: summary.recall_at_k,
       mrr: summary.mrr,
-      contextPrecision: summary.context_precision ?? summary.citation_accuracy,
+      ndcg: summary.ndcg_at_k,
+      contextPrecision: summary.context_precision,
+      citationAccuracy: summary.citation_accuracy,
       answerAccuracy: summary.answer_accuracy,
       faithfulness: summary.faithfulness,
       hallucinationRate: summary.hallucination_rate,
+      unanswerableRejectionRate: summary.unanswerable_rejection_rate,
       faithfulnessMethod: summary.faithfulness_method,
     };
   }, [evaluation]);
   const metricValue = (value) => value == null ? '—' : percent(value);
   const retrievalMetrics = [
     ['Hit@1', metrics?.hitAt1], ['Hit@3', metrics?.hitAt3], ['Hit@4', metrics?.hitAt4],
-    ['Recall@K', metrics?.recall], ['MRR', metrics?.mrr], ['Context Precision', metrics?.contextPrecision],
+    ['Recall@K', metrics?.recall], ['MRR', metrics?.mrr], ['NDCG@K', metrics?.ndcg],
+    ['Context Precision', metrics?.contextPrecision], ['Citation / Source Accuracy', metrics?.citationAccuracy],
   ];
   const answerMetrics = [
     ['Answer Accuracy', metrics?.answerAccuracy], ['Faithfulness', metrics?.faithfulness],
-    ['Hallucination Rate', metrics?.hallucinationRate],
+    ['Hallucination Rate', metrics?.hallucinationRate], ['Unanswerable Rejection', metrics?.unanswerableRejectionRate],
   ];
   const questionTypeMetrics = useMemo(() => {
     if (!evaluation || !Array.isArray(evaluation.cases)) return [];
@@ -145,8 +151,58 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
         return { type, label: labels[type] || type, count: cases.length, accuracy: average(correctness), hit: average(hitValues), mrr: average(mrrValues) };
       });
   }, [evaluation]);
+  const questionComposition = useMemo(() => {
+    const colors = ['#4f7fe8', '#43aa78', '#8b68d8', '#ef9d45', '#e0636d'];
+    const total = questionTypeMetrics.reduce((sum, item) => sum + item.count, 0);
+    if (!total) return { total: 0, rows: [], gradient: '#edf2f6' };
+    const allocated = questionTypeMetrics.map((item, index) => {
+      const exactUnits = (item.count / total) * 1000;
+      return { ...item, color: colors[index % colors.length], units: Math.floor(exactUnits), remainder: exactUnits % 1 };
+    });
+    let remainingUnits = 1000 - allocated.reduce((sum, item) => sum + item.units, 0);
+    [...allocated].sort((left, right) => right.remainder - left.remainder).forEach((item) => {
+      if (remainingUnits > 0) { item.units += 1; remainingUnits -= 1; }
+    });
+    let offset = 0;
+    const stops = allocated.map((item) => {
+      const start = offset; offset += item.units / 10;
+      return `${item.color} ${start}% ${offset}%`;
+    });
+    return { total, rows: allocated.map((item) => ({ ...item, percentage: item.units / 10 })), gradient: `conic-gradient(${stops.join(', ')})` };
+  }, [questionTypeMetrics]);
+  const kpis = [
+    ['총 평가 질문 수', metrics?.total, 'cases'],
+    ['Answer Accuracy', metrics?.answerAccuracy, 'percent'],
+    ['Faithfulness', metrics?.faithfulness, 'percent'],
+    ['Hit@1', metrics?.hitAt1, 'percent'],
+    ['Context Precision', metrics?.contextPrecision, 'percent'],
+    ['Hallucination Rate', metrics?.hallucinationRate, 'percent'],
+  ];
+  const evaluationCases = Array.isArray(evaluation?.cases) ? evaluation.cases : [];
+  const listDocuments = (documents) => Array.isArray(documents) && documents.length ? documents.join(', ') : '—';
+  const booleanLabel = (value) => typeof value === 'boolean' ? (value ? '통과' : '실패') : '—';
+
   return <section className="rag-performance-report">
-    <article className="report-card rag-model-card"><header><div><h2>RAG 운영 설정</h2><p>Backend 상태 API가 반환한 현재 실제 구성</p></div><span>{modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</span></header><div className="rag-model-grid">
+    <div className="rag-report-controls">
+      <div className="receipt-monitoring-filters" aria-label="RAG 리포트 필터 및 내보내기">
+        <div className="receipt-date-range rag-control-disabled" title="현재 RAG 평가 API는 기간 조회를 지원하지 않습니다.">
+          <input type="date" aria-label="RAG 조회 시작일 (미지원)" disabled />
+          <span>~</span>
+          <input type="date" aria-label="RAG 조회 종료일 (미지원)" disabled />
+        </div>
+        <select aria-label="RAG 조회 기간 (미지원)" defaultValue="unsupported" disabled title="현재 RAG 평가 API는 기간 preset을 지원하지 않습니다.">
+          <option value="unsupported">기간 조회 미지원</option>
+        </select>
+        <button type="button" className="receipt-model-filter rag-control-disabled" disabled title="현재 RAG 평가 결과는 모델별 필터를 지원하지 않습니다.">모델 필터 미지원</button>
+        <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
+      </div>
+    </div>
+    <section className="rag-dashboard-section">
+      <div className="rag-section-heading"><div><span>PERFORMANCE SNAPSHOT</span><h2>핵심 KPI Overview</h2></div><small>{metrics ? `${metrics.total}개 평가 기준` : '평가 데이터 없음'}</small></div>
+      <div className="rag-kpi-grid">{kpis.map(([label, value, format], index) => <article className={`report-card rag-kpi-card tone-${index + 1}`} key={label}><div className="rag-kpi-icon" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div><span>{label}</span><strong>{format === 'cases' ? (value ?? '—') : metricValue(value)}</strong><small>현재 저장된 실제 평가 결과</small></article>)}</div>
+    </section>
+
+    <article className="report-card rag-model-card"><header><div><span className="rag-card-eyebrow">RUNTIME CONFIGURATION</span><h2>RAG 운영 설정</h2><p>Backend 상태 API가 반환한 현재 실제 구성</p></div><span className={`rag-status-badge ${modelConfig.ready ? 'online' : ''}`}>{modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</span></header><div className="rag-model-grid">
       <div><span>Embedding Model</span><strong>{modelConfig.embedding_model || '—'}</strong><small>{modelConfig.embedding_dimensions ? `${modelConfig.embedding_dimensions} dimensions` : '차원 미설정'}</small></div>
       <div><span>Reranker</span><strong>{modelConfig.rerank_model || '미사용'}</strong><small>Vector 후보 재정렬</small></div>
       <div><span>LLM</span><strong>{modelConfig.model || '—'}</strong><small>최종 답변 생성</small></div>
@@ -155,14 +211,16 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError }) 
     </div></article>
 
     <section className="rag-metric-columns">
-      <article className="report-card rag-metric-card"><header><div><h2>검색 성능</h2><p>정답 문서 ID 기준 document-level 평가</p></div><span>{metrics ? `${metrics.total} CASES` : 'NO DATA'}</span></header><div>{retrievalMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong></section>)}</div></article>
-      <article className="report-card rag-metric-card answer"><header><div><h2>답변 성능</h2><p>정답 유사도와 검색 Context 근거성 기준</p></div><span>{metrics ? 'ACTUAL' : 'NO DATA'}</span></header><div>{answerMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong></section>)}</div>{metrics?.faithfulnessMethod && <footer>Faithfulness: {metrics.faithfulnessMethod}</footer>}</article>
+      <article className="report-card rag-metric-card"><header><div><span className="rag-card-eyebrow">RETRIEVAL QUALITY</span><h2>검색 성능</h2><p>정답 문서 ID 기준 document-level 평가</p></div><span>{metrics ? `${metrics.total} CASES` : 'NO DATA'}</span></header><div>{retrievalMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong><i><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, Number(value) * 100))}%` }} /></i></section>)}</div></article>
+      <article className="report-card rag-metric-card answer"><header><div><span className="rag-card-eyebrow">ANSWER QUALITY</span><h2>답변 성능</h2><p>정답 유사도와 검색 Context 근거성 기준</p></div><span>{metrics ? 'ACTUAL' : 'NO DATA'}</span></header><div>{answerMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong><i><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, Number(value) * 100))}%` }} /></i></section>)}</div>{metrics?.faithfulnessMethod && <footer>Faithfulness: {metrics.faithfulnessMethod}</footer>}</article>
+      <article className="report-card rag-composition-card"><header><div><span className="rag-card-eyebrow">DATASET MIX</span><h2>평가 문항 구성</h2><p>전체 평가에서 문항 유형이 차지하는 비율</p></div><span>{questionComposition.rows.length ? `${questionComposition.rows.length} TYPES` : 'NO DATA'}</span></header>{questionComposition.rows.length ? <div className="rag-composition-body"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map((item) => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="model-evaluation-empty"><strong>평가 문항 없음</strong><p>문항 유형별 평가 데이터가 필요합니다.</p></div>}</article>
     </section>
 
-    <section className="rag-insight-columns">
-      <article className="report-card rag-umap-card"><header><div><h2>BGE-M3 Embedding UMAP</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /><p>기업문서 {umapData.document_count}개 · {umapData.chunk_count} chunks · {umapData.input_shape?.join(' × ')} → {umapData.output_shape?.join(' × ')}</p></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
-      <article className="report-card rag-type-card"><header><div><h2>문항 유형별 성능</h2><p>각 문항 유형별 최종 답변 정확도</p></div><span>{questionTypeMetrics.length ? `${questionTypeMetrics.length} TYPES` : 'NO DATA'}</span></header>{questionTypeMetrics.length ? <div className="rag-type-bars">{questionTypeMetrics.map((item) => <section key={item.type} title={`${item.label} · ${item.count}문항 · Hit@K ${metricValue(item.hit)} · MRR ${metricValue(item.mrr)}`}><div><strong>{item.label}</strong><span>{item.count}문항</span></div><i><b style={{ width: item.accuracy == null ? '0%' : `${Math.max(0, Math.min(100, item.accuracy * 100))}%` }} /></i><em>{metricValue(item.accuracy)}</em><small>Hit@K {metricValue(item.hit)} · MRR {metricValue(item.mrr)}</small></section>)}</div> : <div className="model-evaluation-empty"><strong>평가 결과 없음</strong><p>문항별 question_type 평가 결과가 필요합니다.</p></div>}</article>
-    </section>
+    <article className="report-card rag-umap-card"><header><div><span className="rag-card-eyebrow">VECTOR SPACE</span><h2>BGE-M3 Embedding 분석</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div className="rag-embedding-layout"><div className="rag-umap-visual"><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /></div><aside className="rag-embedding-stats"><h3>Embedding 통계</h3><dl><div><dt>Embedding Model</dt><dd>{modelConfig.embedding_model || '—'}</dd></div><div><dt>Dimension</dt><dd>{modelConfig.embedding_dimensions ?? '—'}</dd></div><div><dt>Vector Count</dt><dd>{umapData.chunk_count ?? '—'}</dd></div><div><dt>Document Count</dt><dd>{umapData.document_count ?? '—'}</dd></div><div><dt>Projection</dt><dd>{umapData.input_shape?.join(' × ') || '—'} → {umapData.output_shape?.join(' × ') || '—'}</dd></div></dl></aside></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
+
+    <article className="report-card rag-type-card"><header><div><span className="rag-card-eyebrow">QUESTION CATEGORIES</span><h2>문항 유형별 성능</h2><p>각 문항 유형별 최종 답변 정확도</p></div><span>{questionTypeMetrics.length ? `${questionTypeMetrics.length} TYPES` : 'NO DATA'}</span></header>{questionTypeMetrics.length ? <div className="rag-type-bars">{questionTypeMetrics.map((item) => <section key={item.type} title={`${item.label} · ${item.count}문항 · Hit@K ${metricValue(item.hit)} · MRR ${metricValue(item.mrr)}`}><div><strong>{item.label}</strong><span>{item.count}문항</span></div><i><b style={{ width: item.accuracy == null ? '0%' : `${Math.max(0, Math.min(100, item.accuracy * 100))}%` }} /></i><em>{metricValue(item.accuracy)}</em><small>Hit@K {metricValue(item.hit)} · MRR {metricValue(item.mrr)}</small></section>)}</div> : <div className="model-evaluation-empty"><strong>평가 결과 없음</strong><p>문항별 question_type 평가 결과가 필요합니다.</p></div>}</article>
+
+    {evaluationCases.length > 0 && <article className="report-card rag-detail-card"><header><div><span className="rag-card-eyebrow">CASE INSPECTION</span><h2>질문별 평가 결과</h2><p>평가 응답에 포함된 실제 문항·문서·성능 값</p></div><span>{evaluationCases.length} ROWS</span></header><div className="rag-detail-table-wrap"><table><thead><tr><th>질문</th><th>Expected document</th><th>Retrieved document</th><th>Retrieval</th><th>Answer</th><th>Faithfulness</th><th>답변 상태</th></tr></thead><tbody>{evaluationCases.map((item, index) => <tr key={item.question_id || item.id || index}><td><strong>{item.question_id || item.id || `#${index + 1}`}</strong><span>{item.question || '—'}</span></td><td>{listDocuments(item.expected_documents)}</td><td>{listDocuments(item.retrieved_documents)}</td><td><span className={`rag-result-pill ${item.hit === true ? 'pass' : item.hit === false ? 'fail' : ''}`}>{booleanLabel(item.hit)}</span></td><td>{typeof item.answer_correct === 'boolean' ? booleanLabel(item.answer_correct) : metricValue(item.answer_score)}</td><td>{metricValue(item.faithfulness)}</td><td>{typeof item.rejected === 'boolean' ? (item.rejected ? '답변 거절' : '답변 생성') : '—'}</td></tr>)}</tbody></table></div></article>}
     {!evaluation && <p className="rag-report-empty">ChatPage에서 RAG 평가를 완료하면 실제 결과가 이 영역에 표시됩니다.</p>}
   </section>;
 }
@@ -489,7 +547,7 @@ export default function ReportPage() {
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
   const [initialLoading, setInitialLoading] = useState(true);
   const [initialMonitoring, setInitialMonitoring] = useState(null);
   const [initialMonitoringError, setInitialMonitoringError] = useState('');
@@ -497,6 +555,7 @@ export default function ReportPage() {
   const [initialBatchHistory, setInitialBatchHistory] = useState(null);
   const [initialSingleHistory, setInitialSingleHistory] = useState(null);
   const [error, setError] = useState('');
+  const [evaluationsError, setEvaluationsError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(() => {
     try { return JSON.parse(localStorage.getItem(RAG_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
@@ -526,12 +585,12 @@ export default function ReportPage() {
   const [modelConfig, setModelConfig] = useState({ model: '미설정', embedding_model: '미설정', embedding_dimensions: null, rerank_model: null, prompt_version: '미설정', top_k: null, chunk_target_chars: null, ready: false });
 
   const loadEvaluations = useCallback(async () => {
-    setLoading(true); setError('');
+    setLoading(true); setEvaluationsError('');
     try {
       const { data } = await apiClient.get('/reports/evaluations', { params: { refresh: Date.now() } });
       setRuns(Array.isArray(data) ? data : []); setLastUpdated(new Date());
     } catch (requestError) {
-      setError(requestError.response?.data?.detail || '평가 기록을 불러오지 못했습니다.');
+      setEvaluationsError(requestError.response?.data?.detail || '평가 기록을 불러오지 못했습니다.');
     } finally { setLoading(false); }
   }, []);
 
@@ -596,7 +655,7 @@ export default function ReportPage() {
       apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
     ];
 
-    if (isDeveloper) initialRequests.push(loadEvaluations());
+    if (isDeveloper && SHOW_LEGACY_EVALUATIONS) initialRequests.push(loadEvaluations());
     if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'monitoring') {
       initialRequests.push(loadInitialMonitoring());
     }
@@ -707,12 +766,16 @@ export default function ReportPage() {
           )}
 
           <button  className="refresh-report"  disabled={loading}
-            onClick={() => {
-              loadBusinessStats();
+            onClick={async () => {
+              setLoading(true);
+              const refreshRequests = [loadBusinessStats()];
 
-              if (isDeveloper) {loadEvaluations();}
+              if (isDeveloper && SHOW_LEGACY_EVALUATIONS) {refreshRequests.push(loadEvaluations());}
 
               if (developerReport === 'receipt') {window.dispatchEvent(new Event('finance-evaluations-updated'));}
+
+              await Promise.allSettled(refreshRequests);
+              setLoading(false);
             }}
           >
             <IoRefreshOutline />
@@ -754,10 +817,11 @@ export default function ReportPage() {
           />
         )}
       </> : <>
-      <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
-      <RagLlmEvaluation />
+      <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />
+      {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
-      {false && <>
+      {SHOW_LEGACY_EVALUATIONS && <>
+      {evaluationsError && <div className="report-access-error">{evaluationsError}</div>}
       <section className="report-kpi-grid">
         <article><div><small>OCR 평균 정확도</small><strong>{ocrAccuracy}</strong></div><span className="positive">▲ 실제 평가</span></article>
         <article><div><small>RAG 검색 적합도</small><strong>평가 대기</strong></div><span className="info">실행 로그 필요</span></article>

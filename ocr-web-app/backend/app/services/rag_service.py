@@ -424,6 +424,15 @@ _EVIDENCE_STOP_WORDS = {
     "회사", "사내", "직원", "우리", "오늘", "무엇", "뭘", "몇", "어떻게", "얼마",
     "하나요", "인가요", "되나요", "있나요", "해요", "해야", "가능", "최대", "진행",
 }
+_EVIDENCE_INTERROGATIVES = {
+    "언제", "어디", "누구", "왜", "무엇", "뭘", "어떻게", "몇", "얼마",
+}
+_EVIDENCE_STEM_ENDINGS = (
+    "가능한가요", "하려면", "하나요", "해야", "해서",
+)
+_EVIDENCE_SUBJECT_NORMALIZATION = {
+    "퇴사": "퇴직",
+}
 _EVIDENCE_PREDICATE_ENDINGS = (
     "하다", "한다", "하나요", "인가요", "되나요", "있나요", "해야", "해요", "해서",
     "하려면", "되면", "내야", "쉬게", "넘게", "주나요", "가능한가요", "서", "게", "면", "해",
@@ -469,21 +478,36 @@ def _strip_korean_particle(token: str) -> str:
     return re.sub(r"(으로|에서|에게|한테|까지|부터|처럼|보다|이나|나|은|는|이|가|을|를|의|와|과|도|에)$", "", token)
 
 
+def _normalize_evidence_token(raw_token: str) -> str:
+    has_object_particle = bool(re.search(r"(을|를)$", raw_token))
+    token = _strip_korean_particle(raw_token)
+    for suffix in _EVIDENCE_STEM_ENDINGS:
+        if not token.endswith(suffix):
+            continue
+        stem = token[:-len(suffix)]
+        token = stem if len(stem) >= 2 else ""
+        break
+    if len(token) < 2 or token in _EVIDENCE_STOP_WORDS or token in _EVIDENCE_INTERROGATIVES:
+        return ""
+    if token.endswith(_EVIDENCE_PREDICATE_ENDINGS):
+        if not (has_object_particle and token.endswith(("서", "게", "면", "해"))):
+            return ""
+    return token
+
+
 def _extract_evidence_facets(query: str) -> dict[str, Any]:
     normalized = _normalize_evidence_text(query)
     raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", normalized)
     tokens = []
     for raw_token in raw_tokens:
-        token = _strip_korean_particle(raw_token)
-        if len(token) < 2 or token in _EVIDENCE_STOP_WORDS:
-            continue
-        if token.endswith(_EVIDENCE_PREDICATE_ENDINGS):
+        token = _normalize_evidence_token(raw_token)
+        if not token:
             continue
         tokens.append(token)
     tokens = list(dict.fromkeys(tokens))
     conditions = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", normalized)
     strong_subjects = [
-        token for token in tokens
+        _EVIDENCE_SUBJECT_NORMALIZATION.get(token, token) for token in tokens
         if len(token) >= 2 and not re.fullmatch(r"\d+(?:원|일|개월|시간|퍼센트|%)", token)
         and not token.endswith(("아서", "어서", "려고", "짜리"))
     ]
@@ -509,6 +533,26 @@ def _condition_supported(condition: str, evidence: str) -> bool:
     expected = _quantity(condition)
     if not expected:
         return False
+    expected_number, expected_unit = expected
+    comparisons = re.findall(
+        r"(\d+)(원|일|개월|시간|퍼센트|%)(?:을|를|이|가|은|는)?\s*(초과|이상|이하|미만|한도)",
+        evidence,
+    )
+    for raw_number, raw_unit, operator in comparisons:
+        unit = "퍼센트" if raw_unit == "%" else raw_unit
+        if unit != expected_unit:
+            continue
+        threshold = float(raw_number)
+        if operator == "초과" and expected_number > threshold:
+            return True
+        if operator == "이상" and expected_number >= threshold:
+            return True
+        if operator == "이하" and expected_number <= threshold:
+            return True
+        if operator == "미만" and expected_number < threshold:
+            return True
+        if operator == "한도":
+            return True
     values = [
         quantity for raw in re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", evidence)
         if (quantity := _quantity(raw)) and quantity[1] == expected[1]
@@ -533,10 +577,9 @@ async def _has_facet_evidence(
     combined_evidence = "\n".join(units)
     lexical_hits = [token for token in facets["tokens"] if token in combined_evidence]
     strong_subjects = facets["strong_subjects"]
-    focus_subject = strong_subjects[0] if strong_subjects else ""
 
-    facet_texts = [facets["query"], *([focus_subject] if focus_subject else [])]
-    if facet_vectors is None:
+    facet_texts = [facets["query"], *strong_subjects]
+    if facet_vectors is None or len(facet_vectors) != len(facet_texts):
         facet_vectors, _ = await _embed_texts_cached(facet_texts)
     unit_vectors, _ = await _embed_texts_cached(units)
     query_scores = [
@@ -546,12 +589,16 @@ async def _has_facet_evidence(
     if not query_scores or max(query_scores) < _EVIDENCE_SEMANTIC_THRESHOLD:
         return False
 
-    if focus_subject:
-        subject_score = max(
-            sum(left * right for left, right in zip(facet_vectors[1], unit_vector))
-            for unit_vector in unit_vectors
+    if strong_subjects:
+        subject_supported = any(
+            subject in combined_evidence
+            or max(
+                sum(left * right for left, right in zip(subject_vector, unit_vector))
+                for unit_vector in unit_vectors
+            ) >= 0.60
+            for subject, subject_vector in zip(strong_subjects, facet_vectors[1:])
         )
-        if focus_subject not in combined_evidence and subject_score < 0.60:
+        if not subject_supported:
             return False
 
     conditions = facets["conditions"]
@@ -594,8 +641,7 @@ async def search(
 ) -> list[dict[str, Any]]:
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
-    focus_subject = strong_subjects[0] if strong_subjects else ""
-    query_texts = [query, facets["query"], *([focus_subject] if focus_subject else [])]
+    query_texts = [query, facets["query"], *strong_subjects]
     query_vectors, _ = await _embed_texts_cached(query_texts)
     embedding = query_vectors[0]
     facet_vectors = query_vectors[1:]

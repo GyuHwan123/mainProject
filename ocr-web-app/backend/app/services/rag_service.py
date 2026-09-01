@@ -533,6 +533,26 @@ def _condition_supported(condition: str, evidence: str) -> bool:
     expected = _quantity(condition)
     if not expected:
         return False
+    expected_number, expected_unit = expected
+    comparisons = re.findall(
+        r"(\d+)(원|일|개월|시간|퍼센트|%)(?:을|를|이|가|은|는)?\s*(초과|이상|이하|미만|한도)",
+        evidence,
+    )
+    for raw_number, raw_unit, operator in comparisons:
+        unit = "퍼센트" if raw_unit == "%" else raw_unit
+        if unit != expected_unit:
+            continue
+        threshold = float(raw_number)
+        if operator == "초과" and expected_number > threshold:
+            return True
+        if operator == "이상" and expected_number >= threshold:
+            return True
+        if operator == "이하" and expected_number <= threshold:
+            return True
+        if operator == "미만" and expected_number < threshold:
+            return True
+        if operator == "한도":
+            return True
     values = [
         quantity for raw in re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", evidence)
         if (quantity := _quantity(raw)) and quantity[1] == expected[1]

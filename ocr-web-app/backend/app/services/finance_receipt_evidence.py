@@ -31,7 +31,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
-FINANCE_PROMPT_VERSION = "receipt-v10-bundle-specific-rules"
+FINANCE_PROMPT_VERSION = "receipt-v11-beauty-service-guidance"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 
 _ITEM_COLUMN_LABEL = r"(?:상품\s*코드|상품\s*명|품\s*명|품목\s*명|단가|수량|금액|합계금액)"
@@ -143,6 +143,8 @@ def _separate_item_name_metadata(value: Any) -> tuple[str, list[str]]:
 
 class FinanceClassifyRequest(BaseModel):
     document_id: str
+    source_file_name: str | None = Field(default=None, max_length=500)
+    save_to_archive: bool = True
 
 
 class FinanceExportRequest(BaseModel):
@@ -414,17 +416,29 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
 
     name = filename.lower()
     document_type = None
+    document_type_source = None
+    document_type_confidence = None
     expense_category = None
     if any(keyword in name for keyword in ("출장", "여비", "교통", "숙박", "ktx", "srt", "택시")):
         document_type = "TRAVEL_EXPENSE"
+        if any(keyword in name for keyword in ("출장", "여비")):
+            document_type_source = "FILENAME_BUSINESS_CONTEXT"
+            document_type_confidence = 0.9
+        else:
+            document_type_source = "FILENAME_RECEIPT_CONTEXT"
+            document_type_confidence = 0.65
         if any(keyword in name for keyword in ("식비", "식대", "음료", "카페")):
             expense_category = "식비"
         elif not any(keyword in name for keyword in ("숙박", "호텔", "모텔")):
             expense_category = "교통"
     elif any(keyword in name for keyword in ("복지", "도서", "교육", "병원", "검진", "경조")):
         document_type = "WELFARE_BENEFIT"
+        document_type_source = "FILENAME_BUSINESS_CONTEXT"
+        document_type_confidence = 0.85
     elif any(keyword in name for keyword in ("구매", "견적", "비품", "장비", "소프트웨어", "라이선스")):
         document_type = "PURCHASE_REQUEST"
+        document_type_source = "FILENAME_BUSINESS_CONTEXT"
+        document_type_confidence = 0.85
 
     stated_item_count = None
     stated_total_quantity = None
@@ -527,6 +541,8 @@ def _receipt_hints(text: str, filename: str) -> dict[str, Any]:
         "discount_amount": labeled_discount,
         "amount_relation": amount_relation,
         "document_type": document_type,
+        "document_type_source": document_type_source,
+        "document_type_confidence": document_type_confidence,
         "expense_category": expense_category,
         "stated_item_count": stated_item_count,
         "stated_total_quantity": stated_total_quantity,
@@ -869,15 +885,29 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
             "stated_total_amount": hints.get("stated_total_amount"),
         })
         result["receipt_summary"] = receipt_summary
-    candidate_doc_type = hints.get("document_type") or result.get("doc_type") or result.get("document_type")
+    model_doc_type = result.get("doc_type") or result.get("document_type")
     candidate_category = _normalize_expense_category(
-        hints.get("expense_category") or result.get("expense_category"), text,
+        result.get("expense_category") or hints.get("expense_category"), text,
     )
     document_type, expense_category, needs_review, review_reason = validate_classification(
-        candidate_doc_type,
+        model_doc_type,
         candidate_category,
         result.get("needs_review", False),
+        deterministic_doc_type=hints.get("document_type"),
+        deterministic_source=hints.get("document_type_source"),
     )
+    category_document_type = CATEGORY_TO_DOCUMENT_TYPE.get(expense_category)
+    result["classification_decision"] = {
+        "expense_category": expense_category,
+        "category_document_type": category_document_type,
+        "model_document_type": str(model_doc_type or "").strip().upper() or None,
+        "deterministic_document_type": hints.get("document_type"),
+        "deterministic_source": hints.get("document_type_source"),
+        "deterministic_confidence": hints.get("document_type_confidence"),
+        "selected_document_type": document_type,
+        "status": "CONFLICT" if review_reason == "category_document_type_conflict" else "REVIEW_REQUIRED" if needs_review else "AGREED",
+        "reason": review_reason,
+    }
     def prefer_evidenced_model_amount(field: str) -> float:
         model_value = _clean_number(result.get(field))
         hint_value = _clean_number(hints.get(field))

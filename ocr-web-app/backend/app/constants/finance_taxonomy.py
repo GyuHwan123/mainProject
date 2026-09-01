@@ -96,23 +96,52 @@ def validate_classification(
     doc_type: Any,
     expense_category: Any,
     needs_review: Any = False,
+    *,
+    deterministic_doc_type: Any = None,
+    deterministic_source: Any = None,
+    allow_explicit_document_type: bool = False,
 ) -> tuple[str | None, str | None, bool, str | None]:
-    """Validate the SFT classification contract without silently correcting it."""
+    """Resolve category-first classification and surface conflicting signals."""
     normalized_doc_type = str(doc_type or "").strip().upper()
+    if normalized_doc_type not in ALLOWED_DOCUMENT_TYPES:
+        normalized_doc_type = None
+    normalized_deterministic = str(deterministic_doc_type or "").strip().upper()
+    if normalized_deterministic not in ALLOWED_DOCUMENT_TYPES:
+        normalized_deterministic = None
     category = normalize_expense_category(expense_category)
+
+    # A user-reviewed pair is an explicit workflow decision. Receipt categories
+    # describe what was purchased, while document types can additionally encode
+    # business context (for example, food purchased during a trip).
+    if allow_explicit_document_type and normalized_doc_type and category:
+        return normalized_doc_type, category, False, None
+
     if bool(needs_review) and category is None:
         return None, None, True, "model_requested_review"
     if category is None:
-        document_type = normalized_doc_type if normalized_doc_type in ALLOWED_DOCUMENT_TYPES else None
+        document_type = normalized_deterministic or normalized_doc_type
         return document_type, None, True, "invalid_expense_category"
 
+    category_document_type = CATEGORY_TO_DOCUMENT_TYPE[category]
     if bool(needs_review):
-        document_type = normalized_doc_type if normalized_doc_type in ALLOWED_DOCUMENT_TYPES else CATEGORY_TO_DOCUMENT_TYPE[category]
+        document_type = normalized_deterministic or category_document_type
         return document_type, category, True, "model_requested_review"
-    if normalized_doc_type not in ALLOWED_DOCUMENT_TYPES:
-        return CATEGORY_TO_DOCUMENT_TYPE[category], category, False, "document_type_derived_from_category"
 
-    return normalized_doc_type, category, False, None
+    signals = [value for value in (normalized_doc_type, normalized_deterministic) if value]
+    if any(value != category_document_type for value in signals):
+        # Strong filename business context can select the working document, but
+        # the category mismatch remains visible and must be reviewed.
+        document_type = (
+            normalized_deterministic
+            if deterministic_source == "FILENAME_BUSINESS_CONTEXT" and normalized_deterministic
+            else category_document_type
+        )
+        return document_type, category, True, "category_document_type_conflict"
+
+    if not normalized_doc_type and not normalized_deterministic:
+        return category_document_type, category, False, "document_type_derived_from_category"
+
+    return category_document_type, category, False, None
 
 
 if set(CATEGORY_TO_DOCUMENT_TYPE) != set(ALLOWED_EXPENSE_CATEGORIES):

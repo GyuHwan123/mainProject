@@ -44,6 +44,14 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
         self.assertIn("needs_review", prompt)
 
+    def test_receipt_prompt_guides_beauty_services_without_capturing_products(self):
+        prompt = _receipt_prompt("가맹점명 예쁘다헤어샵 합계 140,000원", "receipt.jpg")
+
+        self.assertIn("expense_category=`미용`", prompt)
+        self.assertIn("헤어샵", prompt)
+        self.assertIn("네일샵", prompt)
+        self.assertIn("상품을 구매했다는 이유만으로 `미용`을 선택하지 말고", prompt)
+
     def test_unknown_expense_category_requires_review_without_guessing(self):
         self.assertEqual(_normalize_expense_category("사무용품"), "전자제품/문구")
         self.assertIsNone(_normalize_expense_category("출장숙박"))
@@ -63,6 +71,31 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(normalized["expense_category"], "취미/쇼핑")
         self.assertEqual(normalized["document_type"], "PURCHASE_REQUEST")
+
+    def test_model_category_is_primary_over_filename_category_hint(self):
+        normalized = _normalize(
+            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "교통"},
+            "서울출장_식비.jpg",
+            "택시 결제금액 18,000원",
+        )
+
+        self.assertEqual(normalized["expense_category"], "교통")
+        self.assertEqual(normalized["document_type"], "TRAVEL_EXPENSE")
+        self.assertEqual(normalized["structured_data"]["classification_decision"]["status"], "AGREED")
+
+    def test_classification_conflict_is_preserved_for_review(self):
+        normalized = _normalize(
+            {"doc_type": "TRAVEL_EXPENSE", "expense_category": "식비"},
+            "receipt.jpg",
+            "식사 결제금액 18,000원",
+        )
+
+        self.assertEqual(normalized["document_type"], "WELFARE_BENEFIT")
+        self.assertTrue(normalized["structured_data"]["needs_review"])
+        decision = normalized["structured_data"]["classification_decision"]
+        self.assertEqual(decision["model_document_type"], "TRAVEL_EXPENSE")
+        self.assertEqual(decision["category_document_type"], "WELFARE_BENEFIT")
+        self.assertEqual(decision["status"], "CONFLICT")
 
     def test_requires_explicit_alcohol_evidence_for_food_and_alcohol_category(self):
         food = _normalize(

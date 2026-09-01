@@ -55,11 +55,20 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
         normalized["structured_data"].pop("duplicate_detection", None)
     normalized["prompt_version"] = FINANCE_PROMPT_VERSION
     normalized["processed_at"] = datetime.now(timezone.utc).isoformat()
-    return supabase_service.save_finance_record(
+    finance_record = supabase_service.save_finance_record(
         user_email=user.email,
         document_id=payload.document_id,
         payload=normalized,
     )
+    if payload.save_to_archive:
+        supabase_service.save_receipt_archive(
+            user_email=user.email,
+            document_id=payload.document_id,
+            finance_record=finance_record,
+            source_file_name=payload.source_file_name or document.get("file_name") or "receipt",
+            source_storage_path=document.get("file_url") or "",
+        )
+    return finance_record
 
 
 @router.get("/records", response_model=list[FinanceRecord])
@@ -84,6 +93,30 @@ def get_finance_taxonomy(user: User = Depends(require_current_user)) -> dict[str
         "expense_categories": list(ALLOWED_EXPENSE_CATEGORIES),
         "category_to_document_type": CATEGORY_TO_DOCUMENT_TYPE,
     }
+
+
+@router.get("/receipt-archive")
+def receipt_archive(category: str | None = None, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+    if category and category != "UNCLASSIFIED" and category not in ALLOWED_EXPENSE_CATEGORIES:
+        raise HTTPException(status_code=422, detail="지원하지 않는 영수증 카테고리입니다.")
+    archive = supabase_service.list_receipt_archive(user.email, category=category)
+    for item in archive:
+        record = item.get("finance_records") or {}
+        if isinstance(record, list):
+            record = record[0] if record else {}
+        if record:
+            item["expense_category"] = record.get("expense_category")
+            item["merchant"] = record.get("merchant")
+            item["transaction_date"] = record.get("transaction_date")
+            item["total_amount"] = record.get("total_amount") or 0
+        document = item.get("ocr_documents") or {}
+        if isinstance(document, list):
+            document = document[0] if document else {}
+        storage_path = item.get("source_storage_path") or document.get("file_url")
+        if not item.get("source_file_name") and document.get("file_name"):
+            item["source_file_name"] = document["file_name"]
+        item["image_url"] = supabase_service.create_document_signed_url(storage_path) if storage_path else None
+    return archive
 
 
 @router.get("/history")
@@ -111,7 +144,8 @@ def finance_history(user: User = Depends(require_current_user)) -> list[dict[str
 def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
     values = payload.model_dump(mode="json")
     document_type, expense_category, needs_review, reason = validate_classification(
-        values["document_type"], values["expense_category"]
+        values["document_type"], values["expense_category"],
+        allow_explicit_document_type=True,
     )
     if needs_review:
         raise HTTPException(status_code=422, detail=f"유효하지 않은 비용 분류입니다: {reason}")
@@ -119,6 +153,25 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
     values["expense_category"] = expense_category
     if not values["total_amount"]:
         values["total_amount"] = values["supply_amount"] + values["tax_amount"]
+    current = next(
+        (item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id),
+        None,
+    )
+    if current:
+        structured_data = dict(current.get("structured_data") or {})
+        previous_decision = dict(structured_data.get("classification_decision") or {})
+        structured_data["expense_category"] = expense_category
+        structured_data["doc_type"] = document_type
+        structured_data["needs_review"] = False
+        structured_data.pop("classification_review_reason", None)
+        structured_data["classification_decision"] = {
+            **previous_decision,
+            "expense_category": expense_category,
+            "selected_document_type": document_type,
+            "status": "USER_CONFIRMED",
+            "reason": None,
+        }
+        values["structured_data"] = structured_data
     return supabase_service.update_finance_record(user.email, record_id, values)
 
 

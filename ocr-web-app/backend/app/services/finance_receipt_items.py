@@ -153,11 +153,12 @@ expense_category는 반드시 아래 고정 목록 중 정확히 하나만 선�
 
 판단 규칙:
 1. OCR 근거만 사용합니다. 불명확하면 null, 날짜는 YYYY-MM-DD, 금액은 숫자입니다.
-2. expense_category는 상호·품목·문맥으로 고릅니다. 불명확하면 expense_category를 null로 두고 needs_review=true로 작성하세요. `식비/주류`는 소주·맥주·와인·위스키 등 명확한 주류 근거가 있을 때만 선택하고, 그 외 음식·과자·일반 음료는 `식비`입니다. doc_type은 카테고리와 별개로 실제 업무 문서 목적을 선택하세요. 예를 들어 출장 중 식비는 category=`식비`, doc_type=`TRAVEL_EXPENSE`입니다.
-3. merchant는 issuer/business_info에서 실제 판매·발행 주체를 고릅니다. 카드사·PG사·쇼핑몰·URL은 판매자가 아니면 제외하고 `(과세)/(면세)`는 제거합니다.
-4. total_amount는 settlement의 최종 결제·받을·승인·청구 금액을 우선하고 tax_summary, adjustments, item_summary는 검산에만 씁니다. 품목 단가·소계는 최종금액이 아닙니다.
-5. sections는 line id를 참조하며 한 행은 여러 section에 속할 수 있습니다. 코드 힌트보다 명시적 OCR 라벨을 우선합니다.
-6. card_number는 명시적인 카드번호 라벨과 마스킹된 값이 함께 보일 때만 작성하고, 그렇지 않으면 null입니다.
+2. expense_category를 주 분류로 판단하여 상호·품목·문맥으로 고릅니다. 불명확하면 expense_category를 null로 두고 needs_review=true로 작성하세요. `식비/주류`는 소주·맥주·와인·위스키 등 명확한 주류 근거가 있을 때만 선택하고, 그 외 음식·과자·일반 음료는 `식비`입니다. doc_type은 보조 의견이며 영수증에 드러난 업무 문서 목적을 선택하세요. 예를 들어 출장 중 식비는 category=`식비`, doc_type=`TRAVEL_EXPENSE`입니다. 카테고리와 문서 목적이 충돌하거나 업무 목적이 불명확하면 needs_review=true로 작성하세요.
+3. `미용`은 헤어샵·미용실·헤어살롱·이발소·바버샵·네일샵·에스테틱·피부관리·속눈썹·왁싱처럼 미용 서비스를 제공한 상호 또는 커트·펌·염색·네일·피부관리 등 서비스 품목이 OCR에 명확할 때 선택하세요. 예: `예쁘다헤어샵`에서 `미용 서비스` 1건을 결제한 영수증은 expense_category=`미용`입니다. 샴푸·화장품·미용도구 같은 상품을 구매했다는 이유만으로 `미용`을 선택하지 말고, 해당 상품과 판매점 근거에 맞는 다른 고정 카테고리를 판단하세요.
+4. merchant는 issuer/business_info에서 실제 판매·발행 주체를 고릅니다. 카드사·PG사·쇼핑몰·URL은 판매자가 아니면 제외하고 `(과세)/(면세)`는 제거합니다.
+5. total_amount는 settlement의 최종 결제·받을·승인·청구 금액을 우선하고 tax_summary, adjustments, item_summary는 검산에만 씁니다. 품목 단가·소계는 최종금액이 아닙니다.
+6. sections는 line id를 참조하며 한 행은 여러 section에 속할 수 있습니다. 코드 힌트보다 명시적 OCR 라벨을 우선합니다.
+7. card_number는 명시적인 카드번호 라벨과 마스킹된 값이 함께 보일 때만 작성하고, 그렇지 않으면 null입니다.
 
 [파일명]
 {filename}

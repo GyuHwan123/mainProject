@@ -39,14 +39,41 @@ class FinanceTaxonomyTests(unittest.TestCase):
         self.assertEqual(normalize_expense_category("생활/식비"), "식비")
         self.assertEqual(normalize_expense_category("식비/쇼핑"), "식비")
 
-    def test_keeps_valid_document_type_independent_from_receipt_category(self):
+    def test_marks_model_document_type_conflict_for_review(self):
         doc_type, category, needs_review, reason = validate_classification(
             "TRAVEL_EXPENSE", "식비", False
         )
-        self.assertEqual(doc_type, "TRAVEL_EXPENSE")
+        self.assertEqual(doc_type, "WELFARE_BENEFIT")
         self.assertEqual(category, "식비")
-        self.assertFalse(needs_review)
-        self.assertIsNone(reason)
+        self.assertTrue(needs_review)
+        self.assertEqual(reason, "category_document_type_conflict")
+
+    def test_strong_business_context_selects_document_but_keeps_conflict_visible(self):
+        self.assertEqual(
+            validate_classification(
+                "EXPENSE_REPORT",
+                "식비",
+                False,
+                deterministic_doc_type="TRAVEL_EXPENSE",
+                deterministic_source="FILENAME_BUSINESS_CONTEXT",
+            ),
+            (
+                "TRAVEL_EXPENSE",
+                "식비",
+                True,
+                "category_document_type_conflict",
+            ),
+        )
+
+    def test_user_review_can_explicitly_keep_cross_taxonomy_document_type(self):
+        self.assertEqual(
+            validate_classification(
+                "TRAVEL_EXPENSE",
+                "식비",
+                allow_explicit_document_type=True,
+            ),
+            ("TRAVEL_EXPENSE", "식비", False, None),
+        )
 
     def test_preserves_review_null_contract(self):
         self.assertEqual(

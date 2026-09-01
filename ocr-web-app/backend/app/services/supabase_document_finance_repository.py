@@ -163,6 +163,58 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
         return response.json()
 
+    def save_receipt_archive(
+        self,
+        *,
+        user_email: str,
+        document_id: str,
+        finance_record: dict[str, Any],
+        source_file_name: str,
+        source_storage_path: str,
+    ) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        response = _legacy_httpx().post(
+            f"{self.url}/rest/v1/receipt_archive",
+            params={"on_conflict": "finance_record_id"},
+            headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
+            json={
+                "user_id": user_id,
+                "document_id": document_id,
+                "finance_record_id": finance_record["id"],
+                "source_file_name": source_file_name[:500],
+                "source_storage_path": source_storage_path,
+                "expense_category": finance_record.get("expense_category"),
+                "merchant": finance_record.get("merchant"),
+                "transaction_date": finance_record.get("transaction_date"),
+                "total_amount": finance_record.get("total_amount") or 0,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "영수증 보관함 저장 실패")
+        return response.json()[0]
+
+    def list_receipt_archive(self, user_email: str, *, category: str | None = None, limit: int = 300) -> list[dict[str, Any]]:
+        user_id = self.get_public_user_id(user_email)
+        params = {
+            "select": "*,finance_records!inner(*),ocr_documents(file_name,file_url)",
+            "user_id": f"eq.{user_id}",
+            "order": "created_at.desc",
+            "limit": str(limit),
+        }
+        if category == "UNCLASSIFIED":
+            params["finance_records.expense_category"] = "is.null"
+        elif category:
+            params["finance_records.expense_category"] = f"eq.{category}"
+        response = _legacy_httpx().get(
+            f"{self.url}/rest/v1/receipt_archive",
+            params=params,
+            headers=self._service_headers(),
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "영수증 보관함 조회 실패")
+        return response.json()
+
     def update_finance_record(self, user_email: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)
         response = _legacy_httpx().patch(
@@ -176,7 +228,22 @@ class DocumentFinanceMixin:
         rows = response.json()
         if not rows:
             raise HTTPException(status_code=404, detail="재무 문서를 찾을 수 없습니다.")
-        return rows[0]
+        updated_record = rows[0]
+        archive_response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/receipt_archive",
+            params={"finance_record_id": f"eq.{record_id}", "user_id": f"eq.{user_id}"},
+            headers=self._service_headers(),
+            json={
+                "expense_category": updated_record.get("expense_category"),
+                "merchant": updated_record.get("merchant"),
+                "transaction_date": updated_record.get("transaction_date"),
+                "total_amount": updated_record.get("total_amount") or 0,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            timeout=15,
+        )
+        self._raise_for_supabase(archive_response, "영수증 보관함 카테고리 동기화 실패")
+        return updated_record
 
     def create_finance_evaluation_batch(
         self,

@@ -10,5 +10,4 @@ from app.services.supabase_identity_repository import IdentityMixin
 class SupabaseService(IdentityMixin, CollaborationMixin, DocumentFinanceMixin, SupabaseBase):
     """Compatibility facade composed from domain-specific repositories."""
 
-
 supabase_service = SupabaseService()

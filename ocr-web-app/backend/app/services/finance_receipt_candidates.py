@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.services.finance_receipt_evidence import *
+from app.services.finance_receipt_structure import _structured_receipt_evidence
 
 def _receipt_table_hint(pages: list[dict[str, Any]] | None) -> str:
     tables = []
@@ -30,9 +31,46 @@ _NON_ITEM_EVIDENCE = re.compile(
     r"카드\s*번호|승인\s*번호|거래\s*(?:일시|번호)|판매\s*(?:일시|번호)|주문\s*번호|"
     r"영수증\s*번호|승차권\s*번호|발행\s*일시|사업자|주소|소재지|대표자|TEL\b|FAX\b|"
     r"전화|합계|소계|결제|공급가액|부가세|세액|할인|쿠폰|포인트|플랫폼|에누리|증정|"
-    r"매출전표|신용매출|SSGPAY|안내|법\s*제\d+조",
+    r"매출전표|신용매출|SSGPAY|안내|법\s*제\d+조|Help\s*Desk|고객\s*센터|"
+    r"금융결제원|여신금융협회|현금영수증\s*문의",
     re.IGNORECASE,
 )
+
+
+def _looks_like_non_item_evidence(name: Any, raw: Any = None) -> bool:
+    """Reject settlement/tax/meta rows even when OCR inserted spaces or noise."""
+    name_text = str(name or "")
+    raw_text = " ".join(filter(None, (name_text, str(raw or ""))))
+    stable_non_item_labels = re.compile(
+        r"(?:^|\s)(?:\uC18C\uACC4|\uD569\uACC4|\uCD1D\s*\uD569\uACC4|\uACB0\uC81C\s*\uAE08\uC561|"
+        r"\uCD5C\uC885\s*\uACB0\uC81C|\uC2B9\uC778\s*\uAE08\uC561|\uCCAD\uAD6C\s*\uAE08\uC561|"
+        r"\uACF5\uAE09\uAC00\uC561|\uBD80\uAC00\uC138|\uC138\uAE08|\uACFC\uC138|\uBA74\uC138|"
+        r"\uD560\uC778|\uCFE0\uD3F0|\uAC70\uC2A4\uB984\uB3C8|\uCE74\uB4DC\s*\uBC88\uD638|"
+        r"\uC2B9\uC778\s*\uBC88\uD638|\uAC70\uB798\s*\uBC88\uD638)(?:\s|:|$)",
+        re.IGNORECASE,
+    )
+    if stable_non_item_labels.search(raw_text):
+        return True
+    compact_name = _compact_evidence_text(name_text)
+    compact_raw = _compact_evidence_text(raw_text)
+    exact_or_prefix = (
+        "소계", "합계", "총합계", "결제금액", "승인금액", "받을금액", "총구매금액",
+        "과세물품가액", "면세물품가액", "공급가액", "부가세", "부가세액", "세액",
+        "할인액", "할인금액", "쿠폰", "포인트", "캐시백", "거스름돈",
+    )
+    if any(compact_name == token or compact_name.startswith(token) for token in exact_or_prefix):
+        return True
+    # OCR examples include ``부 사가 세``, ``한 계``, ``합인액`` and other
+    # near-label fragments. Only apply fuzzy matching to short label-like names.
+    if len(compact_name) <= 8 and re.search(
+        r"(?:소.?계|한.?계|합.?계|합인액|부.?사?가.?세|과세.*가액|면세.*가액|공급.*가액)",
+        re.sub(r"[^0-9A-Za-z가-힣]", "", raw_text),
+        re.IGNORECASE,
+    ):
+        return True
+    return bool(_NON_ITEM_EVIDENCE.search(raw_text) and any(
+        token in compact_raw for token in ("합계", "소계", "부가세", "공급가액", "과세물품", "할인")
+    ))
 
 
 def _annotate_candidate_reliability(
@@ -55,7 +93,7 @@ def _annotate_candidate_reliability(
         reasons: list[str] = []
         if source in {"table", "discounted_item_block", "single_amount_item_row"}:
             reasons.append("T")
-        if source == "item_region":
+        if source in {"item_region", "coordinate_row_fallback", "inline_arithmetic_fallback"}:
             reasons.append("R")
         if source == "fuel_sale_block":
             reasons.append("F")
@@ -95,6 +133,7 @@ def _reliable_item_candidates(
         )
         structured_source = source in {
             "table", "item_region", "discounted_item_block", "single_amount_item_row", "fuel_sale_block",
+            "inline_arithmetic_fallback", "coordinate_row_fallback",
             "semantic_service_inference",
         }
         compact_name = _compact_evidence_text(name)
@@ -106,6 +145,7 @@ def _reliable_item_candidates(
         reliable = bool(
             name and compact_name not in {"수", "금", "계"} and len(compact_name) >= 1 and amount >= 100
             and not _NON_ITEM_EVIDENCE.search(f"{name} {raw}")
+            and not _looks_like_non_item_evidence(name, raw)
             and not looks_like_location and not looks_like_short_amount_label
             and (structured_source or arithmetic)
         )
@@ -242,6 +282,7 @@ def _semantic_receipt_evidence(
         for label in dict.fromkeys(labels):
             sections[label].append(line_id)
 
+    structured = _structured_receipt_evidence(lines, item_candidates)
     return {
         "lines": lines,
         "sections": {key: value for key, value in sections.items() if value},
@@ -249,6 +290,7 @@ def _semantic_receipt_evidence(
             "candidate_count": len(item_candidates),
             "candidate_amount_sum": sum(_clean_number(item.get("amount_candidate")) for item in item_candidates) or None,
         },
+        "structured_evidence": structured,
     }
 
 
@@ -273,6 +315,7 @@ def _semantic_prompt_payload(
     if item_pass:
         payload["item_candidates"] = candidates
         payload["item_summary"] = evidence["item_summary"]
+        payload["structured_evidence"] = evidence["structured_evidence"]
     else:
         payload["item_summary"] = evidence["item_summary"]
     return payload
@@ -333,6 +376,170 @@ def _fuel_sale_item_candidate(
     }
 
 
+def _inline_arithmetic_item_candidates(
+    pages: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    """Recover collapsed item rows by proving unit-price x quantity = amount.
+
+    This is deliberately domain-neutral.  It runs alongside the table parser,
+    but accepts only rows with an explicit multiplication marker and a numeric
+    relation that holds within receipt-rounding tolerance.
+    """
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    pattern = re.compile(
+        r"(?P<prefix>[^\n]{1,160}?)"
+        r"(?P<unit_price>\d{1,3}(?:[,.]\d{3})+|\d{3,7})\s*(?:원)?\s*"
+        r"(?P<operator>[×xX*])\s*"
+        r"(?P<quantity>\d{1,4}(?:\.\d{1,3})?)\s*"
+        r"(?P<unit>kg|㎏|g|mg|l|ℓ|ml|㎖|m|cm)?\s+"
+        r"(?P<amount>\d{1,3}(?:[,.]\d{3})+|\d{3,9})(?!\d)",
+        re.IGNORECASE,
+    )
+    header_prefix = re.compile(
+        r"^.*(?:상품|품목)\s*명(?:\s*\([^)]*\))?.*?(?:금액|합계)\s*",
+        re.IGNORECASE,
+    )
+    metadata_prefix = re.compile(
+        r"^.*(?:영수증(?:\([^)]*\))?|매출전표|P[O0]S\s*N[o0]?\.?\s*\d+)\s*",
+        re.IGNORECASE,
+    )
+
+    for page in pages or []:
+        page_number = page.get("page")
+        sources: list[str] = [
+            line.strip() for line in str(page.get("text") or "").splitlines() if line.strip()
+        ]
+        for table in page.get("tables") or []:
+            sources.extend(
+                " ".join(str(cell or "").strip() for cell in row if str(cell or "").strip())
+                for row in table.get("rows") or []
+            )
+        for source_text in sources:
+            for match in pattern.finditer(source_text):
+                quantity = _quantity_number(match.group("quantity"))
+                unit_price = _receipt_number(match.group("unit_price"))
+                amount = _receipt_number(match.group("amount"))
+                tolerance = max(1.0, amount * .001)
+                difference = abs(quantity * unit_price - amount)
+                if not (0 < quantity <= 9999 and unit_price >= 1 and amount >= 100):
+                    continue
+                if difference > tolerance:
+                    continue
+
+                name = header_prefix.sub("", match.group("prefix")).strip(" |:-")
+                name = metadata_prefix.sub("", name).strip(" |:-")
+                # Terminal parenthesized station/SKU numbers are identifiers,
+                # not part of the canonical product name.
+                name = re.sub(r"\(\s*\d{1,6}\s*\)\s*$", "", name).strip()
+                if not re.search(r"[A-Za-z가-힣]", name):
+                    continue
+                compact_name = _compact_evidence_text(name)
+                key = f"{compact_name}:{quantity}:{unit_price}:{amount}"
+                if not compact_name or key in seen:
+                    continue
+
+                raw_unit = (match.group("unit") or "").strip()
+                decimal_quantity = "." in match.group("quantity")
+                measured = bool(raw_unit or decimal_quantity)
+                normalized_unit = raw_unit.upper() if raw_unit else None
+                if normalized_unit in {"ℓ"}:
+                    normalized_unit = "L"
+                candidate: dict[str, Any] = {
+                    "page": page_number,
+                    "source": "inline_arithmetic_fallback",
+                    "candidate_type": "measured_quantity_item" if measured else "inline_arithmetic_item",
+                    "item_type": "MEASURED_QUANTITY" if measured else "COUNT_BASED",
+                    "raw_cells": [
+                        name,
+                        match.group("unit_price"),
+                        match.group("quantity") + raw_unit,
+                        match.group("amount"),
+                    ],
+                    "name_candidate": name,
+                    "quantity_candidate": quantity,
+                    "unit_price_candidate": unit_price,
+                    "amount_candidate": amount,
+                    "column_resolution": "inline_arithmetic_fallback",
+                    "quantity_resolution": "explicit_multiplication_operand",
+                    "arithmetic_tolerance": tolerance,
+                    "arithmetic_difference": difference,
+                    "explicit_arithmetic_operator": match.group("operator"),
+                }
+                if normalized_unit:
+                    candidate["unit"] = normalized_unit
+                result.append(candidate)
+                seen.add(key)
+    return result
+
+
+def _coordinate_item_rows(
+    pages: list[dict[str, Any]] | None,
+) -> list[tuple[Any, list[str]]]:
+    """Rebuild OCR item rows from boxes when table extraction is absent/incomplete."""
+    rebuilt: list[tuple[Any, list[str]]] = []
+    header_pattern = re.compile(r"상품\s*명|품\s*명|품목\s*명|메뉴", re.IGNORECASE)
+    boundary_pattern = re.compile(
+        r"소\s*계|합\s*계|결제\s*금액|받을\s*금액|공급\s*가액|과세\s*(?:물품)?\s*가액|부\s*가\s*세",
+        re.IGNORECASE,
+    )
+    for page in pages or []:
+        boxes = [
+            item for item in page.get("items") or []
+            if item.get("text") and isinstance(item.get("bbox"), list) and len(item["bbox"]) == 2
+        ]
+        if not boxes:
+            continue
+        regions = [region.get("bbox") for region in page.get("regions") or [] if region.get("type") == "items" and region.get("bbox")]
+        if not regions:
+            headers = [item for item in boxes if header_pattern.search(str(item.get("text") or ""))]
+            if not headers:
+                continue
+            header_bottom = max(item["bbox"][1][1] for item in headers)
+            later_boundaries = [
+                item["bbox"][0][1] for item in boxes
+                if item["bbox"][0][1] > header_bottom
+                and boundary_pattern.search(str(item.get("text") or ""))
+            ]
+            page_x1 = min(item["bbox"][0][0] for item in boxes)
+            page_x2 = max(item["bbox"][1][0] for item in boxes)
+            page_y2 = max(item["bbox"][1][1] for item in boxes)
+            regions = [[[page_x1, header_bottom], [page_x2, min(later_boundaries) if later_boundaries else page_y2]]]
+
+        for region in regions:
+            (rx1, ry1), (rx2, ry2) = region
+            selected = []
+            for item in boxes:
+                (x1, y1), (x2, y2) = item["bbox"]
+                center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+                if rx1 <= center_x <= rx2 and ry1 <= center_y <= ry2:
+                    selected.append(item)
+            if not selected:
+                continue
+            selected.sort(key=lambda item: (
+                (item["bbox"][0][1] + item["bbox"][1][1]) / 2,
+                item["bbox"][0][0],
+            ))
+            heights = [max(item["bbox"][1][1] - item["bbox"][0][1], 1) for item in selected]
+            tolerance = (sorted(heights)[len(heights) // 2] if heights else 10) * .45
+            lines: list[list[dict[str, Any]]] = []
+            for item in selected:
+                center_y = (item["bbox"][0][1] + item["bbox"][1][1]) / 2
+                line = next((line for line in reversed(lines[-3:]) if abs(
+                    center_y - sum((entry["bbox"][0][1] + entry["bbox"][1][1]) / 2 for entry in line) / len(line)
+                ) <= tolerance), None)
+                if line is None:
+                    lines.append([item])
+                else:
+                    line.append(item)
+            for line in lines:
+                line.sort(key=lambda item: item["bbox"][0][0])
+                texts = [str(item.get("text") or "").strip() for item in line if str(item.get("text") or "").strip()]
+                if texts and not header_pattern.search(" ".join(texts)):
+                    rebuilt.append((page.get("page"), texts))
+    return rebuilt
+
+
 def _unitemized_service_candidate(
     text: str, hints: dict[str, Any], candidates: list[dict[str, Any]], page_number: Any = None,
 ) -> dict[str, Any] | None:
@@ -355,6 +562,12 @@ def _unitemized_service_candidate(
     service_rules = (
         (r"개인\s*택시|법인\s*택시|택시", "taxi_transport_service", "택시 이용"),
         (r"컨트리\s*클럽|골프\s*클럽|골프장", "golf_course_service", "컨트리클럽 이용"),
+        (
+            r"(?:헤어\s*(?:샵|살롱|스튜디오)?|미용\s*(?:실|원)|뷰티\s*(?:샵|살롱)|"
+            r"네일\s*(?:샵|살롱)|바버\s*(?:샵)?)",
+            "beauty_service",
+            "미용 서비스",
+        ),
     )
     resolved = next(
         ((service_type, name) for pattern, service_type, name in service_rules if re.search(pattern, text, re.IGNORECASE)),
@@ -369,6 +582,7 @@ def _unitemized_service_candidate(
         "source": "semantic_service_inference",
         "structure_type": "unitemized_charge",
         "candidate_type": "single_service_charge",
+        "item_type": "SERVICE",
         "service_type": service_type,
         "raw_cells": [name, str(int(amount))],
         "name_candidate": name,
@@ -489,7 +703,9 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
             "quantity_candidate": quantity,
             "quantity_resolution": quantity_resolution,
             "unit_price_candidate": unit_price,
+            "list_price_candidate": unit_price,
             "amount_candidate": final_amount,
+            "paid_price_candidate": final_amount,
             "discount_amount_candidate": negative[-1],
             "column_resolution": "discount_arithmetic",
         }
@@ -501,7 +717,11 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
         cells = [str(cell or "").strip() for cell in row]
         name = cells[0] if cells else ""
         raw = " | ".join(cell for cell in cells if cell)
-        if not name or summary_labels.search(raw) or non_item_row.fullmatch(re.sub(r"\s+", "", name)):
+        if (
+            not name or summary_labels.search(raw)
+            or non_item_row.fullmatch(re.sub(r"\s+", "", name))
+            or _looks_like_non_item_evidence(name, raw)
+        ):
             return None
         if re.search(r"(?:직원|매장|영수증|날짜|시간|POS|CATID|승인|현대HDS|^X$)", name, re.IGNORECASE):
             return None
@@ -553,6 +773,7 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
         dedupe_key = re.sub(r"[^0-9A-Za-z가-힣]", "", raw).lower()
         if (
             not raw or dedupe_key in seen or summary_labels.search(raw)
+            or _looks_like_non_item_evidence(aligned_cells[0] if aligned_cells else "", raw)
             or non_item_row.fullmatch(re.sub(r"\s+", "", aligned_cells[0] if aligned_cells else ""))
         ):
             return
@@ -778,6 +999,51 @@ def _receipt_item_candidates(pages: list[dict[str, Any]] | None) -> list[dict[st
                     add_candidate([line], page_number, "ocr_line_unscoped")
     combined_text = "\n".join(str(page.get("text") or "") for page in pages or [])
     summary = _receipt_hints(combined_text, "receipt")
+    stated_count_for_recovery = _clean_number(summary.get("stated_item_count"))
+    if not candidates or (
+        stated_count_for_recovery and len(candidates) != int(stated_count_for_recovery)
+    ):
+        for page_number, row in _coordinate_item_rows(pages):
+            add_candidate(row, page_number, "coordinate_row_fallback")
+    for inline_candidate in _inline_arithmetic_item_candidates(pages):
+        inline_name = _compact_evidence_text(inline_candidate.get("name_candidate"))
+        # The unscoped scanner can partially parse the same collapsed line
+        # (for example treating the unit price as the amount).  Replace only
+        # that overlapping, incomplete observation; leave unrelated items.
+        candidates = [
+            candidate for candidate in candidates
+            if not (
+                candidate.get("source") in {"ocr_line_unscoped", "item_region", "table"}
+                and inline_name
+                and inline_name in _compact_evidence_text(
+                    " ".join(str(cell or "") for cell in candidate.get("raw_cells") or [])
+                )
+                and re.search(
+                    r"[×xX*]",
+                    " ".join(str(cell or "") for cell in candidate.get("raw_cells") or []),
+                )
+                and (
+                    not candidate.get("quantity_candidate")
+                    or not candidate.get("unit_price_candidate")
+                    or abs(
+                        _clean_number(candidate.get("amount_candidate"))
+                        - _clean_number(inline_candidate.get("amount_candidate"))
+                    ) >= .01
+                )
+            )
+        ]
+        duplicate = any(
+            _compact_evidence_text(candidate.get("name_candidate")) == inline_name
+            and abs(
+                _clean_number(candidate.get("amount_candidate"))
+                - _clean_number(inline_candidate.get("amount_candidate"))
+            ) < .01
+            and _clean_number(candidate.get("quantity_candidate")) > 0
+            and _clean_number(candidate.get("unit_price_candidate")) > 0
+            for candidate in candidates
+        )
+        if not duplicate:
+            candidates.append(inline_candidate)
     fuel_candidate = _fuel_sale_item_candidate(
         combined_text,
         summary,

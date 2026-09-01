@@ -5,7 +5,7 @@ import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
 import { clearFinanceEvaluationRuns, readFinanceEvaluationRuns, saveFinanceEvaluationRuns } from '../features/financeEvaluationStorage';
 import { FINANCE_EVALUATION_INPUT_QUEUED, clearFinanceEvaluationInput, peekFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
-import { clearPendingReceipts, readReceiptWorkspace, rememberReceiptRecord } from '../features/receiptWorkspaceMemory';
+import { clearPendingReceipts, markReceiptEvaluated, readReceiptWorkspace, rememberReceiptRecord } from '../features/receiptWorkspaceMemory';
 import '../style/FinanceEvaluationPage.scss';
 
 const LABELS = {
@@ -686,6 +686,58 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
   }, []);
 
   const saveRuns = (next) => setRuns(saveFinanceEvaluationRuns(next));
+  const evaluatePendingReceipts = async (rows, name) => {
+    const evaluable = pendingReceipts.flatMap((receipt) => {
+      const recordId = receipt.record_id
+        || readReceiptWorkspace().financeRecords.find((record) => record.document_id === receipt.document_id)?.id;
+      const uploadedName = normalizedFileName(receipt.document_name);
+      const singleWithoutImageName = rows.length === 1 && !imageNameOf(rows[0]);
+      const matches = singleWithoutImageName
+        ? [{ row: rows[0], index: 0 }]
+        : rows.map((row, index) => ({ row, index }))
+          .filter(({ row }) => normalizedFileName(imageNameOf(row)) === uploadedName);
+      return recordId && matches.length === 1
+        ? [{ receipt, recordId, matched: matches[0] }]
+        : [];
+    });
+    if (!evaluable.length) return 0;
+
+    setLoading(true);
+    setStatus(`전달된 영수증 ${evaluable.length}건을 기존 문서화 결과로 평가하는 중입니다...`);
+    let nextRuns = [...readFinanceEvaluationRuns()];
+    let completed = 0;
+    try {
+      for (const { receipt, recordId, matched } of evaluable) {
+        const { data: evaluation } = await apiClient.post('/finance-evaluations/record', {
+          document_id: receipt.document_id,
+          record_id: recordId,
+          ground_truth: truthOf(matched.row),
+          dataset_name: name,
+          dataset_index: matched.index,
+          source_file_name: receipt.document_name,
+          latency_ms: 0,
+        }, { timeout: 1200000 });
+        nextRuns = [...nextRuns, {
+          ...evaluation,
+          record_id: recordId,
+          dataset_name: name,
+          dataset_index: matched.index,
+          matched_image: receipt.document_name,
+          evaluated_at: evaluation.evaluated_at || new Date().toISOString(),
+          batch_id: evaluation.batch_id || null,
+        }];
+        saveRuns(nextRuns);
+        markReceiptEvaluated(receipt.document_id);
+        completed += 1;
+      }
+      setPendingReceipts(readReceiptWorkspace().pendingEvaluations);
+      await loadSingleHistory();
+      setStatus(`기존 문서화 결과 ${completed}건의 평가가 완료되었습니다.`);
+      return completed;
+    } finally {
+      setLoading(false);
+    }
+  };
   const loadDataset = async (file) => {
     if (!file) return;
     try {
@@ -693,7 +745,8 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
       if (!rows.length) throw new Error('정답 항목을 찾지 못했습니다.');
       setDataset(rows); setDatasetName(file.name); setSelectedIndex(0);
       setStatus(`${rows.length}개 정답을 불러왔습니다.`);
-    } catch (error) { setStatus(`정답 JSON 오류: ${error.message}`); }
+      await evaluatePendingReceipts(rows, file.name);
+    } catch (error) { setStatus(`정답 로드 또는 평가 오류: ${error.response?.data?.detail || error.message}`); }
   };
 
   const matchDatasetRow = (file) => {
@@ -738,7 +791,7 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
       source_file_name: file.name,
     }, { timeout: 1200000 });
     return {
-      ...evaluation, dataset_name: datasetName, dataset_index: matched.index,
+      ...evaluation, record_id: record.id, dataset_name: datasetName, dataset_index: matched.index,
       matched_image: file.name, evaluated_at: evaluation.evaluated_at || new Date().toISOString(),
       batch_id: evaluation.batch_id || batchId || null,
     };

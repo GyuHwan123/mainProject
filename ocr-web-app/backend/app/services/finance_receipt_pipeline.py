@@ -20,7 +20,13 @@ async def _classify_receipt_with_model(
 ) -> dict[str, Any]:
     summary_prompt = _receipt_prompt(text, filename, pages)
     summary_started = perf_counter()
-    raw = await _generate_receipt_json(summary_prompt, json_format=True, num_predict=500, model_name=model_name)
+    raw = await _generate_receipt_json(
+        summary_prompt,
+        json_format=True,
+        num_predict=500,
+        model_name=model_name,
+        request_timeout_seconds=240,
+    )
     summary_latency_ms = round((perf_counter() - summary_started) * 1000)
     result = json.loads(raw)
     if not isinstance(result, dict):
@@ -40,6 +46,7 @@ async def _classify_receipt_with_model(
     candidates, rejected_candidates = _reliable_item_candidates(_receipt_item_candidates(pages), hints)
     item_structure = _classify_item_structure(candidates, hints)
     result["semantic_evidence"] = _semantic_receipt_evidence(text, pages, candidates)
+    structured_evidence = result["semantic_evidence"]["structured_evidence"]
     stated_count = hints.get("stated_item_count")
 
     fast_path_items, fast_path_reason = _strict_grounded_item_fast_path(
@@ -50,6 +57,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(fast_path_items, result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": [],
@@ -70,21 +78,55 @@ async def _classify_receipt_with_model(
 
     items_prompt = _receipt_items_prompt(text, pages)
     items_started = perf_counter()
+    item_attempts: list[dict[str, Any]] = []
     try:
-        items_raw = await _generate_receipt_json(
-            items_prompt,
-            json_format=True,
-            num_predict=min(max(400, 220 + len(candidates) * 75), 750),
-            model_name=model_name,
-        )
+        items_raw = ""
+        items_result: dict[str, Any] | None = None
+        prompts = [
+            ("full", items_prompt, min(max(400, 220 + len(candidates) * 75), 750), 300),
+            ("compact_retry", _receipt_items_retry_prompt(candidates, stated_count), min(max(240, 120 + len(candidates) * 55), 600), 180),
+        ]
+        for attempt_name, attempt_prompt, num_predict, timeout_seconds in prompts:
+            attempt_started = perf_counter()
+            try:
+                candidate_raw = await _generate_receipt_json(
+                    attempt_prompt,
+                    json_format=True,
+                    num_predict=num_predict,
+                    model_name=model_name,
+                    request_timeout_seconds=timeout_seconds,
+                )
+                candidate_result = json.loads(candidate_raw)
+                if not isinstance(candidate_result, dict) or not isinstance(candidate_result.get("items"), list):
+                    raise ValueError("items array expected")
+                items_raw, items_result = candidate_raw, candidate_result
+                item_attempts.append({
+                    "name": attempt_name, "status": "success",
+                    "prompt_chars": len(attempt_prompt),
+                    "latency_ms": round((perf_counter() - attempt_started) * 1000),
+                })
+                break
+            except Exception as attempt_error:
+                item_attempts.append({
+                    "name": attempt_name, "status": "failed",
+                    "prompt_chars": len(attempt_prompt),
+                    "latency_ms": round((perf_counter() - attempt_started) * 1000),
+                    "failure_type": type(attempt_error).__name__,
+                })
+                if attempt_name == "compact_retry":
+                    raise
+        if items_result is None:
+            raise ValueError("item extraction produced no result")
         items_latency_ms = round((perf_counter() - items_started) * 1000)
-        items_result = json.loads(items_raw)
         raw_model_items = items_result.get("items") if isinstance(items_result, dict) and isinstance(items_result.get("items"), list) else []
         model_items = _deduplicate_model_items(raw_model_items, candidates)
         model_items_snapshot = json.loads(json.dumps(model_items, ensure_ascii=False))
         result["items"] = _reconcile_items_with_candidates(model_items, candidates, stated_count)
         fallback_reason = None
-        if len(result["items"]) < len(candidates):
+        if (
+            len(result["items"]) < len(candidates)
+            or _conflicts_with_single_inferred_service(result["items"], candidates)
+        ):
             recovered, recovered_reason = _recover_items_when_grounded(candidates, hints, stated_count)
             if recovered:
                 result["items"], fallback_reason = recovered, recovered_reason
@@ -99,6 +141,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(result["items"], result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": model_items_snapshot,
@@ -112,6 +155,7 @@ async def _classify_receipt_with_model(
             "items_prompt_chars": len(items_prompt),
             "items_response_chars": len(items_raw),
             "items_call_status": "success",
+            "items_attempts": item_attempts,
             "item_structure": item_structure,
         })
     except Exception as exc:
@@ -126,6 +170,7 @@ async def _classify_receipt_with_model(
         result["item_validation"] = _validate_resolved_items(result["items"], result.get("total_amount"))
         result["item_extraction_diagnostics"] = {
             "structure": item_structure,
+            "structured_evidence": structured_evidence,
             "candidates": candidates,
             "rejected_candidates": rejected_candidates,
             "model_items": [],
@@ -141,6 +186,7 @@ async def _classify_receipt_with_model(
             "items_prompt_chars": len(items_prompt),
             "items_response_chars": 0,
             "items_call_status": "failed",
+            "items_attempts": item_attempts,
             "items_failure_type": type(exc).__name__,
             "item_structure": item_structure,
         })

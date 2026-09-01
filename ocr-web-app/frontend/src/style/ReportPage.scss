@@ -45,7 +45,6 @@
   }
   span {
     display: block;
-    margin-top: 4px;
     color: #9eafc7;
     font-size: 13px;
   }
@@ -97,6 +96,14 @@
     color: #17304c;
     background: #fff;
   }
+  > button:not(.active) {
+    transform: scale(1);
+    transition: transform 0.16s ease;
+
+    &:hover {
+      transform: scale(1.015);
+    }
+  }
 }
 .developer-report-select {
   min-width: 0;
@@ -116,7 +123,35 @@
     background: transparent;
   }
   .report-dropdown {
-    width: 190px;
+    width: 160px;
+  }
+
+  &:not(.active) {
+    .report-dropdown.light {
+      .report-dropdown-trigger,
+      .report-dropdown-trigger:focus,
+      .report-dropdown-trigger:focus-visible {
+        color: #9eafc7;
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+        outline: 0;
+        transform: scale(1);
+      }
+
+      .report-dropdown-trigger:hover:not(:disabled) {
+        color: #9eafc7;
+        background: transparent;
+        border-color: transparent;
+        box-shadow: none;
+        outline: 0;
+        transform: scale(1.015);
+      }
+
+      .report-dropdown-prefix {
+        color: inherit;
+      }
+    }
   }
 }
 .report-dropdown {
@@ -136,7 +171,7 @@
   border-radius: 7px;
   font: inherit;
   cursor: pointer;
-  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
   > span {
     min-width: 0;
     overflow: hidden;
@@ -675,23 +710,38 @@
 }
 .field-accuracy-list {
   max-height: 182px;
-  padding: 9px 12px;
+  padding: 9px 18px 9px 12px;
   overflow-y: auto;
+  box-sizing: border-box;
+  scrollbar-gutter: stable;
+
   > div {
     min-height: 24px;
     display: grid;
-    grid-template-columns: 65px 38px minmax(35px, 1fr) 43px;
+    grid-template-columns: minmax(55px, 1fr) 38px minmax(28px, 0.65fr) 64px;
     align-items: center;
-    gap: 5px;
+    column-gap: 6px;
     color: #52647c;
     font-size: 11px;
   }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   strong {
     color: #2f4057;
     font-size: 11px;
     text-align: right;
+    white-space: nowrap;
   }
+
   i {
+    width: 100%;
+    min-width: 0;
     height: 4px;
     overflow: hidden;
     background: #edf1f6;
@@ -704,10 +754,16 @@
     border-radius: inherit;
   }
   em {
+    min-width: 64px;
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
     font-size: 11px;
     font-style: normal;
     font-weight: 800;
+    line-height: 1;
     text-align: right;
+    white-space: nowrap;
   }
   .up {
     color: #079b62;

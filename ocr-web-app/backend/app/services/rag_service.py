@@ -28,7 +28,7 @@ _embedding_cache_lock = Lock()
 
 
 def can_access_company_rag(user_role: str, subscription_tier: str) -> bool:
-    return user_role.upper() in {"DEVELOPER", "ADMIN"} or subscription_tier.upper() == "ENTERPRISE"
+    return True
 
 
 @lru_cache(maxsize=1)

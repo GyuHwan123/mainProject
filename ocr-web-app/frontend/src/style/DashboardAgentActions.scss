@@ -1,1 +1,70 @@
-.agent-approval,.agent-analyze-button{margin-top:8px;min-height:30px;padding:0 10px;display:inline-flex;align-items:center;gap:5px;color:#276f96;background:#e7f3f8;border:1px solid #c8e0eb;border-radius:7px;cursor:pointer;font-size:10px;font-weight:800}.agent-approval:disabled,.agent-analyze-button:disabled{cursor:wait;opacity:.6}.extraction-results{padding:16px;display:grid;gap:10px}.extraction-results section{padding:13px;display:grid;gap:6px;background:#f7fafb;border:1px solid #e0e9ee;border-radius:10px}.extraction-results em{width:max-content;padding:3px 6px;color:#33789c;background:#e6f2f7;border-radius:5px;font-size:9px;font-style:normal;font-weight:800}.extraction-results strong{color:#354c5e;font-size:12px}.extraction-results p{margin:0;color:#768693;font-size:10px}.extraction-results button{justify-self:end;padding:7px 9px;color:#fff;background:#28769d;border:0;border-radius:7px;cursor:pointer;font-size:10px;font-weight:800}
+.agent-approval,
+.agent-analyze-button {
+  margin-top: 8px;
+  min-height: 30px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #276f96;
+  background: #e7f3f8;
+  border: 1px solid #c8e0eb;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 800;
+
+  &:disabled {
+    cursor: wait;
+    opacity: 0.6;
+  }
+}
+
+.extraction-results {
+  padding: 16px;
+  display: grid;
+  gap: 10px;
+
+  section {
+    padding: 13px;
+    display: grid;
+    gap: 6px;
+    background: #f7fafb;
+    border: 1px solid #e0e9ee;
+    border-radius: 10px;
+  }
+
+  em {
+    width: max-content;
+    padding: 3px 6px;
+    color: #33789c;
+    background: #e6f2f7;
+    border-radius: 5px;
+    font-size: 9px;
+    font-style: normal;
+    font-weight: 800;
+  }
+
+  strong {
+    color: #354c5e;
+    font-size: 12px;
+  }
+
+  p {
+    margin: 0;
+    color: #768693;
+    font-size: 10px;
+  }
+
+  button {
+    justify-self: end;
+    padding: 7px 9px;
+    color: #fff;
+    background: #28769d;
+    border: 0;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: 10px;
+    font-weight: 800;
+  }
+}

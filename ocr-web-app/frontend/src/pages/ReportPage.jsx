@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
+import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import FinanceEvaluationPage from './FinanceEvaluationPage';
@@ -10,6 +11,13 @@ import '../style/ReportPage.scss';
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
 const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
 const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
+
+const createInitialMonitoringDateRange = () => {
+  const endDate = new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - 6);
+  return { startDate: dateInputValue(startDate), endDate: dateInputValue(endDate) };
+};
 
 function ReportDropdown({ value, options, onChange, disabled = false, ariaLabel, onFocus, prefix }) {
   const [open, setOpen] = useState(false);
@@ -386,14 +394,14 @@ function RecentRuns({ runs }) {
   return <div className="recent-runs-scroll"><div className="recent-runs-table"><div className="run-table-head"><span>일시</span><span>모델</span><span>처리 수</span><span>필드 정확도</span><span>완전 성공률</span><span>처리 성공률</span><span>평균 처리시간</span></div>{runs.map((run) => { const summary = run.summary_metrics || {}; const total = Number(summary.requested_count ?? run.total_items ?? 0); const success = Number(summary.successful_count ?? run.completed_items ?? 0); return <div key={run.id}><span>{run.created_at ? new Date(run.created_at).toLocaleString('ko-KR') : '—'}</span><span title={run.model_name}>{run.model_name || 'gemma3-4b-trained'}</span><strong>{total.toLocaleString()}</strong><span>{metricText(summary.average_field_accuracy, 'percent')}</span><span>{metricText(summary.complete_match_rate, 'percent')}</span><span>{metricText(total ? success / total : null, 'percent')}</span><span>{metricText(summary.average_latency_ms, 'latency')}</span></div>; })}{!runs.length && <p>선택한 기간의 실행 이력이 없습니다.</p>}</div></div>;
 }
 
-function ReceiptMonitoringDashboard({ onExportPdf }) {
-  const initialEndDate = new Date();
-  const initialStartDate = new Date(initialEndDate); initialStartDate.setDate(initialEndDate.getDate() - 6);
-  const [dateRange, setDateRange] = useState({ startDate: dateInputValue(initialStartDate), endDate: dateInputValue(initialEndDate) });
+function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMonitoringError, initialDateRange }) {
+  const hasInitialMonitoring = initialMonitoring != null || Boolean(initialMonitoringError);
+  const [dateRange, setDateRange] = useState(() => initialDateRange || createInitialMonitoringDateRange());
   const [period, setPeriod] = useState('7');
-  const [monitoring, setMonitoring] = useState({ summary: {}, details: {}, comparison: { summary: {}, details: {} }, recent_runs: [], daily: [] });
-  const [monitoringLoading, setMonitoringLoading] = useState(true);
-  const [monitoringError, setMonitoringError] = useState('');
+  const [monitoring, setMonitoring] = useState(() => initialMonitoring || { summary: {}, details: {}, comparison: { summary: {}, details: {} }, recent_runs: [], daily: [] });
+  const [monitoringLoading, setMonitoringLoading] = useState(!hasInitialMonitoring);
+  const [monitoringError, setMonitoringError] = useState(initialMonitoringError || '');
+  const filtersChangedRef = useRef(false);
   const monitoringQueryParams = useMemo(() => ({
     start_date: dateRange.startDate,
     end_date: dateRange.endDate,
@@ -402,6 +410,7 @@ function ReceiptMonitoringDashboard({ onExportPdf }) {
 
   useEffect(() => {
     if (!dateRange.startDate || !dateRange.endDate || dateRange.startDate > dateRange.endDate) return undefined;
+    if (hasInitialMonitoring && !filtersChangedRef.current) return undefined;
     let active = true;
     setMonitoringLoading(true); setMonitoringError('');
     apiClient.get('/finance-evaluations/monitoring', { params: monitoringQueryParams }).then(({ data }) => {
@@ -413,11 +422,13 @@ function ReceiptMonitoringDashboard({ onExportPdf }) {
   }, [monitoringQueryParams]);
 
   const changeDate = (field, value) => {
+    filtersChangedRef.current = true;
     setDateRange((current) => ({ ...current, [field]: value }));
     setPeriod('custom');
   };
 
   const changePeriod = (value) => {
+    filtersChangedRef.current = true;
     if (value === 'custom') {
       setPeriod(value);
       return;
@@ -479,6 +490,12 @@ export default function ReportPage() {
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
   const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [initialMonitoring, setInitialMonitoring] = useState(null);
+  const [initialMonitoringError, setInitialMonitoringError] = useState('');
+  const [initialMonitoringDateRange] = useState(createInitialMonitoringDateRange);
+  const [initialBatchHistory, setInitialBatchHistory] = useState(null);
+  const [initialSingleHistory, setInitialSingleHistory] = useState(null);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(() => {
@@ -493,6 +510,8 @@ export default function ReportPage() {
     }
   });
   const [umapError, setUmapError] = useState('');
+  const initialReportTargetRef = useRef({ reportView, developerReport, receiptTab });
+  const initialRagRequestInFlightRef = useRef(false);
 
   useEffect(() => {
     if (location.pathname !== '/reports') return;
@@ -535,31 +554,79 @@ export default function ReportPage() {
     }
   }, []);
 
-  useEffect(() => {
-    loadBusinessStats();
-    apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {});
-    if (isDeveloper) loadEvaluations(); else setLoading(false);
-  }, [isDeveloper, loadBusinessStats, loadEvaluations]);
+  const loadUmapReport = useCallback(async () => {
+    setUmapError('');
+    try {
+      const { data } = await apiClient.get('/rag/evaluation/umap');
+      setUmapData(data);
+      localStorage.setItem('pic_to_text_rag_umap_latest', JSON.stringify(data));
+    } catch (requestError) {
+      setUmapError(requestError.response?.data?.detail || 'UMAP 데이터를 불러오지 못했습니다.');
+    }
+  }, []);
+
+  const loadInitialMonitoring = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get('/finance-evaluations/monitoring', {
+        params: {
+          start_date: initialMonitoringDateRange.startDate,
+          end_date: initialMonitoringDateRange.endDate,
+        },
+      });
+      setInitialMonitoring(data);
+    } catch (requestError) {
+      setInitialMonitoringError(requestError.response?.data?.detail || '모니터링 데이터를 불러오지 못했습니다.');
+    }
+  }, [initialMonitoringDateRange]);
+
+  const loadInitialFinanceHistory = useCallback(async () => {
+    const [batchResult, singleResult] = await Promise.allSettled([
+      apiClient.get('/finance-evaluations/batches'),
+      apiClient.get('/finance-evaluations/runs', { params: { evaluation_mode: 'SINGLE', limit: 30 } }),
+    ]);
+    setInitialBatchHistory(batchResult.status === 'fulfilled' && Array.isArray(batchResult.value.data) ? batchResult.value.data : []);
+    setInitialSingleHistory(singleResult.status === 'fulfilled' && Array.isArray(singleResult.value.data) ? singleResult.value.data : []);
+  }, []);
 
   useEffect(() => {
-    if (isDeveloper && developerReport === 'rag') loadRagReport();
+    let active = true;
+    const initialTarget = initialReportTargetRef.current;
+    const initialRequests = [
+      loadBusinessStats(),
+      apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
+    ];
+
+    if (isDeveloper) initialRequests.push(loadEvaluations());
+    if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'monitoring') {
+      initialRequests.push(loadInitialMonitoring());
+    }
+    if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'experiment') {
+      initialRequests.push(loadInitialFinanceHistory());
+    }
+    if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'rag') {
+      initialRagRequestInFlightRef.current = true;
+      initialRequests.push(loadRagReport(), loadUmapReport());
+    }
+
+    Promise.allSettled(initialRequests).finally(() => {
+      if (!active) return;
+      initialRagRequestInFlightRef.current = false;
+      if (!isDeveloper) setLoading(false);
+      setInitialLoading(false);
+    });
+
+    return () => { active = false; };
+  }, [isDeveloper, loadBusinessStats, loadEvaluations, loadInitialFinanceHistory, loadInitialMonitoring, loadRagReport, loadUmapReport]);
+
+  useEffect(() => {
+    if (isDeveloper && developerReport === 'rag' && !initialRagRequestInFlightRef.current) loadRagReport();
   }, [developerReport, isDeveloper, loadRagReport]);
 
   useEffect(() => {
     if (!isDeveloper || developerReport !== 'rag') return undefined;
-    let active = true;
-    setUmapError('');
-    apiClient.get('/rag/evaluation/umap').then(({ data }) => {
-      if (!active) return;
-
-      setUmapData(data);
-      localStorage.setItem(
-        'pic_to_text_rag_umap_latest',
-        JSON.stringify(data)
-      );
-    })
-    return () => { active = false; };
-  }, [developerReport, isDeveloper]);
+    if (!initialRagRequestInFlightRef.current) loadUmapReport();
+    return undefined;
+  }, [developerReport, isDeveloper, loadUmapReport]);
 
   const summary = useMemo(() => {
     if (!runs.length) return { accuracy: 0, time: null };
@@ -595,6 +662,18 @@ export default function ReportPage() {
     { label: 'LLM TTFT', value: null, color: '#ef9b18' },
     { label: '답변 완료', value: null, color: '#6558dc' },
   ];
+
+  if (initialLoading) {
+    return <div className="app-shell developer-report-shell"><Sidebar />
+      <main className="page-loading-region">
+        <LoginLoading
+          mode="content"
+          title="리포트를 불러오는 중입니다."
+          ariaLabel="리포트 불러오는 중"
+        />
+      </main>
+    </div>;
+  }
 
   return <div className="app-shell developer-report-shell"><Sidebar />
     <main className="developer-report page-enter">
@@ -660,7 +739,20 @@ export default function ReportPage() {
           <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
           <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>
         </div>
-        {receiptTab === 'experiment' ? <FinanceEvaluationPage embedded /> : <ReceiptMonitoringDashboard onExportPdf={exportDashboardPdf} />}
+        {receiptTab === 'experiment' ? (
+          <FinanceEvaluationPage
+            embedded
+            initialBatchHistory={initialBatchHistory}
+            initialSingleHistory={initialSingleHistory}
+          />
+        ) : (
+          <ReceiptMonitoringDashboard
+            onExportPdf={exportDashboardPdf}
+            initialMonitoring={initialMonitoring}
+            initialMonitoringError={initialMonitoringError}
+            initialDateRange={initialMonitoringDateRange}
+          />
+        )}
       </> : <>
       <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} />
       <RagLlmEvaluation />

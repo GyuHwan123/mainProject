@@ -1,0 +1,12 @@
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+    environment:
+      OLLAMA_LLM_LIBRARY: cuda_v12

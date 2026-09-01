@@ -1011,6 +1011,7 @@ export default function OCRPage() {
       }, { timeout: 1200000 });
       appendFinanceEvaluationRun({
         ...evaluation,
+        record_id: financeRecord.id,
         dataset_name: evaluationDatasetFile.name,
         dataset_index: matches[0].index,
         matched_image: file.name,
@@ -1054,7 +1055,7 @@ export default function OCRPage() {
     if (result.documentId) {
       setLoading(true);
       try {
-        const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 180000 });
+        const { data: financeRecord } = await apiClient.post('/finance/records/classify', { document_id: result.documentId }, { timeout: 900000 });
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
         if (receiptBatchRef.current.active && !receiptBatchRef.current.recordIds.includes(financeRecord.id)) {
@@ -1063,6 +1064,7 @@ export default function OCRPage() {
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
         rememberPendingReceipt({
           document_id: result.documentId,
+          record_id: financeRecord.id,
           document_name: sourceFile.name,
           model_name: financeRecord.model_name,
           created_at: new Date().toISOString(),

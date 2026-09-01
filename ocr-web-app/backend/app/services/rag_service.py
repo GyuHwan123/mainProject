@@ -424,6 +424,15 @@ _EVIDENCE_STOP_WORDS = {
     "회사", "사내", "직원", "우리", "오늘", "무엇", "뭘", "몇", "어떻게", "얼마",
     "하나요", "인가요", "되나요", "있나요", "해요", "해야", "가능", "최대", "진행",
 }
+_EVIDENCE_INTERROGATIVES = {
+    "언제", "어디", "누구", "왜", "무엇", "뭘", "어떻게", "몇", "얼마",
+}
+_EVIDENCE_STEM_ENDINGS = (
+    "가능한가요", "하려면", "하나요", "해야", "해서",
+)
+_EVIDENCE_SUBJECT_NORMALIZATION = {
+    "퇴사": "퇴직",
+}
 _EVIDENCE_PREDICATE_ENDINGS = (
     "하다", "한다", "하나요", "인가요", "되나요", "있나요", "해야", "해요", "해서",
     "하려면", "되면", "내야", "쉬게", "넘게", "주나요", "가능한가요", "서", "게", "면", "해",
@@ -469,21 +478,36 @@ def _strip_korean_particle(token: str) -> str:
     return re.sub(r"(으로|에서|에게|한테|까지|부터|처럼|보다|이나|나|은|는|이|가|을|를|의|와|과|도|에)$", "", token)
 
 
+def _normalize_evidence_token(raw_token: str) -> str:
+    has_object_particle = bool(re.search(r"(을|를)$", raw_token))
+    token = _strip_korean_particle(raw_token)
+    for suffix in _EVIDENCE_STEM_ENDINGS:
+        if not token.endswith(suffix):
+            continue
+        stem = token[:-len(suffix)]
+        token = stem if len(stem) >= 2 else ""
+        break
+    if len(token) < 2 or token in _EVIDENCE_STOP_WORDS or token in _EVIDENCE_INTERROGATIVES:
+        return ""
+    if token.endswith(_EVIDENCE_PREDICATE_ENDINGS):
+        if not (has_object_particle and token.endswith(("서", "게", "면", "해"))):
+            return ""
+    return token
+
+
 def _extract_evidence_facets(query: str) -> dict[str, Any]:
     normalized = _normalize_evidence_text(query)
     raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", normalized)
     tokens = []
     for raw_token in raw_tokens:
-        token = _strip_korean_particle(raw_token)
-        if len(token) < 2 or token in _EVIDENCE_STOP_WORDS:
-            continue
-        if token.endswith(_EVIDENCE_PREDICATE_ENDINGS):
+        token = _normalize_evidence_token(raw_token)
+        if not token:
             continue
         tokens.append(token)
     tokens = list(dict.fromkeys(tokens))
     conditions = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)", normalized)
     strong_subjects = [
-        token for token in tokens
+        _EVIDENCE_SUBJECT_NORMALIZATION.get(token, token) for token in tokens
         if len(token) >= 2 and not re.fullmatch(r"\d+(?:원|일|개월|시간|퍼센트|%)", token)
         and not token.endswith(("아서", "어서", "려고", "짜리"))
     ]

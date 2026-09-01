@@ -577,10 +577,9 @@ async def _has_facet_evidence(
     combined_evidence = "\n".join(units)
     lexical_hits = [token for token in facets["tokens"] if token in combined_evidence]
     strong_subjects = facets["strong_subjects"]
-    focus_subject = strong_subjects[0] if strong_subjects else ""
 
-    facet_texts = [facets["query"], *([focus_subject] if focus_subject else [])]
-    if facet_vectors is None:
+    facet_texts = [facets["query"], *strong_subjects]
+    if facet_vectors is None or len(facet_vectors) != len(facet_texts):
         facet_vectors, _ = await _embed_texts_cached(facet_texts)
     unit_vectors, _ = await _embed_texts_cached(units)
     query_scores = [
@@ -590,12 +589,16 @@ async def _has_facet_evidence(
     if not query_scores or max(query_scores) < _EVIDENCE_SEMANTIC_THRESHOLD:
         return False
 
-    if focus_subject:
-        subject_score = max(
-            sum(left * right for left, right in zip(facet_vectors[1], unit_vector))
-            for unit_vector in unit_vectors
+    if strong_subjects:
+        subject_supported = any(
+            subject in combined_evidence
+            or max(
+                sum(left * right for left, right in zip(subject_vector, unit_vector))
+                for unit_vector in unit_vectors
+            ) >= 0.60
+            for subject, subject_vector in zip(strong_subjects, facet_vectors[1:])
         )
-        if focus_subject not in combined_evidence and subject_score < 0.60:
+        if not subject_supported:
             return False
 
     conditions = facets["conditions"]
@@ -638,8 +641,7 @@ async def search(
 ) -> list[dict[str, Any]]:
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
-    focus_subject = strong_subjects[0] if strong_subjects else ""
-    query_texts = [query, facets["query"], *([focus_subject] if focus_subject else [])]
+    query_texts = [query, facets["query"], *strong_subjects]
     query_vectors, _ = await _embed_texts_cached(query_texts)
     embedding = query_vectors[0]
     facet_vectors = query_vectors[1:]

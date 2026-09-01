@@ -1119,11 +1119,16 @@ class SupabaseService:
             )
 
         data = response.json()
+        metadata = data.get("user_metadata") or {}
+        provider = data.get("app_metadata", {}).get("provider") or "supabase"
+        # Supabase Custom OAuth can retain a verified provider email in user
+        # metadata while leaving auth.users.email empty for the new identity.
+        email = data.get("email") or (metadata.get("email") if provider == "custom:naver" else None)
         return {
             "id": data.get("id"),
-            "email": data.get("email"),
-            "name": data.get("user_metadata", {}).get("full_name") or data.get("email"),
-            "provider": data.get("app_metadata", {}).get("provider") or "supabase",
+            "email": email,
+            "name": metadata.get("full_name") or metadata.get("name") or metadata.get("nickname") or email,
+            "provider": provider.removeprefix("custom:"),
         }
 
 

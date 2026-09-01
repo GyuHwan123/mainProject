@@ -9,12 +9,12 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="한국철도공사 KTX 125 일반실 승차권",
             ground_truth={
                 "merchant": "한국철도공사",
-                "expense_category": "교통",
+                "expense_category": "사무용품",
                 "items": [{"name": "KTX 125 일반실 승차권"}],
             },
             prediction={
                 "merchant": "KORAIL",
-                "expense_category": "교통비",
+                "expense_category": "소모품비",
                 "items": [{"name": "KTX125 일반실 1호차입석"}],
             },
             pipeline_trace={},
@@ -27,12 +27,12 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
     def test_classifies_receipt_failures_without_unknown_or_unclassified_fields(self):
         truth = {
             "merchant": "늘좋은주유소", "transaction_date": "2018-01-10",
-            "expense_category": "주유/교통", "total_quantity": 48.936,
+            "expense_category": "차량유지비", "total_quantity": 48.936,
             "items": [{"name": "유류", "quantity": 48.936, "unit_price": 1410, "total_amount": 69000}],
         }
         prediction = {
             "merchant": "늘좋은주유소", "transaction_date": "2017-11-09",
-            "expense_category": "기타", "total_quantity": None,
+            "expense_category": "회의비", "total_quantity": None,
             "items": [{"name": "NS-OIL", "quantity": 2, "unit_price": 10000, "total_amount": 22000}],
         }
         result = analyze_finance_evaluation_failure(
@@ -132,6 +132,35 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
 
         tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
         self.assertIn(("OCR_ERROR", "OCR_CHARACTER_CONFUSION", "name"), tags)
+
+    def test_tags_similar_letter_read_as_digit_as_ocr_error(self):
+        result = analyze_finance_evaluation_failure(
+            ocr_text="[샌디스크] 271/16G 1 10,000",
+            ground_truth={"items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}]},
+            prediction={"items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}]},
+            pipeline_trace={
+                "item_candidates": [{"name_candidate": "[샌디스크] 271/16G", "quantity_candidate": 1, "amount_candidate": 10000}],
+                "model_items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}],
+            },
+        )
+
+        tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
+        self.assertIn(("OCR_ERROR", "OCR_CHARACTER_CONFUSION", "name"), tags)
+
+    def test_tags_lost_quantity_decimal_separator_as_normalization_error(self):
+        result = analyze_finance_evaluation_failure(
+            ocr_text="보통 휘발유 1,429 X 20.994 30,000",
+            ground_truth={"items": [{"name": "보통 휘발유", "quantity": 20.994, "unit_price": 1429, "total_amount": 30000}]},
+            prediction={"items": [{"name": "보통 휘발유", "quantity": 20994, "unit_price": 1429, "total_amount": 30000}]},
+            pipeline_trace={
+                "item_candidates": [{"name_candidate": "보통 휘발유", "quantity_candidate": 20994, "unit_price_candidate": 1429, "amount_candidate": 30000}],
+                "model_items": [{"name": "보통 휘발유", "quantity": 20994, "unit_price": 1429, "total_amount": 30000}],
+            },
+        )
+
+        tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
+        self.assertIn(("NORMALIZATION_ERROR", "DECIMAL_SEPARATOR_LOST", "quantity"), tags)
+        self.assertNotIn(("LLM_ERROR", "QUANTITY_ERROR", "quantity"), tags)
 
     def test_tags_partial_merchant_from_complete_ocr_text_as_llm_error(self):
         result = analyze_finance_evaluation_failure(

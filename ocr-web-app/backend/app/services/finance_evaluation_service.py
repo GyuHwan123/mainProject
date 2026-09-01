@@ -9,7 +9,7 @@ from typing import Any
 
 from openpyxl import load_workbook
 
-from app.api.routes.finance import _classify_receipt_with_model, _normalize
+from app.api.routes.finance import _classify_receipt_with_model, _normalize, _normalize_expense_category
 from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
 from app.services.finance_normalization import normalization_equivalent
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
@@ -48,9 +48,18 @@ ITEM_NAME_ALIASES = {
     # not become equivalent merely because they also contain ``요금``.
     "탑승요금": "taxi_transport_service",
     "택시이용": "taxi_transport_service",
+    "택시이용료": "taxi_transport_service",
     "택시요금": "taxi_transport_service",
     "택시운임": "taxi_transport_service",
     "택시승차요금": "taxi_transport_service",
+    "법인택시": "taxi_transport_service",
+    # Tmoney Mobility receipts may expose the issuer/service name where the
+    # labelled ground truth uses the purchased intercity/express bus ticket.
+    "시외고속버스승차권": "intercity_express_bus_ticket",
+    "티머니모빌리티": "intercity_express_bus_ticket",
+    "티머니모빌리티승차권": "intercity_express_bus_ticket",
+    "유류": "fuel_product",
+    "에쓰오일": "fuel_product",
 }
 
 ITEM_TOKEN_ALIASES = {
@@ -117,6 +126,9 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
     for korean_key, english_key in korean_to_english.items():
         if english_key not in normalized and korean_key in truth:
             normalized[english_key] = truth[korean_key]
+
+    if "expense_category" in normalized:
+        normalized["expense_category"] = _normalize_expense_category(normalized["expense_category"])
 
     # 할인액은 선택 필드다. 정답에서 생략된 경우 모델도 값을 만들지
     # 않았는지 평가할 수 있도록 명시적인 null로 정규화한다.
@@ -569,6 +581,7 @@ async def evaluate_models(
             structured_trace = structured.get("item_extraction_diagnostics") or {}
             pipeline_trace = {
                 "llm": structured.get("llm_trace") or {},
+                "semantic_evidence": structured.get("semantic_evidence") or {},
                 "validator": structured.get("validator_trace") or {},
                 "deterministic_hints": structured.get("deterministic_hints") or {},
                 "item_candidates": structured_trace.get("candidates") or [],

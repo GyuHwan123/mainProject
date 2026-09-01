@@ -72,6 +72,7 @@ def _pipeline_trace(structured: dict[str, Any]) -> dict[str, Any]:
     diagnostics = structured.get("item_extraction_diagnostics") or {}
     return {
         "llm": structured.get("llm_trace") or {},
+        "semantic_evidence": structured.get("semantic_evidence") or {},
         "validator": structured.get("validator_trace") or {},
         "deterministic_hints": structured.get("deterministic_hints") or {},
         "item_candidates": diagnostics.get("candidates") or [],

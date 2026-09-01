@@ -7,6 +7,184 @@
   justify-content: center;
 }
 
+// Receipt semantic evidence and explainable extraction summary.
+.ocr-app-shell.finance-page-shell {
+  .receipt-semantic-legend {
+    flex: none;
+    padding: 10px 12px;
+    display: grid;
+    gap: 8px;
+    border-top: 1px solid #dce5ee;
+    border-bottom: 1px solid #dce5ee;
+    background: #f8fbfe;
+
+    > div {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    strong { color: #233f5b; font-size: 11px; }
+    small { color: #8190a2; font-size: 9px; }
+    nav { display: flex; flex-wrap: wrap; gap: 5px; }
+    button {
+      padding: 5px 7px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: #566a80;
+      background: #fff;
+      border: 1px solid #d8e2ec;
+      border-radius: 6px;
+      font-size: 8px;
+      font-weight: 750;
+      cursor: pointer;
+      i { width: 7px; height: 7px; background: var(--semantic-color, #789); border-radius: 2px; }
+      &:first-child::before { content: ''; width: 7px; height: 7px; background: #90a4b8; border-radius: 2px; }
+      &.active { color: #174f7d; border-color: var(--semantic-color, #6f9fc7); box-shadow: inset 0 0 0 1px var(--semantic-color, #6f9fc7); }
+      &:disabled { opacity: .35; cursor: default; }
+    }
+  }
+
+  .preview-stage .bbox-overlay.semantic {
+    background: color-mix(in srgb, var(--semantic-color) 28%, transparent);
+    border: 2px solid var(--semantic-color);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--semantic-color) 38%, transparent), 0 1px 3px rgba(27, 44, 61, .12);
+    &:hover,
+    &.selected { background: color-mix(in srgb, var(--semantic-color) 46%, transparent); border-color: var(--semantic-color); box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--semantic-color); }
+    &.semantic-muted { opacity: .12; }
+  }
+
+  .receipt-documentation-scroll {
+    min-height: 0;
+    flex: 1;
+    overflow: auto;
+    background: #f3f7fb;
+    > .receipt-form-sheet { min-height: auto; flex: none; overflow: visible; }
+  }
+
+  .receipt-insights-dock {
+    min-height: 185px;
+    flex: 0 1 35%;
+    overflow: auto;
+    border-top: 1px solid #dce5ee;
+    background: #f3f7fb;
+
+    .receipt-extraction-insights { padding: 12px; }
+    .receipt-key-information dl { grid-template-columns: 1fr; }
+    .receipt-key-information dl button { grid-template-columns: 92px minmax(0, 1fr); }
+    .receipt-confidence-content { grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
+    .receipt-confidence-content .confidence-ring { width: 76px; height: 76px; }
+    .receipt-confidence-content .confidence-ring strong { font-size: 17px; }
+    .receipt-confidence-content dl { grid-template-columns: 1fr; gap: 5px; }
+  }
+
+  .receipt-insights-empty {
+    min-height: 190px;
+    padding: 24px;
+    display: grid;
+    place-content: center;
+    gap: 7px;
+    color: #8795a5;
+    text-align: center;
+    strong { color: #40566d; font-size: 12px; }
+    p { margin: 0; max-width: 300px; font-size: 9px; line-height: 1.6; }
+  }
+
+  .receipt-extraction-insights {
+    padding: 0 16px 18px;
+    display: grid;
+    gap: 12px;
+    background: #f3f7fb;
+
+    article {
+      overflow: hidden;
+      background: #fff;
+      border: 1px solid #dce5ee;
+      border-radius: 10px;
+      box-shadow: 0 4px 14px rgba(29, 54, 79, .04);
+      > header {
+        padding: 12px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid #e6edf4;
+        strong, small { display: block; }
+        strong { color: #213b54; font-size: 12px; }
+        small { margin-top: 3px; color: #8291a2; font-size: 8px; }
+        > span { color: #1767a0; font-size: 9px; font-weight: 800; white-space: nowrap; }
+      }
+    }
+  }
+
+  .receipt-key-information dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    button {
+      min-width: 0;
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 100px minmax(0, 1fr);
+      gap: 10px;
+      text-align: left;
+      background: #fff;
+      border: 0;
+      border-bottom: 1px solid #edf1f5;
+      border-left: 3px solid var(--semantic-color);
+      cursor: pointer;
+      &:hover { background: #f7fbff; }
+    }
+    dt { color: #5a6c80; font-size: 9px; font-weight: 800; }
+    dd { min-width: 0; margin: 0; overflow: hidden; color: #21364d; font-size: 10px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  }
+
+  .receipt-item-table {
+    overflow-x: auto;
+    table { min-width: 540px; width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 11px; border-right: 1px solid #e4ebf2; border-bottom: 1px solid #e4ebf2; font-size: 9px; }
+    th { color: #4e6379; background: #f4f8fb; text-align: center; }
+    td { color: #263b52; text-align: right; }
+    td:first-child { text-align: left; font-weight: 750; }
+    td small { display: block; margin-top: 2px; color: #8996a5; font-size: 7px; font-weight: 400; }
+    > p { margin: 0; padding: 22px; color: #8996a5; font-size: 9px; text-align: center; }
+  }
+
+  .receipt-confidence-content {
+    padding: 15px;
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    align-items: center;
+    gap: 18px;
+    .confidence-ring {
+      width: 92px;
+      height: 92px;
+      display: grid;
+      place-content: center;
+      justify-items: center;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fff 57%, transparent 59%), conic-gradient(#15966f var(--confidence), #dfe9e5 0);
+      strong { color: #17624d; font-size: 20px; }
+      small { color: #73867f; font-size: 7px; }
+    }
+    dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    dl div { padding: 9px 10px; display: flex; justify-content: space-between; gap: 8px; background: #f6f9fc; border-radius: 6px; }
+    dt { color: #68798c; font-size: 8px; }
+    dd { margin: 0; color: #263d54; font-size: 9px; font-weight: 800; }
+    dd.ok { color: #14835b; }
+    dd.warning { color: #b56a18; }
+  }
+}
+
+@media (max-width: 760px) {
+  .ocr-app-shell.finance-page-shell {
+    .receipt-key-information dl { grid-template-columns: 1fr; }
+    .receipt-confidence-content { grid-template-columns: 1fr; justify-items: center; width: auto; }
+    .receipt-confidence-content dl { width: 100%; grid-template-columns: 1fr; }
+  }
+}
+
 .developer-evaluation-panel {
   margin-top: 14px;
   margin-bottom: 24px;

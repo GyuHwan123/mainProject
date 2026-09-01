@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { IoLogOutOutline, IoPersonOutline, IoSettingsOutline } from 'react-icons/io5';
-import { RiUser3Fill } from "react-icons/ri";
-import { MdHomeFilled, MdOutlineChat } from "react-icons/md";
+import { RiUser3Fill, RiChatAi4Fill } from "react-icons/ri";
+import { MdHomeFilled} from "react-icons/md";
 import { CiReceipt } from "react-icons/ci";
 import { TbReportAnalytics } from "react-icons/tb";
 import { clearAppSession } from '../features/appSession';
@@ -15,7 +15,7 @@ import '../style/Sidebar.scss';
 const items = [
   { label: '대시보드', icon: <MdHomeFilled />, path: '/dashboard' },
   { label: '영수증 자동 문서화', icon: <CiReceipt />, path: '/ocr' },
-  { label: 'AI 문서 채팅', icon: <MdOutlineChat />, path: '/chat' },
+  { label: 'AI 문서 채팅', icon: <RiChatAi4Fill />, path: '/chat' },
   { label: '리포트', icon: <TbReportAnalytics />, path: '/reports' },
   { label: '내 정보', icon: <RiUser3Fill />, path: '/mypage' },
 ];

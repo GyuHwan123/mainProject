@@ -32,7 +32,7 @@ CATEGORY_TO_DOCUMENT_TYPE = {
     "미용": "WELFARE_BENEFIT",
     "도서": "WELFARE_BENEFIT",
     "전자제품/문구": "PURCHASE_REQUEST",
-    "교통": "EXPENSE_REPORT",
+    "교통": "TRAVEL_EXPENSE",
     "주유/교통": "EXPENSE_REPORT",
     "미용/생활": "WELFARE_BENEFIT",
     "식비": "WELFARE_BENEFIT",

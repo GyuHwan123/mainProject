@@ -19,6 +19,18 @@ class FinanceTaxonomyTests(unittest.TestCase):
         self.assertEqual(set(CATEGORY_TO_DOCUMENT_TYPE), set(ALLOWED_EXPENSE_CATEGORIES))
         self.assertTrue(set(CATEGORY_TO_DOCUMENT_TYPE.values()).issubset(ALLOWED_DOCUMENT_TYPES))
 
+    def test_transport_category_selects_travel_expense(self):
+        self.assertEqual(CATEGORY_TO_DOCUMENT_TYPE["교통"], "TRAVEL_EXPENSE")
+        self.assertEqual(
+            validate_classification(None, "교통", False),
+            (
+                "TRAVEL_EXPENSE",
+                "교통",
+                False,
+                "document_type_derived_from_category",
+            ),
+        )
+
     def test_accepts_only_safe_legacy_aliases(self):
         self.assertEqual(normalize_expense_category("사무용품"), "전자제품/문구")
         self.assertIsNone(normalize_expense_category("기타"))

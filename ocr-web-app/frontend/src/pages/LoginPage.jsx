@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import '../style/LoginPage.scss';
 import { RiGoogleFill } from "react-icons/ri";
 import { RiKakaoTalkFill } from "react-icons/ri";
+import { SiNaver } from "react-icons/si";
 import LoginLoading from '../components/LoginLoading';
 
 export default function LoginPage() {
@@ -177,12 +178,12 @@ export default function LoginPage() {
             <RiGoogleFill className='googleIcon'/>Google 계정 계속하기
           </button>
           <button
-            className="social-button apple"
+            className="social-button naver"
             type="button"
             disabled={loading}
-            onClick={() => handleSupabaseSocialLogin('apple')}
+            onClick={() => handleSupabaseSocialLogin('custom:naver')}
           >
-            Apple 계정 계속하기
+            <SiNaver className="naverIcon" /> Naver 계정 계속하기
           </button>
           <button
             className="social-button kakao"

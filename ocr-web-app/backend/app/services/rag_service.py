@@ -646,7 +646,7 @@ async def search(
     embedding = query_vectors[0]
     facet_vectors = query_vectors[1:]
     candidates = supabase_service.search_rag_chunks(
-        user_email, embedding, rag_document_id, 4,
+        user_email, embedding, rag_document_id, 6,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
     compact_query = "".join(query.lower().split())

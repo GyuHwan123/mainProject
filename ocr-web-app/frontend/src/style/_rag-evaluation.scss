@@ -92,6 +92,52 @@
     border-radius: 6px;
     font-size: 12px;
   }
+  .evaluation-progress {
+    margin-top: 12px;
+    padding: 14px;
+    display: grid;
+    gap: 10px;
+    background: #f8fbff;
+    border: 1px solid #dbe8f7;
+    border-radius: 8px;
+    .evaluation-progress-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      strong { color: $main-color; font-size: 13px; }
+      span { color: rgba($bgd, 0.6); font-size: 12px; font-weight: 700; }
+    }
+    .evaluation-progress-track {
+      height: 9px;
+      overflow: hidden;
+      background: #e1e9f3;
+      border-radius: 999px;
+      i {
+        height: 100%;
+        display: block;
+        background: linear-gradient(90deg, $main-color, #20ae83);
+        border-radius: inherit;
+        transition: width 0.3s ease;
+      }
+    }
+    .evaluation-progress-details {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(100px, 1fr));
+      gap: 8px;
+      > span {
+        padding: 9px 10px;
+        display: grid;
+        gap: 4px;
+        background: #fff;
+        border: 1px solid rgba($line, 0.35);
+        border-radius: 6px;
+      }
+      small { color: rgba($bgd, 0.48); font-size: 10px; }
+      strong { overflow: hidden; color: $main-color; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    }
+    > p { margin: 0; color: rgba($bgd, 0.52); font-size: 11px; }
+  }
   .evaluation-metrics {
     margin-top: 12px;
     display: grid;
@@ -119,5 +165,10 @@
     color: rgba($bgd, 0.45);
     font-size: 11px;
     text-align: right;
+  }
+
+  @media (max-width: 760px) {
+    .evaluation-progress .evaluation-progress-details { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .evaluation-progress .evaluation-progress-heading { align-items: flex-start; flex-direction: column; }
   }
 }

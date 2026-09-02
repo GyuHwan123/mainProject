@@ -8,6 +8,15 @@ import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import '../style/ChatPage.scss';
 
+const formatEvaluationDuration = (seconds) => {
+  if (seconds == null || !Number.isFinite(Number(seconds))) return '계산 중';
+  const total = Math.max(0, Math.round(Number(seconds)));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  return [hours ? `${hours}시간` : '', minutes ? `${minutes}분` : '', `${remainder}초`].filter(Boolean).join(' ');
+};
+
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
@@ -381,6 +390,10 @@ function ChatPageContent() {
   const [evaluationStatus, setEvaluationStatus] = useState('대기');
   const [evaluationRunning, setEvaluationRunning] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
+  const [evaluationProgress, setEvaluationProgress] = useState({
+    status: 'idle', current: 0, total: 0, question_id: null,
+    elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0,
+  });
   const [scrapbook, setScrapbook] = useState(() => {
     try { return JSON.parse(localStorage.getItem(SCRAPBOOK_KEY) || '[]'); } catch { return []; }
   });
@@ -453,6 +466,16 @@ function ChatPageContent() {
   useEffect(() => {
     localStorage.setItem(SCRAPBOOK_KEY, JSON.stringify(scrapbook));
   }, [scrapbook]);
+
+  useEffect(() => {
+    if (!evaluationRunning) return undefined;
+    const updateProgress = () => apiClient.get('/rag/evaluate/status')
+      .then(({ data }) => setEvaluationProgress(data))
+      .catch(() => {});
+    updateProgress();
+    const poller = window.setInterval(updateProgress, 1000);
+    return () => window.clearInterval(poller);
+  }, [evaluationRunning]);
 
   useEffect(() => {
     if (!localStorage.getItem('pic_to_text_token')) return;
@@ -757,6 +780,7 @@ function ChatPageContent() {
       });
       if (Number(parsed.question_count) !== parsed.cases.length) throw new Error('question_count와 cases 개수가 일치하지 않습니다.');
       setEvaluationDataset(parsed); setEvaluationStatus('대기');
+      setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
     } catch (error) {
       setEvaluationDataset(null); setEvaluationStatus('대기');
       setEvaluationError(error.message || '정답 JSON을 읽을 수 없습니다.');
@@ -769,14 +793,17 @@ function ChatPageContent() {
     setEvaluationRunning(true);
     setEvaluationError(''); setEvaluationResult(null);
     setEvaluationStatus('평가 중...');
+    setEvaluationProgress({ status: 'running', current: 0, total: evaluationDataset.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
     try {
       const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 36000000 });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
       setEvaluationResult(data); setEvaluationStatus('완료');
+      setEvaluationProgress((progress) => ({ ...progress, status: 'completed', current: evaluationDataset.cases.length, total: evaluationDataset.cases.length, question_id: null, progress_percent: 100 }));
     } catch (error) {
       const detail = error.response?.data?.detail;
       setEvaluationError(typeof detail === 'string' ? detail : JSON.stringify(detail || error.message));
       setEvaluationStatus('실패');
+      setEvaluationProgress((progress) => ({ ...progress, status: 'error' }));
     } finally {
       evaluationRunningRef.current = false;
       setEvaluationRunning(false);
@@ -850,6 +877,12 @@ function ChatPageContent() {
       {isDeveloper && <section className="rag-evaluation-panel">
         <header><div><small>DEVELOPER ONLY</small><h2>RAG 성능 평가</h2><p>현재 BGE-M3 · Vector Search · Reranker · gemma2:2b 전체 파이프라인을 평가합니다.</p></div><span className={`evaluation-state ${evaluationStatus === '완료' ? 'complete' : ''}`}>{evaluationStatus}</span></header>
         <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 JSON 업로드</button><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
+        {(evaluationDataset || evaluationRunning) && <section className="evaluation-progress" aria-live="polite">
+          <div className="evaluation-progress-heading"><strong>{evaluationRunning ? `현재 ${Math.min(evaluationProgress.current + 1, evaluationProgress.total || evaluationDataset?.cases.length || 0)}번째 문항 처리 중` : evaluationStatus}</strong><span>{evaluationProgress.current} / {evaluationProgress.total || evaluationDataset?.cases.length || 0} 완료 · {Number(evaluationProgress.progress_percent || 0).toFixed(1)}%</span></div>
+          <div className="evaluation-progress-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>
+          <div className="evaluation-progress-details"><span><small>현재 문항</small><strong>{evaluationProgress.question_id || '—'}</strong></span><span><small>경과 시간</small><strong>{formatEvaluationDuration(evaluationProgress.elapsed_seconds)}</strong></span><span><small>문항당 평균</small><strong>{formatEvaluationDuration(evaluationProgress.average_seconds_per_case)}</strong></span><span><small>예상 남은 시간</small><strong>{formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds)}</strong></span></div>
+          {evaluationRunning && evaluationProgress.current === 0 && <p>첫 문항이 끝나면 문항당 평균 시간과 예상 남은 시간이 계산됩니다.</p>}
+        </section>}
         {evaluationError && <p className="evaluation-error">{evaluationError}</p>}
         <div className="evaluation-metrics">{[
           ['Hit@K', 'hit_at_k'], ['Recall@K', 'recall_at_k'], ['MRR', 'mrr'], ['NDCG@K', 'ndcg_at_k'],

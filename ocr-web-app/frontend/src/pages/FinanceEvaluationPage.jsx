@@ -185,12 +185,13 @@ function fieldEvidenceLines(field, semanticEvidence, actual, expected) {
 function PipelineDiagnosis({ pages, text, diagnostics, prediction, truth, score, pipelineTrace, errorTags }) {
   const [tab, setTab] = useState('diagnosis');
   const [selectedField, setSelectedField] = useState('');
-  const semanticEvidence = pipelineTrace?.semantic_evidence || {};
-  const llmSummary = pipelineTrace?.llm?.summary_raw || {};
-  const validatorInput = pipelineTrace?.validator?.input || {};
-  const validatorOutput = pipelineTrace?.validator?.output || {};
+  const semanticEvidence = {};
+  const llmSummary = pipelineTrace?.llm?.raw_output || {};
+  const validation = pipelineTrace?.validation || {};
+  const validatorInput = llmSummary;
+  const validatorOutput = prediction || {};
   const comparisons = flattenedMatches(score);
-  const changedFields = new Set((pipelineTrace?.validator?.changes || []).map((change) => change?.field).filter((field) => LABELS[field]));
+  const changedFields = new Set();
   const diagnosticRows = comparisons.filter((row) => !row.correct || changedFields.has(row.field)).map((row) => {
     const tags = tagsForMismatch(row.field, errorTags || []);
     const primaryTag = tags[0] || null;
@@ -204,10 +205,10 @@ function PipelineDiagnosis({ pages, text, diagnostics, prediction, truth, score,
   const correctedCount = diagnosticRows.filter((row) => row.corrected).length;
   const active = diagnosticRows.find((row) => row.field === selectedField) || diagnosticRows[0] || null;
   const normalCount = Math.max(comparisons.length - issueCount, 0);
-  const tabs = [['diagnosis', '오류 분석'], ['flow', '필드 흐름'], ['evidence', 'OCR 근거'], ['raw', '원본 표']];
+  const tabs = [['diagnosis', '오류 분석'], ['flow', '단일 호출 흐름'], ['raw', 'OCR 원본']];
   return <div className="pipeline-diagnosis">
     <div className="pipeline-diagnosis-tabs">{tabs.map(([key, label]) => <button type="button" className={tab === key ? 'active' : ''} onClick={() => setTab(key)} key={key}>{label}</button>)}</div>
-    {tab !== 'raw' && <div className="pipeline-diagnosis-summary"><strong className={issueCount ? 'has-issues' : ''}>{issueCount ? `확인 필요 ${issueCount}개` : '오류 없음'}</strong><span>보정 {correctedCount}개 · 정상 {normalCount}개</span></div>}
+    {tab !== 'raw' && <div className="pipeline-diagnosis-summary"><strong className={validation.decision === 'PASS' ? '' : 'has-issues'}>{validation.decision === 'PASS' ? '자동 처리 가능' : '사용자 검토'}</strong><span>검증 사유 {(validation.reasons || []).length}개 · 필드 오류 {issueCount}개 · 정상 {normalCount}개</span></div>}
     {tab === 'diagnosis' && <div className="pipeline-diagnosis-scroll">
       {diagnosticRows.length ? diagnosticRows.map((row) => <button type="button" className={`pipeline-issue-card ${row.corrected ? 'corrected' : 'failed'}`} onClick={() => { setSelectedField(row.field); setTab('flow'); }} key={row.field}>
         <span><b>{row.label}</b><em>{row.corrected ? '자동 보정' : PIPELINE_STAGE_LABELS[row.primaryTag?.category || 'UNKNOWN']}</em></span>
@@ -217,10 +218,9 @@ function PipelineDiagnosis({ pages, text, diagnostics, prediction, truth, score,
     </div>}
     {tab === 'flow' && <div className="pipeline-diagnosis-scroll">{active ? <article className="field-flow-card">
       <header><div><strong>{active.label}</strong><span>{active.corrected ? '자동 보정 완료' : '확인 필요'}</span></div>{active.primaryTag?.message && <p>{active.primaryTag.message}</p>}</header>
-      <div className="field-flow-steps"><section><small>OCR 근거</small><b>{active.evidence.map((line) => line.text).join(' · ') || '직접 연결된 근거 없음'}</b></section><i>→</i><section><small>LLM 출력</small><b>{displayEvaluationValue(active.llmValue)}</b></section><i>→</i><section><small>후처리</small><b>{displayEvaluationValue(active.validatorValue)}</b></section><i>→</i><section className={active.correct ? 'success' : 'failure'}><small>최종값</small><b>{displayEvaluationValue(active.actual)}</b></section></div>
+      <div className="field-flow-steps"><section><small>OCR 원문</small><b>{active.evidence.map((line) => line.text).join(' · ') || '필드 문자열 직접 검색 결과 없음'}</b></section><i>→</i><section><small>Gemma 단일 출력</small><b>{displayEvaluationValue(active.llmValue)}</b></section><i>→</i><section><small>최소 검증</small><b>{validation.decision || 'REVIEW'}</b></section><i>→</i><section className={active.correct ? 'success' : 'failure'}><small>최종값</small><b>{displayEvaluationValue(active.actual)}</b></section></div>
       <footer><span>정답 {displayEvaluationValue(active.expected)}</span>{active.tags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.code}-${index}`} />)}</footer>
     </article> : <div className="pipeline-diagnosis-empty">확인할 필드가 없습니다.</div>}</div>}
-    {tab === 'evidence' && <div className="pipeline-diagnosis-scroll evidence-list">{diagnosticRows.length ? diagnosticRows.map((row) => <section key={row.field}><header><strong>{row.label}</strong><span>{row.evidence.length}개 근거</span></header>{row.evidence.length ? row.evidence.map((line) => <p key={`${row.field}-${line.id}`}><b>{line.id}</b>{line.text}</p>) : <p className="no-evidence">연결된 OCR 근거가 없습니다.</p>}</section>) : <div className="pipeline-diagnosis-empty">확인 필요한 OCR 근거가 없습니다.</div>}</div>}
     {tab === 'raw' && <OcrSheetPreview pages={pages} text={text} diagnostics={diagnostics} prediction={prediction} truth={truth} />}
   </div>;
 }
@@ -360,6 +360,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
   const errorAnalysis = result.system?.error_analysis || {};
   const errorTags = Array.isArray(errorAnalysis.error_tags) ? errorAnalysis.error_tags : [];
   const pipelineTrace = result.system?.pipeline_trace || {};
+  const automation = result.system?.automation || pipelineTrace?.validation || {};
   const semanticEvidence = pipelineTrace.semantic_evidence || {};
   const availableSemantics = new Set((run.ocr_pages || []).flatMap((page) => page?.items || []).map((item) => semanticForText(item.text, semanticEvidence)).filter(Boolean));
   const fieldMatches = flattenedMatches(score);
@@ -379,7 +380,7 @@ function ModelPipelineResult({ run, result, imagePreview }) {
       anchor.href = url; anchor.download = `finance-receipt-${run.record_id}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
     } finally { setExportingExcel(false); }
   };
-  return <article className="model-pipeline-result"><header><div><small>FINAL SERVICE</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>필드 매칭</dt><dd>{score.correct_fields || 0}/{score.evaluated_fields || 0}</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section className="semantic-image-panel"><h3>1. 입력 이미지 · 의미별 OCR 박스 · 클릭해서 확대</h3><EvaluationSemanticLegend active={activeSemantic} available={availableSemantics} onChange={setActiveSemantic} /><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR-LLM 판단 과정</h3><PipelineDiagnosis pages={run.ocr_pages} text={run.ocr_text} diagnostics={run.ocr_diagnostics} prediction={result.system?.prediction} truth={run.normalized_ground_truth || run.ground_truth} score={score} pipelineTrace={pipelineTrace} errorTags={errorTags} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded semanticEvidence={semanticEvidence} activeSemantic={activeSemantic} /></div>}</article>;
+  return <article className="model-pipeline-result"><header><div><small>SIMPLE V1 · LLM 최대 1회</small><h2>{result.model_name}</h2></div><div className="pipeline-result-summary"><dl><div><dt>정확도</dt><dd>{(Number(score.field_accuracy || 0) * 100).toFixed(1)}%</dd></div><div><dt>자동화 판정</dt><dd>{automation.decision || 'REVIEW'}</dd></div><div><dt>응답시간</dt><dd>{(Number(result.latency_ms || 0) / 1000).toFixed(1)}초</dd></div></dl>{run.record_id && <button type="button" onClick={downloadRecreatedExcel} disabled={exportingExcel}>{exportingExcel ? 'Excel 생성 중...' : 'Excel 다시 생성'}</button>}</div></header><div className="pipeline-boxes"><section className="semantic-image-panel"><h3>1. 입력 이미지 · OCR 박스 · 클릭해서 확대</h3><button className="image-mini" type="button" onClick={() => imagePreview && setImageOpen(true)}>{imagePreview?.type?.startsWith('image/') ? <OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} semanticEvidence={{}} activeSemantic={null} /> : <span className="eval-preview-empty">{run.document_name}<br />이미지 미리보기 없음</span>}</button></section><section><h3>2. OCR → Gemma 1회 → PASS/REVIEW</h3><PipelineDiagnosis pages={run.ocr_pages} text={run.ocr_text} diagnostics={run.ocr_diagnostics} prediction={result.system?.prediction} truth={run.normalized_ground_truth || run.ground_truth} score={score} pipelineTrace={pipelineTrace} errorTags={errorTags} /></section><section><h3>3. 생성 Excel 결과</h3><ExcelMiniPreview workbook={workbook} /></section></div><div className="match-status-board"><section className="matched-fields"><header><strong>매칭된 필드</strong><span>{matched.length}개</span></header><div>{matched.map((field) => <p key={field.field}><b>{field.label}</b><span>{String(field.actual ?? '-')}</span></p>)}{!matched.length && <em>매칭된 필드가 없습니다.</em>}</div></section><section className="unmatched-fields"><header><strong>매칭되지 않은 필드</strong><span>{unmatched.length}개</span></header><div>{unmatched.map((field) => { const fieldTags = tagsForMismatch(field.field, errorTags); return <p className="unmatched-field-row" key={field.field}><b>{field.label}</b><span>결과 {String(field.actual ?? '-')}</span><em>정답 {String(field.expected ?? '-')}</em><span className="field-error-tags">{fieldTags.length ? fieldTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${index}`} />) : <small>예상 분류 없음</small>}</span></p>; })}{!unmatched.length && <em>모든 필드가 매칭됐습니다.</em>}</div></section></div>{!!errorTags.length && <section className="error-analysis-summary"><header><strong>예상 오류 분류</strong><span>{errorTags.length}개 태그 · {errorAnalysis.needs_review ? '검토 필요 항목 포함' : '자동 판별'}</span></header><div>{errorTags.map((tag, index) => <ErrorTag tag={tag} key={`${tag.category}-${tag.code}-${tag.scope}-${index}`} />)}</div></section>}{imageOpen && imagePreview?.type?.startsWith('image/') && <div className="image-lightbox" role="dialog" aria-modal="true" aria-label="OCR 박스가 표시된 입력 이미지 확대" onClick={() => setImageOpen(false)}><button className="lightbox-close" type="button" aria-label="닫기" onClick={() => setImageOpen(false)}>×</button><OcrBoxedImage preview={imagePreview} pages={run.ocr_pages} alt={run.document_name} expanded semanticEvidence={{}} activeSemantic={null} /></div>}</article>;
 }
 
 function PipelineEmpty() {
@@ -411,7 +412,7 @@ export function truthOf(row) {
   })) : [];
   const category = source['카테고리'] ?? source['구매물품']?.find((item) => item?.['카테고리'])?.['카테고리'];
   const totalQuantity = source['총 물품 수량'] ?? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  return {
+  const truth = {
     merchant: source['가게명'],
     transaction_date: String(source['구매일자'] || '').slice(0, 10) || null,
     expense_category: category,
@@ -420,6 +421,19 @@ export function truthOf(row) {
     total_quantity: totalQuantity,
     items,
   };
+
+  [
+    ['공급가액', 'supply_amount'],
+    ['부가세', 'tax_amount'],
+    ['할인액', 'discount_amount'],
+    ['카드번호', 'card_number'],
+  ].forEach(([sourceKey, targetKey]) => {
+    if (Object.prototype.hasOwnProperty.call(source, sourceKey)) {
+      truth[targetKey] = source[sourceKey];
+    }
+  });
+
+  return truth;
 }
 
 function nameOf(row) {
@@ -466,6 +480,8 @@ function summarize(runs, model) {
   const extractionScore = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.extraction_score || 0), 0) / rubrics.length : 0;
   const schemaRate = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.schema_rate || 0), 0) / rubrics.length : 0;
   const totalAmountRate = rubrics.length ? rubrics.filter((rubric) => rubric.total_amount_correct).length / rubrics.length : 0;
+  const autoApproved = rows.filter((row) => row.system?.automation?.auto_approved).length;
+  const autoApprovedCorrect = rows.filter((row) => row.system?.automation?.auto_approved_correct).length;
   const latencies = measuredRows.map((row) => Number(row.latency_ms));
   return {
     documents: rows.length,
@@ -482,6 +498,9 @@ function summarize(runs, model) {
     extractionScore,
     schemaRate,
     totalAmountRate,
+    autoApproved,
+    autoCoverage: rows.length ? autoApproved / rows.length : 0,
+    autoAccuracy: autoApproved ? autoApprovedCorrect / autoApproved : 0,
   };
 }
 
@@ -550,13 +569,11 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
   const scoredSummaries = useMemo(() => {
     return summaries.map((summary) => {
       const speedScore = absoluteSpeedScore(summary.latency, summary.p95Latency);
-      const costScore = summary.documents ? 2 : 0;
       return {
         ...summary,
         speedScore,
-        costScore,
-        finalScore: summary.extractionScore + (speedScore || 0) + costScore,
-        qualityGate: summary.documents > 0 && summary.schemaRate >= 0.98 && summary.totalAmountRate >= 0.95,
+        finalScore: summary.extractionScore,
+        qualityGate: summary.documents > 0 && summary.autoApproved > 0 && summary.autoAccuracy >= 0.95,
       };
     });
   }, [summaries]);
@@ -944,16 +961,21 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     const modelStatistics = (isBatchExport ? scoredSummaries : models.map((model) => {
       const summary = { model, ...summarize(selectedRuns, model) };
       const speedScore = absoluteSpeedScore(summary.latency, summary.p95Latency);
-      const costScore = summary.documents ? 2 : 0;
-      return { ...summary, speedScore, costScore, finalScore: summary.extractionScore + (speedScore || 0) + costScore };
+      return {
+        ...summary,
+        speedScore,
+        finalScore: summary.extractionScore,
+        qualityGate: summary.documents > 0 && summary.autoApproved > 0 && summary.autoAccuracy >= 0.95,
+      };
     }))
       .map((summary) => ({
         model: summary.model, evaluated_documents: summary.documents, successful_documents: summary.success,
-        extraction_score_95: summary.extractionScore, schema_success_rate: summary.schemaRate,
+        extraction_score_100: summary.extractionScore, schema_success_rate: summary.schemaRate,
         total_amount_accuracy: summary.totalAmountRate, average_latency_ms: summary.latency,
         p95_latency_ms: summary.p95Latency, speed_rubric_version: SPEED_RUBRIC_VERSION,
-        speed_score_3: summary.speedScore, speed_measured_documents: summary.measuredDocuments,
-        local_cost_score_2: summary.costScore ?? null,
+        speed_measured_documents: summary.measuredDocuments,
+        auto_approval_coverage: summary.autoCoverage,
+        auto_approval_accuracy: summary.autoAccuracy,
         final_score_100: summary.finalScore ?? null, quality_gate_passed: summary.qualityGate ?? null,
       }));
     const payload = {
@@ -995,17 +1017,17 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     {evaluationMode === 'batch' && <section className="batch-insight-grid">
       <article className="batch-history-card"><header><div><h2>일괄 평가 이력</h2><p>클릭하면 DB에 저장된 평가 결과를 다시 봅니다.</p></div><span>{batchHistory.length}회</span></header><div>{batchHistory.map((batch) => <section className={batch.id === activeBatchId ? 'active' : ''} key={batch.id} role="button" tabIndex="0" onClick={() => replayBatchEvaluation(batch)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') replayBatchEvaluation(batch); }}><div><strong>{batch.batch_name}</strong><small>{batch.created_at ? new Date(batch.created_at).toLocaleString('ko-KR') : '-'}</small></div><span>{batch.completed_items ?? 0}/{batch.total_items ?? 0}</span><em>{batch.status}</em></section>)}{!batchHistory.length && <p className="eval-empty">저장된 일괄 평가가 없습니다.</p>}</div></article>
       <section className="eval-summary-grid batch-selection-metrics">{batchInsightsReady && scoredSummaries.map((summary) => <article key={summary.model}>
-        <span className="selection-metric-title"><small>TEST01~TEST20 선정 지표</small><button type="button" aria-label="선정 지표 점수 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>선정 점수 기준</strong><b>총점 100점 = 추출 정확도 95 + 속도 3 + 로컬 비용 2</b><span>추출 정확도(95점): 상호 5 · 날짜 5 · 총수량 4 · 할인액 4 · 총액 10 · 결제수단 3 · 카드번호 4 · 품목명 12 · 단가 8 · 수량 7 · 품목금액 8 · 카테고리 10 · JSON 스키마 10 · 환각 방지 5</span><span>절대 속도(3점): 평균 30초 이하 3점 · 60초 2점 · 90초 1점 · 120초 이상 0점, 구간별 선형 계산</span><span>P95가 120초를 넘으면 장시간 지연 경고, 180초를 넘으면 속도점수 최대 1점</span><span>로컬 비용(2점): 평가 결과가 있으면 2점</span><em>품질 게이트: 스키마 성공률 98% 이상이면서 총 결제액 정확도 95% 이상</em></span></span><h2 title={summary.model}>{summary.model}</h2>
-        <strong>{summary.finalScore.toFixed(1)}점</strong><p>총점 100 · {summary.qualityGate ? '품질 게이트 통과' : '품질 게이트 재검토'}</p>
+        <span className="selection-metric-title"><small>SIMPLE V1 평가 지표</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>상호 8 · 날짜 8 · 공급가 5 · 세액 5 · 할인 5 · 총액 15 · 결제수단 5 · 카테고리 10 · 품목명 12 · 단가 8 · 수량 8 · 품목금액 11</span><span>문서유형·총수량·카드번호는 코드에서 파생하므로 모델 점수에서 제외합니다.</span><span>평균과 P95는 점수에 섞지 않고 별도 표시합니다.</span><em>품질 게이트: PASS 영수증이 존재하고 그 자동 승인 정확도가 95% 이상</em></span></span><h2 title={summary.model}>{summary.model}</h2>
+        <strong>{summary.finalScore.toFixed(1)}점</strong><p>추출 정확도 100 · {summary.qualityGate ? '자동 승인 게이트 통과' : '자동 승인 게이트 재검토'}</p>
         <dl>
-          <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 95</dd></div>
-          <div><dt>핵심·품목·카테고리·스키마·안정성</dt><dd>{summary.documents}건</dd></div>
-          <div><dt>스키마 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
+          <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 100</dd></div>
+          <div><dt>평가 영수증</dt><dd>{summary.documents}건</dd></div>
+          <div><dt>자동 처리 비율</dt><dd>{(summary.autoCoverage * 100).toFixed(1)}%</dd></div>
+          <div><dt>자동 승인 정확도</dt><dd>{summary.autoApproved ? `${(summary.autoAccuracy * 100).toFixed(1)}%` : 'PASS 없음'}</dd></div>
+          <div><dt>단일 JSON 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
           <div><dt>총 결제액 정확도</dt><dd>{(summary.totalAmountRate * 100).toFixed(1)}%</dd></div>
           <div><dt>평균 응답시간</dt><dd>{summary.latency == null ? '미측정' : `${(summary.latency / 1000).toFixed(1)}초`}</dd></div>
           <div><dt>P95 응답시간</dt><dd className={summary.p95Latency > 120000 ? 'bad' : ''}>{summary.p95Latency == null ? '미측정' : `${(summary.p95Latency / 1000).toFixed(1)}초${summary.p95Latency > 120000 ? ' · 장시간 지연' : ''}`}</dd></div>
-          <div><dt>절대 속도점수</dt><dd>{summary.speedScore == null ? '재평가 필요' : `${summary.speedScore.toFixed(2)} / 3`}</dd></div>
-          <div><dt>로컬 비용점수</dt><dd>{summary.costScore.toFixed(1)} / 2</dd></div>
         </dl>
       </article>)}{!batchInsightsReady && <article className="batch-insight-empty"><small>선정 지표</small><h2>평가 결과 대기</h2><p>일괄 평가를 진행하면 선정 지표가 생성됩니다.</p></article>}</section>
       <article className="batch-error-chart"><header><div><h2>오류 유형 분포</h2><p>현재 일괄 평가의 오류 태그 기준</p></div><span>{batchInsightsReady ? batchErrorDistribution.total : 0}건</span></header>{batchInsightsReady ? <div><div className="error-donut" style={{ background: batchErrorDistribution.background }}><i><strong>{batchErrorDistribution.total}</strong><small>총 오류</small></i></div><ul>{batchErrorDistribution.items.map((item) => <li key={item.category}><i style={{ background: item.color }} /><span>{ERROR_CATEGORY_LABELS[item.category] || item.category}</span><b>{item.count} ({item.percent.toFixed(1)}%)</b></li>)}</ul></div> : <p className="eval-empty">일괄 평가를 진행하면 오류 유형 분포가 생성됩니다.</p>}</article>

@@ -15,6 +15,8 @@ class OCRTable(BaseModel):
     confidence: float
     rows: list[list[str]]
     columns: list[str] | None = None
+    row_count: int | None = None
+    column_count: int | None = None
 
 
 class OCRRegion(BaseModel):

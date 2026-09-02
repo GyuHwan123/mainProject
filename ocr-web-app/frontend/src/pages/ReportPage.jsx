@@ -204,7 +204,8 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
 
     <article className="report-card rag-model-card"><header><div><span className="rag-card-eyebrow">RUNTIME CONFIGURATION</span><h2>RAG 운영 설정</h2><p>Backend 상태 API가 반환한 현재 실제 구성</p></div><span className={`rag-status-badge ${modelConfig.ready ? 'online' : ''}`}>{modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</span></header><div className="rag-model-grid">
       <div><span>Embedding Model</span><strong>{modelConfig.embedding_model || '—'}</strong><small>{modelConfig.embedding_dimensions ? `${modelConfig.embedding_dimensions} dimensions` : '차원 미설정'}</small></div>
-      <div><span>Reranker</span><strong>{modelConfig.rerank_model || '미사용'}</strong><small>Vector 후보 재정렬</small></div>
+      <div><span>Retrieval</span><strong>{modelConfig.retrieval_method === 'dense_bm25_hybrid' ? 'Dense + BM25 Hybrid' : 'Dense Vector'}</strong><small>Dense {modelConfig.dense_candidate_count ?? '—'} + BM25 {modelConfig.bm25_candidate_count ?? '—'} 후보</small></div>
+      <div><span>Reranker</span><strong>{modelConfig.rerank_model || '미사용'}</strong><small>Hybrid 후보 재정렬</small></div>
       <div><span>LLM</span><strong>{modelConfig.model || '—'}</strong><small>최종 답변 생성</small></div>
       <div><span>Query Rewriting</span><strong>{modelConfig.query_rewriting ? '사용' : '미사용'}</strong><small>현재 검색 경로 기준</small></div>
       <div><span>Top-K</span><strong>{modelConfig.top_k ?? '—'}</strong><small>최종 Context 청크 수</small></div>

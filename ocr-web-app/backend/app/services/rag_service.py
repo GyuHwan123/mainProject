@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import math
 import re
+from collections import Counter
 from collections import OrderedDict
 from functools import lru_cache
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -20,6 +23,8 @@ RERANK_MODEL = settings.RAG_RERANK_MODEL
 CHUNK_TARGET_CHARS = settings.RAG_CHUNK_TARGET_CHARS
 TEXT_CHUNK_MAX_CHARS = settings.RAG_TEXT_CHUNK_MAX_CHARS
 TEXT_CHUNK_OVERLAP_CHARS = settings.RAG_TEXT_CHUNK_OVERLAP_CHARS
+DENSE_CANDIDATE_COUNT = settings.RAG_DENSE_CANDIDATE_COUNT
+BM25_CANDIDATE_COUNT = settings.RAG_BM25_CANDIDATE_COUNT
 
 _EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v1"
 _EMBEDDING_CACHE_MAX_SIZE = 2048
@@ -190,7 +195,124 @@ def _group_items_into_lines(items: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 def _is_section_heading(text: str) -> bool:
     compact = "".join(text.split()).replace("|", "").replace(":", "").strip("-·")
-    return compact in SECTION_TITLES or (len(compact) <= 12 and any(compact.startswith(title) for title in SECTION_TITLES))
+    normalized = re.sub(r"\s+", " ", text).strip(" |:-")
+    return (
+        compact in SECTION_TITLES
+        or (len(compact) <= 12 and any(compact.startswith(title) for title in SECTION_TITLES))
+        or normalized.casefold() in _COMMON_SECTION_HEADINGS
+        or bool(re.match(r"^(?:제\s*\d+\s*[장절항]|\d+(?:\.\d+){0,3}[.)]?\s+\S)", normalized))
+    )
+
+
+_COMMON_SECTION_HEADINGS = {
+    "초록", "요약", "개요", "서론", "배경", "목적", "연구 목적", "연구방법", "연구 방법",
+    "방법", "실험", "실험 방법", "결과", "연구 결과", "고찰", "논의", "결론", "참고문헌",
+    "부록", "적용 범위", "정의", "절차", "책임", "지원 자격", "평가 기준", "제출 서류",
+    "학력", "경력", "프로젝트", "기술", "자격증", "교육", "수상", "자기소개",
+    "abstract", "introduction", "background", "methods", "methodology", "results",
+    "discussion", "conclusion", "references", "appendix",
+}
+
+
+def _section_heading_level(text: str, *, height: float = 0, median_height: float = 0) -> int | None:
+    clean = re.sub(r"\s+", " ", text).strip(" |:-")
+    compact = clean.casefold()
+    if not clean or len(clean) > 100 or clean.count("|") >= 2:
+        return None
+    if re.match(r"^제\s*\d+\s*장\b", clean):
+        return 1
+    if re.match(r"^제\s*\d+\s*절\b", clean):
+        return 2
+    if re.match(r"^제\s*\d+\s*항\b", clean):
+        return 3
+    numbered = re.match(r"^(\d+(?:\.\d+){0,3})[.)]?\s+\S", clean)
+    if numbered:
+        return min(4, numbered.group(1).count(".") + 1)
+    if compact in _COMMON_SECTION_HEADINGS or _is_section_heading(clean):
+        return 2
+    if re.fullmatch(r"[A-Z][A-Z\s-]{2,40}", clean) and any(character.isalpha() for character in clean):
+        return 2
+    # OCR does not expose font metadata, but bbox height reliably distinguishes
+    # many short headings from body lines in scanned and native PDFs.
+    if median_height and height >= median_height * 1.35 and len(clean) <= 40:
+        digit_ratio = sum(character.isdigit() for character in clean) / max(len(clean), 1)
+        if digit_ratio < 0.45 and not clean.endswith((".", "다", "요")):
+            return 2
+    return None
+
+
+def _line_top(line: dict[str, Any]) -> float:
+    rects = [rect for item in line.get("items", []) if (rect := _item_rect(item))]
+    return min((rect[1] for rect in rects), default=0.0)
+
+
+def _document_heading_markers(pages: list[dict[str, Any]], document_title: str) -> list[dict[str, Any]]:
+    markers: list[dict[str, Any]] = []
+    path: list[str] = []
+    for page in pages:
+        page_number = int(page.get("page") or 1)
+        lines = _group_items_into_lines([
+            item for item in page.get("items", []) if str(item.get("text", "")).strip()
+        ])
+        if not lines:
+            lines = [
+                {"text": text.strip(), "items": [], "height": 0, "plain_index": index}
+                for index, text in enumerate(str(page.get("text") or "").splitlines())
+                if text.strip()
+            ]
+        heights = [float(line.get("height") or 0) for line in lines if float(line.get("height") or 0) > 0]
+        median_height = sorted(heights)[len(heights) // 2] if heights else 0
+        for line in lines:
+            text = str(line.get("text") or "").strip(" |")
+            if not text or text == document_title:
+                continue
+            level = _section_heading_level(text, height=float(line.get("height") or 0), median_height=median_height)
+            if level is None:
+                continue
+            path = path[:level - 1]
+            path.append(text)
+            markers.append({
+                "page_number": page_number, "top": _line_top(line) if line.get("items") else float(line.get("plain_index") or 0),
+                "section_title": text, "section_path": list(path), "heading_level": level,
+            })
+    return markers
+
+
+def _apply_chunk_metadata(
+    chunks: list[dict[str, Any]], pages: list[dict[str, Any]], document_title: str,
+) -> None:
+    markers = _document_heading_markers(pages, document_title)
+    active: dict[str, Any] | None = None
+    marker_index = 0
+    for chunk in chunks:
+        page_number = int(chunk.get("page_number") or 1)
+        bbox = chunk.get("bbox") or []
+        top = min((float(point[1]) for point in bbox if len(point) >= 2), default=float("inf"))
+        while marker_index < len(markers):
+            marker = markers[marker_index]
+            if marker["page_number"] > page_number or (
+                marker["page_number"] == page_number and marker["top"] > top
+            ):
+                break
+            active = marker
+            marker_index += 1
+        if top == float("inf"):
+            contained = [marker for marker in markers if marker["section_title"] in str(chunk.get("content") or "")]
+            if contained:
+                active = contained[-1]
+        section_title = active["section_title"] if active else None
+        section_path = active["section_path"] if active else []
+        heading_level = active["heading_level"] if active else None
+        chunk["document_title"] = document_title
+        chunk["section_title"] = section_title
+        chunk["section_path"] = section_path
+        chunk["heading_level"] = heading_level
+        metadata = [f"[문서 제목] {document_title}", f"[페이지] {page_number}"]
+        if section_title:
+            metadata.append(f"[섹션] {section_title}")
+        if section_path:
+            metadata.append("[장절항 경로] " + " > ".join(section_path))
+        chunk["content"] = "\n".join([*metadata, str(chunk.get("content") or "")])
 
 
 def _append_line_chunks(chunks: list[dict[str, Any]], page_number: int, lines: list[dict[str, Any]]) -> None:
@@ -262,12 +384,70 @@ def _append_article_chunks(chunks: list[dict[str, Any]], pages: list[dict[str, A
                 chunks.append({"page_number": page_number, "content": content, "bbox": None})
 
 
-def build_chunks(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def build_chunks(pages: list[dict[str, Any]], document_title: str | None = None) -> list[dict[str, Any]]:
     chunks: list[dict[str, Any]] = []
     text_only_pages: list[dict[str, Any]] = []
     for page in pages:
         page_number = int(page.get("page") or 1)
         items = [item for item in page.get("items", []) if str(item.get("text", "")).strip()]
+        tables = page.get("tables") or []
+        for table in tables:
+            rows = table.get("rows") or []
+            if not rows:
+                continue
+            headers = [str(value or "").strip() for value in (table.get("columns") or rows[0])]
+            column_count = int(table.get("column_count") or max((len(row) for row in rows), default=0))
+            row_count = int(table.get("row_count") or len(rows))
+            data_rows = rows[1:] if headers == [str(value or "").strip() for value in rows[0]] and len(rows) > 1 else rows
+            table_lines = []
+            table_bbox = table.get("bbox") or []
+            table_xs = [float(point[0]) for point in table_bbox if len(point) >= 2]
+            table_ys = [float(point[1]) for point in table_bbox if len(point) >= 2]
+            table_rect = (min(table_xs), min(table_ys), max(table_xs), max(table_ys)) if table_xs and table_ys else None
+            table_items = []
+            for item in items:
+                rect = _item_rect(item)
+                if rect and table_rect:
+                    center_x, center_y = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+                    if table_rect[0] <= center_x <= table_rect[2] and table_rect[1] <= center_y <= table_rect[3]:
+                        table_items.append(item)
+            header_items = [item for item in table_items if int(item.get("row") or 0) == 1]
+            if column_count:
+                header_descriptions = []
+                for index in range(column_count):
+                    header = headers[index] if index < len(headers) else ""
+                    if header:
+                        header_descriptions.append(f"{index + 1}열: {header}")
+                    elif index == 0:
+                        header_descriptions.append("1열: 헤더 없음(행 구분)")
+                    else:
+                        header_descriptions.append(f"{index + 1}열: 헤더 없음")
+                table_lines.append({
+                    "items": header_items,
+                    "text": (
+                        f"[표 크기] 헤더 포함 {row_count}행 × {column_count}열\n"
+                        "[표 테이블 열 컬럼명] " + " | ".join(header_descriptions)
+                    ),
+                })
+            for row_index, row in enumerate(data_rows, start=2 if data_rows is not rows else 1):
+                fields = []
+                for column_index, value in enumerate(row):
+                    value = str(value or "").strip()
+                    if not value:
+                        continue
+                    if column_index < len(headers) and headers[column_index]:
+                        header = f"{column_index + 1}열({headers[column_index]})"
+                    elif column_index == 0:
+                        header = "1열(행 구분·헤더 없음)"
+                    else:
+                        header = f"{column_index + 1}열(헤더 없음)"
+                    fields.append(f"{header}: {value}")
+                if fields:
+                    matching = [item for item in table_items if int(item.get("row") or 0) == row_index]
+                    table_lines.append({"items": matching, "text": "[표 행] " + " | ".join(fields)})
+            _append_line_chunks(chunks, page_number, table_lines)
+            table_item_ids = {id(item) for item in table_items}
+            items = [item for item in items if id(item) not in table_item_ids]
         if items:
             if page.get("rows") is not None or page.get("sheet_name") is not None:
                 items_by_row: dict[int, list[dict[str, Any]]] = {}
@@ -287,6 +467,11 @@ def build_chunks(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         else:
             text_only_pages.append(page)
     _append_article_chunks(chunks, text_only_pages)
+    resolved_title = str(document_title or "").strip()
+    if not resolved_title:
+        extracted = extract_document_title_with_layout(pages)
+        resolved_title = extracted[0] if extracted else "제목 없음"
+    _apply_chunk_metadata(chunks, pages, resolved_title)
     return chunks
 
 
@@ -324,6 +509,40 @@ def extract_document_title(pages: list[dict[str, Any]]) -> tuple[str, list[list[
             selected.append(following)
     title = " ".join(line["text"].strip(" |") for line in selected)
     return title, _union_bbox([item for line in selected for item in line["items"]])
+
+
+def extract_document_title_with_layout(
+    pages: list[dict[str, Any]],
+) -> tuple[str, list[list[float]] | None] | None:
+    """Prefer a prominent single title box over same-baseline callouts."""
+    if not pages:
+        return None
+    items = [item for item in pages[0].get("items", []) if str(item.get("text", "")).strip()]
+    candidates = [*_group_items_into_lines(items)]
+    candidates.extend({"items": [item], "text": str(item.get("text") or "").strip()} for item in items)
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for index, line in enumerate(candidates):
+        text = str(line.get("text") or "").strip(" |")
+        if not 6 <= len(text) <= 140 or text.count("|") >= 2:
+            continue
+        if re.search(r"(https?://|doi|issn|journal|e-mail|@)", text, re.I):
+            continue
+        if sum(character.isalpha() for character in text) < 4:
+            continue
+        bbox = _union_bbox(line.get("items") or [])
+        if not bbox:
+            continue
+        height = float(bbox[1][1]) - float(bbox[0][1])
+        top = float(bbox[0][1])
+        digit_ratio = sum(character.isdigit() for character in text) / max(len(text), 1)
+        score = height * 4 + min(len(text), 60) - top * .04 - text.count("|") * 80 - digit_ratio * 100
+        if index < 20:
+            score += 15
+        scored.append((score, line))
+    if not scored:
+        return extract_document_title(pages)
+    _, best = max(scored, key=lambda value: value[0])
+    return str(best["text"]).strip(" |"), _union_bbox(best["items"])
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:
@@ -418,6 +637,97 @@ async def rerank_candidates(query: str, candidates: list[dict[str, Any]]) -> lis
             status_code=503,
             detail=f"Reranker 모델 {RERANK_MODEL}을 로드하거나 실행할 수 없습니다.",
         ) from exc
+
+
+_BM25_K1 = 1.5
+_BM25_B = 0.75
+_BM25_PARTICLES = re.compile(
+    r"(으로부터|에게서|으로|에서|까지|부터|처럼|보다|이나|이나마|은|는|이|가|을|를|의|와|과|도|에)$"
+)
+
+
+def _bm25_tokens(value: str) -> list[str]:
+    """Tokenize Korean/English document text for deterministic BM25 scoring."""
+    tokens = re.findall(r"[가-힣A-Za-z0-9]+", str(value or "").lower())
+    normalized = []
+    for token in tokens:
+        stripped = _BM25_PARTICLES.sub("", token)
+        if len(stripped) >= 2:
+            normalized.append(stripped)
+    return normalized
+
+
+def bm25_candidates(
+    query: str, chunks: list[dict[str, Any]], limit: int,
+    *, k1: float = _BM25_K1, b: float = _BM25_B,
+) -> list[dict[str, Any]]:
+    """Rank chunks with Okapi BM25 and return only chunks having lexical evidence."""
+    if not chunks or limit <= 0:
+        return []
+    query_terms = list(dict.fromkeys(_bm25_tokens(query)))
+    if not query_terms:
+        return []
+    documents = [_bm25_tokens(str(chunk.get("content") or "")) for chunk in chunks]
+    average_length = sum(len(document) for document in documents) / len(documents) or 1.0
+    document_frequency = {
+        term: sum(term in set(document) for document in documents)
+        for term in query_terms
+    }
+    scored: list[dict[str, Any]] = []
+    total_documents = len(documents)
+    for chunk, document in zip(chunks, documents):
+        frequencies = Counter(document)
+        document_length = len(document)
+        score = 0.0
+        for term in query_terms:
+            frequency = frequencies.get(term, 0)
+            if not frequency:
+                continue
+            frequency_in_documents = document_frequency[term]
+            inverse_document_frequency = math.log(
+                1.0 + (total_documents - frequency_in_documents + 0.5)
+                / (frequency_in_documents + 0.5)
+            )
+            denominator = frequency + k1 * (1.0 - b + b * document_length / average_length)
+            score += inverse_document_frequency * frequency * (k1 + 1.0) / denominator
+        if score <= 0:
+            continue
+        candidate = dict(chunk)
+        candidate["bm25_score"] = float(score)
+        candidate["retrieval_methods"] = ["bm25"]
+        scored.append(candidate)
+    scored.sort(key=lambda row: float(row["bm25_score"]), reverse=True)
+    for rank, candidate in enumerate(scored[:limit], start=1):
+        candidate["bm25_rank"] = rank
+    return scored[:limit]
+
+
+def merge_hybrid_candidates(
+    dense: list[dict[str, Any]], lexical: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Deduplicate Dense and BM25 candidates before cross-encoder reranking."""
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for method, candidates in (("dense", dense), ("bm25", lexical)):
+        for rank, candidate in enumerate(candidates, start=1):
+            key = str(candidate.get("id") or (
+                candidate.get("rag_document_id"), candidate.get("chunk_index")
+            ))
+            if key not in merged:
+                merged[key] = dict(candidate)
+                merged[key]["retrieval_methods"] = []
+                order.append(key)
+            target = merged[key]
+            methods = target.setdefault("retrieval_methods", [])
+            if method not in methods:
+                methods.append(method)
+            if method == "dense":
+                target["dense_rank"] = rank
+                target["vector_similarity"] = float(candidate.get("similarity") or 0)
+            else:
+                target["bm25_rank"] = int(candidate.get("bm25_rank") or rank)
+                target["bm25_score"] = float(candidate.get("bm25_score") or 0)
+    return [merged[key] for key in order]
 
 
 _EVIDENCE_STOP_WORDS = {
@@ -561,6 +871,14 @@ def _condition_supported(condition: str, evidence: str) -> bool:
     return any(left <= expected[0] <= right for left, right in zip(numbers, numbers[1:]))
 
 
+def _is_table_structure_query(query: str) -> bool:
+    normalized = "".join(query.lower().split())
+    return (
+        any(term in normalized for term in ("표", "테이블"))
+        and any(term in normalized for term in ("열", "컬럼", "행", "헤더"))
+    )
+
+
 async def _has_facet_evidence(
     query: str,
     candidates: list[dict[str, Any]],
@@ -577,6 +895,10 @@ async def _has_facet_evidence(
     combined_evidence = "\n".join(units)
     lexical_hits = [token for token in facets["tokens"] if token in combined_evidence]
     strong_subjects = facets["strong_subjects"]
+
+    asks_for_table_structure = _is_table_structure_query(query)
+    if asks_for_table_structure and "[표 테이블 열 컬럼명]" in combined_evidence:
+        return True
 
     facet_texts = [facets["query"], *strong_subjects]
     if facet_vectors is None or len(facet_vectors) != len(facet_texts):
@@ -619,12 +941,15 @@ async def _has_facet_evidence(
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
     document = supabase_service.get_ocr_document(user_email, document_id)
     try:
-        chunks = build_chunks(redact_pages(document.get("bounding_boxes") or []))
+        pages = document.get("bounding_boxes") or []
+        extracted_title = extract_document_title_with_layout(pages)
+        document_title = extracted_title[0] if extracted_title else Path(document.get("file_name") or "document").stem
+        chunks = build_chunks(redact_pages(pages), document_title=document_title)
         if not chunks:
             raise HTTPException(status_code=422, detail="RAG로 인덱싱할 추출 텍스트가 없습니다.")
         embeddings = await embed_texts([chunk["content"] for chunk in chunks])
         return supabase_service.replace_rag_index(
-            user_email=user_email, document=document, chunks=chunks,
+            user_email=user_email, document={**document, "rag_title": document_title}, chunks=chunks,
             embeddings=embeddings, embedding_model=EMBEDDING_MODEL,
         )
     except Exception as exc:
@@ -639,16 +964,37 @@ async def search(
     user_email: str, query: str, rag_document_id: str | None, limit: int, *,
     user_role: str = "USER", subscription_tier: str = "PERSONAL",
 ) -> list[dict[str, Any]]:
+    # A selected document already contains deterministic OCR table metadata.
+    # Fetch it directly: vector similarity is not a reliable way to locate a
+    # schema marker for short questions such as "what are all the columns?".
+    if rag_document_id and _is_table_structure_query(query):
+        document_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)
+        schema_candidates = [
+            row for row in document_chunks
+            if "[표 테이블 열 컬럼명]" in str(row.get("content") or "")
+        ]
+        if schema_candidates:
+            for row in schema_candidates:
+                row["similarity"] = 1.0
+                row["vector_similarity"] = 1.0
+            return schema_candidates[:limit]
+
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
     query_texts = [query, facets["query"], *strong_subjects]
     query_vectors, _ = await _embed_texts_cached(query_texts)
     embedding = query_vectors[0]
     facet_vectors = query_vectors[1:]
-    candidates = supabase_service.search_rag_chunks(
-        user_email, embedding, rag_document_id, 4,
+    dense_candidates = supabase_service.search_rag_chunks(
+        user_email, embedding, rag_document_id, DENSE_CANDIDATE_COUNT,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
+    lexical_chunks = supabase_service.list_accessible_rag_chunks(
+        user_email, rag_document_id,
+        include_company_documents=can_access_company_rag(user_role, subscription_tier),
+    )
+    lexical_candidates = bm25_candidates(query, lexical_chunks, BM25_CANDIDATE_COUNT)
+    candidates = merge_hybrid_candidates(dense_candidates, lexical_candidates)
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]
     query_terms = {
@@ -663,6 +1009,18 @@ async def search(
         row["vector_similarity"] = float(row.get("similarity") or 0)
         row["similarity"] = min(1.0, row["vector_similarity"] + lexical_boost)
     candidates.sort(key=lambda row: float(row.get("similarity") or 0), reverse=True)
+
+    # Table row/column/header questions are answered from deterministic OCR
+    # metadata.  Running the large CPU reranker here can exceed the browser's
+    # request timeout even though the exact schema is already in a chunk.
+    if _is_table_structure_query(query):
+        schema_candidates = [
+            row for row in candidates
+            if "[표 테이블 열 컬럼명]" in str(row.get("content") or "")
+        ]
+        if schema_candidates:
+            return schema_candidates[:limit]
+
     candidates = await rerank_candidates(query, candidates)
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
@@ -702,7 +1060,7 @@ async def search(
         rag_document = next((item for item in supabase_service.list_rag_documents(user_email) if item.get("id") == rag_document_id), None)
         if rag_document:
             document = supabase_service.get_ocr_document(user_email, rag_document["document_id"])
-            extracted = extract_document_title(document.get("bounding_boxes") or [])
+            extracted = extract_document_title_with_layout(document.get("bounding_boxes") or [])
             if extracted:
                 title, bbox = extracted
                 candidates.insert(0, {

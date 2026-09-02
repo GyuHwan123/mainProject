@@ -109,17 +109,19 @@ async def generate(
     model_name: str | None = None,
     question: str | None = None,
     request_timeout_seconds: float = 120,
+    keep_alive: str | int = "30m",
+    num_ctx: int = 8192,
 ) -> str:
     effective_model = model_name or MODEL_NAME
     payload: dict[str, Any] = {
         "model": effective_model,
         "prompt": prompt,
         "stream": False,
-        "keep_alive": "30m",
+        "keep_alive": keep_alive,
         "options": {
             "temperature": 0.05,
             "num_predict": num_predict,
-            "num_ctx": 8192,
+            "num_ctx": num_ctx,
             "repeat_penalty": 1.08,
         },
     }

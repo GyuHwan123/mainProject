@@ -27,6 +27,8 @@ RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
 RECEIPT_LLM_TIMEOUT_SECONDS = 240
 RECEIPT_LLM_NUM_PREDICT = 600
+RECEIPT_LLM_KEEP_ALIVE = settings.RECEIPTS_LLM_KEEP_ALIVE
+RECEIPT_LLM_NUM_CTX = settings.RECEIPTS_LLM_NUM_CTX
 MAX_OCR_PROMPT_CHARS = 8000
 logger = logging.getLogger(__name__)
 
@@ -313,6 +315,8 @@ async def _classify_receipt_with_model(
         num_predict=RECEIPT_LLM_NUM_PREDICT,
         model_name=model_name,
         request_timeout_seconds=RECEIPT_LLM_TIMEOUT_SECONDS,
+        keep_alive=RECEIPT_LLM_KEEP_ALIVE,
+        num_ctx=RECEIPT_LLM_NUM_CTX,
     )
     latency_ms = round((perf_counter() - started) * 1000)
     parsed = json.loads(raw)

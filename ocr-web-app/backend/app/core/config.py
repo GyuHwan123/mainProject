@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     DASHBOARD_AGENT_MODEL: str = "gemma2:2b"
     RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
     RECEIPTS_LLM_MODEL: str = ""
+    RECEIPTS_LLM_KEEP_ALIVE: str = "0s"
+    RECEIPTS_LLM_NUM_CTX: int = 4096
     RAG_PROMPT_VERSION: str = "baseline-v1"
     RAG_TOP_K: int = 4
     RAG_ANSWERABILITY_THRESHOLD: float = 0.01

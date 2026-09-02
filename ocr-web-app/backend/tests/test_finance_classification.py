@@ -71,6 +71,9 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
             result = await _classify_receipt_with_model(SAMPLE_OCR, "receipt.jpg", "gemma3:4b")
 
         self.assertEqual(generator.await_count, 1)
+        call_options = generator.await_args.kwargs
+        self.assertEqual(call_options["keep_alive"], "0s")
+        self.assertEqual(call_options["num_ctx"], 4096)
         self.assertEqual(result["llm_trace"]["call_count"], 1)
         self.assertEqual(result["llm_trace"]["call_status"], "success")
         self.assertEqual(result["automation_validation"]["decision"], "PASS")

@@ -80,6 +80,52 @@ function ReportDropdown({ value, options, onChange, disabled = false, ariaLabel,
   </div>;
 }
 
+function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
+  const configuration = evaluation?.configuration || {};
+  const hasConfigurationSnapshot = Boolean(evaluation?.configuration);
+  const latency = evaluation?.latency || {};
+  const summary = evaluation?.summary || {};
+  const stages = [
+    ['Query Rewrite', 'query_rewrite'], ['Embedding', 'embedding'], ['Dense Search', 'dense'],
+    ['BM25 Search', 'bm25'], ['Reranker', 'reranker'], ['Retrieval Total', 'retrieval'],
+    ['LLM Answer', 'llm_answer'], ['Pipeline Total', 'total'],
+  ];
+  const hasLatency = Object.keys(latency).length > 0;
+  const milliseconds = (value) => value == null ? '—' : value >= 1000 ? `${(value / 1000).toFixed(2)}s` : `${Math.round(value)}ms`;
+  const configValue = (key) => hasConfigurationSnapshot ? (configuration[key] ?? '—') : '기록 없음';
+  const retrievalLabel = !hasConfigurationSnapshot ? '기록 없음' : configuration.retrieval_method === 'dense_bm25_hybrid'
+    ? 'Dense + BM25 Hybrid' : 'Dense Vector';
+
+  return <section className="rag-ablation-report">
+    <div className="rag-report-controls"><div className="receipt-monitoring-filters">
+      <span className="rag-ablation-run-label">{evaluation?.dataset_name || '평가 결과 없음'}{evaluation?.created_at ? ` · ${new Date(evaluation.created_at).toLocaleString('ko-KR')}` : ''}</span>
+      <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
+    </div></div>
+
+    <article className="report-card rag-ablation-config"><header><div><span className="rag-card-eyebrow">EXPERIMENT SNAPSHOT</span><h2>실행 당시 Ablation 설정</h2><p>현재 환경이 아니라 평가 실행 시점에 저장된 구성입니다.</p></div><span>{hasConfigurationSnapshot ? (configuration.query_rewriting ? 'REWRITE ON' : 'REWRITE OFF') : 'LEGACY RESULT'}</span></header>
+      <div className="rag-ablation-config-grid">
+        <div><span>Retrieval</span><strong>{retrievalLabel}</strong></div>
+        <div><span>Embedding</span><strong>{configValue('embedding_model')}</strong></div>
+        <div><span>Reranker</span><strong>{configValue('reranker_model')}</strong></div>
+        <div><span>Query Rewriting</span><strong>{hasConfigurationSnapshot ? (configuration.query_rewriting ? 'ON' : 'OFF') : '기록 없음'}</strong></div>
+        <div><span>Top-K</span><strong>{configValue('top_k')}</strong></div>
+        <div><span>Candidate Pool</span><strong>{hasConfigurationSnapshot ? `Dense ${configuration.dense_candidate_count ?? '—'} · BM25 ${configuration.bm25_candidate_count ?? '—'}` : '기록 없음'}</strong></div>
+      </div>
+    </article>
+
+    <section className="rag-ablation-metrics">
+      {[['Hit@K', summary.hit_at_k], ['Recall@K', summary.recall_at_k], ['MRR', summary.mrr], ['NDCG@K', summary.ndcg_at_k]].map(([label, value]) => <article className="report-card" key={label}><span>{label}</span><strong>{value == null ? '—' : percent(value)}</strong><small>Top-K {summary.top_k ?? configuration.top_k ?? '—'}</small></article>)}
+    </section>
+
+    <article className="report-card rag-ablation-latency"><header><div><span className="rag-card-eyebrow">STAGE LATENCY</span><h2>파이프라인 구간별 처리시간</h2><p>평균·P50·P95를 분리해 병목 구간을 확인합니다.</p></div><span>{hasLatency ? `${summary.total || 0} CASES` : 'NEXT RUN'}</span></header>
+      {hasLatency ? <div className="rag-ablation-latency-table"><div className="head"><span>구간</span><span>평균</span><span>P50</span><span>P95</span></div>{stages.map(([label, key]) => <div key={key}><strong>{label}</strong><span>{milliseconds(latency[key]?.average_ms)}</span><span>{milliseconds(latency[key]?.p50_ms)}</span><span>{milliseconds(latency[key]?.p95_ms)}</span></div>)}</div>
+        : <div className="model-evaluation-empty"><strong>기존 평가에는 구간별 latency가 저장되어 있지 않습니다.</strong><p>코드 반영 후 동일한 JSON으로 평가를 다시 실행하면 이 표가 채워집니다.</p></div>}
+    </article>
+
+    {Array.isArray(evaluation?.cases) && evaluation.cases.length > 0 && <article className="report-card rag-ablation-cases"><header><div><span className="rag-card-eyebrow">CASE LATENCY</span><h2>문항별 검색시간</h2><p>느린 질문과 Query Rewrite 영향을 직접 확인합니다.</p></div><span>{evaluation.cases.length} ROWS</span></header><div><div className="head"><span>문항</span><span>Rewrite</span><span>Retrieval</span><span>Reranker</span><span>전체</span></div>{evaluation.cases.map((item) => <div key={item.question_id}><strong title={item.question}>{item.question_id}</strong><span>{milliseconds(item.latency_ms?.query_rewrite)}</span><span>{milliseconds(item.latency_ms?.retrieval)}</span><span>{milliseconds(item.latency_ms?.reranker)}</span><span>{milliseconds(item.latency_ms?.total)}</span></div>)}</div></article>}
+  </section>;
+}
+
 function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, onExportPdf }) {
   const metrics = useMemo(() => {
     if (!evaluation) return null;
@@ -546,6 +592,7 @@ export default function ReportPage() {
   const [reportView, setReportView] = useState(isDeveloper ? 'developer' : 'business');
   const [developerReport, setDeveloperReport] = useState(requestedDeveloperReport === 'receipt' ? 'receipt' : 'rag');
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
+  const [ragReportTab, setRagReportTab] = useState(() => localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
   const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
@@ -556,6 +603,8 @@ export default function ReportPage() {
   const [initialBatchHistory, setInitialBatchHistory] = useState(null);
   const [initialSingleHistory, setInitialSingleHistory] = useState(null);
   const [error, setError] = useState('');
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const [pdfExportError, setPdfExportError] = useState('');
   const [evaluationsError, setEvaluationsError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(() => {
@@ -702,16 +751,27 @@ export default function ReportPage() {
     const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'developer-performance-report.json'; anchor.click(); URL.revokeObjectURL(url);
   };
   const exportDashboardPdf = () => {
-    const originalTitle = document.title;
+    if (pdfExporting) return;
     const reportName = reportView === 'business' ? '기업 업무 리포트' : developerReport === 'receipt' ? '영수증 서비스 대시보드' : 'AI 성능 리포트';
-    document.title = `${reportName}-${new Date().toISOString().slice(0, 10)}`;
-    const restorePrintState = () => {
+    const reportElement = document.querySelector('.developer-report');
+    if (!reportElement) { setPdfExportError('PDF로 변환할 리포트 영역을 찾지 못했습니다.'); return; }
+    setPdfExporting(true);
+    setPdfExportError('');
+    const originalTitle = document.title;
+    const reportDate = new Date().toISOString().slice(0, 10);
+    document.title = `${reportName}-${reportDate}`;
+    document.body.classList.add('report-printing');
+    const restore = () => {
       document.title = originalTitle;
-      window.removeEventListener('afterprint', restorePrintState);
+      document.body.classList.remove('report-printing');
+      setPdfExporting(false);
+      window.removeEventListener('afterprint', restore);
     };
-    window.addEventListener('afterprint', restorePrintState);
-    window.print();
-    window.setTimeout(restorePrintState, 300000);
+    window.addEventListener('afterprint', restore);
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => window.print());
+    });
+    window.setTimeout(restore, 300000);
   };
 
   const ocrAccuracy = runs.length ? percent(summary.accuracy) : '평가 대기';
@@ -798,6 +858,7 @@ export default function ReportPage() {
         </div>
       </header>
       {error && <div className="report-access-error">{error}</div>}
+      {pdfExportError && <div className="report-access-error">{pdfExportError}</div>}
       {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
           <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
@@ -818,7 +879,13 @@ export default function ReportPage() {
           />
         )}
       </> : <>
-      <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />
+      <div className="receipt-report-tab-bar rag-report-tab-bar" role="tablist" aria-label="RAG 성능 리포트 보기">
+        <button type="button" role="tab" aria-selected={ragReportTab === 'overview'} className={ragReportTab === 'overview' ? 'active' : ''} onClick={() => { setRagReportTab('overview'); localStorage.setItem('pic_to_text_rag_report_tab', 'overview'); }}>RAG 종합 리포트</button>
+        <button type="button" role="tab" aria-selected={ragReportTab === 'ablation'} className={ragReportTab === 'ablation' ? 'active' : ''} onClick={() => { setRagReportTab('ablation'); localStorage.setItem('pic_to_text_rag_report_tab', 'ablation'); }}>Ablation 분석</button>
+      </div>
+      {ragReportTab === 'ablation'
+        ? <RagAblationReport evaluation={ragEvaluation} modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
+        : <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
       {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
       {SHOW_LEGACY_EVALUATIONS && <>

@@ -70,6 +70,18 @@ def _mean(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def _percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    if lower == upper:
+        return ordered[lower]
+    return ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+
+
 def _unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(value for value in values if value))
 
@@ -133,12 +145,21 @@ async def evaluate_rag(
     faithfulness_scores: list[float] = []
     rejection_scores: list[float] = []
     case_results: list[dict[str, Any]] = []
+    stage_latencies: dict[str, list[float]] = {
+        name: [] for name in ("query_rewrite", "embedding", "dense", "bm25", "reranker", "retrieval", "llm_answer", "total")
+    }
 
     for case in dataset.cases:
+        case_started = time.perf_counter()
         sources = await rag_service.search(
             user.email, case.question, None, top_k,
             user_role=user.role, subscription_tier=user.subscription_tier,
         )
+        measured_retrieval = (sources[0].get("retrieval_latency_ms") or {}) if sources else {}
+        retrieval_elapsed_ms = float(measured_retrieval.get("total") or ((time.perf_counter() - case_started) * 1000))
+        for stage in ("query_rewrite", "embedding", "dense", "bm25", "reranker"):
+            stage_latencies[stage].append(float(measured_retrieval.get(stage) or 0))
+        stage_latencies["retrieval"].append(retrieval_elapsed_ms)
         retrieved_documents = _retrieved_document_ids(sources, filename_to_id, title_to_id)
         expected = set(case.expected_documents)
         matched = expected.intersection(retrieved_documents)
@@ -165,7 +186,10 @@ async def evaluate_rag(
             f"{source.get('content', '')}"
             for index, source in enumerate(sources)
         )
+        llm_started = time.perf_counter()
         reply = await ask_chatbot(ChatMessage(message=case.question, context=context, history=[]), user)
+        llm_answer_ms = (time.perf_counter() - llm_started) * 1000
+        stage_latencies["llm_answer"].append(llm_answer_ms)
         answer = reply.reply
         rejected = _is_rejection(answer)
         answer_score: float | None = None
@@ -189,6 +213,8 @@ async def evaluate_rag(
                 faithfulness_score = 0.0
         faithfulness_score = max(0.0, min(1.0, faithfulness_score))
         faithfulness_scores.append(faithfulness_score)
+        total_elapsed_ms = (time.perf_counter() - case_started) * 1000
+        stage_latencies["total"].append(total_elapsed_ms)
 
         case_results.append({
             "question_id": case.question_id,
@@ -211,10 +237,35 @@ async def evaluate_rag(
             "citation_accuracy": citation_accuracy,
             "rejected": rejected,
             "sources": sources,
+            "latency_ms": {
+                **{stage: float(measured_retrieval.get(stage) or 0) for stage in ("query_rewrite", "embedding", "dense", "bm25", "reranker")},
+                "retrieval": retrieval_elapsed_ms,
+                "llm_answer": round(llm_answer_ms, 2),
+                "total": round(total_elapsed_ms, 2),
+            },
         })
 
     result = {
         "dataset_name": dataset.dataset_name,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "configuration": {
+            "retrieval_method": "dense_bm25_hybrid",
+            "embedding_model": settings.RAG_EMBEDDING_MODEL,
+            "reranker_model": settings.RAG_RERANK_MODEL,
+            "query_rewriting": settings.RAG_QUERY_REWRITING,
+            "query_rewrite_model": settings.RAG_QUERY_REWRITE_MODEL or settings.RAG_LLM_MODEL,
+            "top_k": top_k,
+            "dense_candidate_count": settings.RAG_DENSE_CANDIDATE_COUNT,
+            "bm25_candidate_count": settings.RAG_BM25_CANDIDATE_COUNT,
+        },
+        "latency": {
+            stage: {
+                "average_ms": round(_mean(values), 2),
+                "p50_ms": round(_percentile(values, 0.50), 2),
+                "p95_ms": round(_percentile(values, 0.95), 2),
+            }
+            for stage, values in stage_latencies.items()
+        },
         "summary": {
             "total": len(dataset.cases),
             "retrieval_evaluated": len(retrieval_scores["hit"]),

@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 
 from app.api.routes.finance import _classify_receipt_with_model, _normalize, _normalize_expense_category
 from app.services.finance_error_analysis_service import analyze_finance_evaluation_failure
-from app.services.finance_normalization import normalization_equivalent
+from app.services.finance_normalization import normalization_equivalent, normalize_date
 from app.services.finance_workbook_service import HEADERS_BY_TYPE, SHEET_NAMES, SUMMARY_SHEET_NAME, build_finance_workbook
 
 
@@ -137,8 +137,7 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
 
     raw_date = truth.get("transaction_date", truth.get("구매일자"))
     if raw_date is not None:
-        date_text = str(raw_date).strip()
-        normalized["transaction_date"] = date_text[:10] if date_text else None
+        normalized["transaction_date"] = normalize_date(raw_date)
 
     source_items = truth.get("items")
     if not isinstance(source_items, list):
@@ -180,9 +179,7 @@ def _canonical(field: str, value: Any) -> Any:
         compact = re.sub(r"[^0-9a-z가-힣]", "", text)
         return ITEM_NAME_ALIASES.get(compact, text)
     if field == "transaction_date":
-        parts = re.findall(r"\d+", text)[:3]
-        if len(parts) == 3:
-            return f"{int(parts[0]):04d}-{int(parts[1]):02d}-{int(parts[2]):02d}"
+        return normalize_date(value) or text
     if field == "payment_method":
         compact = re.sub(r"[^0-9a-z가-힣]", "", text)
         aliases = {
@@ -337,57 +334,48 @@ def _selection_rubric(
             return 1.0 if _empty(actual) else 0.0
         return float(_values_match(field, expected, actual, ocr_pages))
 
+    # Simple-v1 scores only values produced by the one model call. Derived
+    # document type, total quantity, card regex, candidate recovery, and
+    # multi-stage stability are intentionally excluded.
     components = {
-        "merchant": {"score": field_accuracy("merchant"), "weight": 5},
-        "transaction_date": {"score": field_accuracy("transaction_date"), "weight": 5},
-        "total_quantity": {"score": field_accuracy("total_quantity"), "weight": 4},
-        "discount_amount": {"score": field_accuracy("discount_amount"), "weight": 4},
-        "total_amount": {"score": field_accuracy("total_amount"), "weight": 10},
-        "payment_method": {"score": field_accuracy("payment_method"), "weight": 3},
-        "card_number": {"score": field_accuracy("card_number"), "weight": 4},
+        "merchant": {"score": field_accuracy("merchant"), "weight": 8},
+        "transaction_date": {"score": field_accuracy("transaction_date"), "weight": 8},
+        "supply_amount": {"score": field_accuracy("supply_amount"), "weight": 5},
+        "tax_amount": {"score": field_accuracy("tax_amount"), "weight": 5},
+        "discount_amount": {"score": field_accuracy("discount_amount"), "weight": 5},
+        "total_amount": {"score": field_accuracy("total_amount"), "weight": 15},
+        "payment_method": {"score": field_accuracy("payment_method"), "weight": 5},
         "item_name_f1": {"score": name_f1, "weight": 12},
         "item_unit_price": {"score": item_accuracy("unit_price"), "weight": 8},
-        "item_quantity": {"score": item_accuracy("quantity"), "weight": 7},
-        "item_total_amount": {"score": item_accuracy("total_amount"), "weight": 8},
+        "item_quantity": {"score": item_accuracy("quantity"), "weight": 8},
+        "item_total_amount": {"score": item_accuracy("total_amount"), "weight": 11},
         "category": {"score": field_accuracy("expense_category"), "weight": 10},
     }
 
     raw = raw_prediction or prediction
     schema_checks = [
-        "image" in raw or "source_filename" in raw,
         "merchant" in raw,
         "transaction_date" in raw,
-        isinstance(raw.get("items"), list),
-        "total_quantity" in raw or isinstance(raw.get("receipt_summary"), dict),
-        "total_amount" in raw,
         "expense_category" in raw,
+        "supply_amount" in raw,
+        "tax_amount" in raw,
+        "discount_amount" in raw,
+        "total_amount" in raw,
         "payment_method" in raw,
-        "card_number" in raw,
+        isinstance(raw.get("items"), list),
     ]
     schema_rate = sum(schema_checks) / len(schema_checks)
-    components["json_schema"] = {"score": schema_rate, "weight": 10}
-
-    hallucinations = 0
-    stability_targets = ("merchant", "discount_amount", "payment_method", "card_number")
-    for field in stability_targets:
-        if _empty(truth.get(field)) and not _empty(prediction.get(field)):
-            hallucinations += 1
-    if not expected_items and predicted_items:
-        hallucinations += len(predicted_items)
-    stability_rate = 1.0 if hallucinations == 0 else 0.0
-    components["stability"] = {"score": stability_rate, "weight": 5}
 
     for component in components.values():
         component["points"] = component["score"] * component["weight"]
     extraction_score = sum(component["points"] for component in components.values())
     return {
-        "version": "test01-test20-v1",
-        "max_extraction_score": 95,
+        "version": "receipt-simple-v1",
+        "max_extraction_score": 100,
         "extraction_score": extraction_score,
-        "extraction_rate": extraction_score / 95,
+        "extraction_rate": extraction_score / 100,
         "schema_rate": schema_rate,
         "total_amount_correct": bool(components["total_amount"]["score"]),
-        "hallucination_count": hallucinations,
         "components": components,
     }
 

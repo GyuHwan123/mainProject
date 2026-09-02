@@ -51,7 +51,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(truth["total_amount"], 81300)
         self.assertEqual(truth["payment_method"], "현금")
         self.assertEqual(truth["total_quantity"], 7)
-        self.assertEqual(truth["expense_category"], "취미/쇼핑")
+        self.assertEqual(truth["expense_category"], "취미/선물")
         self.assertIsNone(truth["discount_amount"])
         self.assertIsNone(truth["card_number"])
         self.assertEqual(truth["items"][1], {
@@ -86,8 +86,8 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
     def test_normalizes_only_unambiguous_legacy_ground_truth_categories(self):
         cases = {
             "사무용품": "전자제품/문구",
-            "여비교통비": "교통",
-            "출장식대": "식비",
+            "여비교통비": "대중교통",
+            "출장식대": "외식/식사",
         }
 
         for ground_truth_category, expected in cases.items():
@@ -100,7 +100,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
                 )
                 self.assertTrue(score["fields"]["expense_category"]["correct"])
 
-    def test_calculates_test01_test20_weighted_selection_rubric(self):
+    def test_calculates_simple_v1_weighted_selection_rubric(self):
         truth = normalize_ground_truth({
             "가게명": "테스트 상점", "구매일자": "2025-10-03", "총 물품 수량": 1,
             "총 결제액": 6000, "카테고리": "식비", "결제방식": "카드", "카드번호": None,
@@ -113,14 +113,16 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             "items": [{"name": "국수", "unit_price": 6000, "quantity": 1, "total_amount": 6000}],
         }
         raw = {
-            "image": "test01.jpg", "merchant": "테스트 상점", "transaction_date": "2025-10-03",
-            "items": prediction["items"], "total_quantity": 1, "total_amount": 6000,
-            "expense_category": "식비", "payment_method": "신한카드", "card_number": None,
+            "merchant": "테스트 상점", "transaction_date": "2025-10-03",
+            "items": prediction["items"], "supply_amount": None, "tax_amount": None,
+            "discount_amount": None, "total_amount": 6000,
+            "expense_category": "식비", "payment_method": "신한카드",
         }
 
         rubric = score_fields(prediction, truth, raw)["selection_rubric"]
 
-        self.assertEqual(rubric["extraction_score"], 95)
+        self.assertEqual(rubric["version"], "receipt-simple-v1")
+        self.assertEqual(rubric["extraction_score"], 100)
         self.assertEqual(rubric["schema_rate"], 1)
         self.assertTrue(rubric["total_amount_correct"])
 

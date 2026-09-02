@@ -1,11 +1,50 @@
 """Finance HTTP endpoints; receipt processing lives in the service layer."""
 
 import asyncio
+from datetime import date, datetime, timezone
+from io import BytesIO
+from typing import Any
 
-from app.services.finance_receipt_pipeline import *
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+
+from app.api.routes.auth import require_current_user
+from app.api.routes.chatbot import generate
+from app.constants.finance_taxonomy import (
+    ALLOWED_DOCUMENT_TYPES,
+    ALLOWED_EXPENSE_CATEGORIES,
+    CATEGORY_TO_DOCUMENT_TYPE,
+    validate_classification,
+)
+from app.models.finance_receipt import FinanceClassifyRequest, FinanceExportRequest, FinanceRecord, FinanceRecordUpdate
+from app.models.user import User
+from app.services.finance_receipt_identity import legacy_receipt_key, receipt_fingerprint, receipt_hints, receipt_identity_key
+from app.services.finance_receipt_simple import (
+    FINANCE_PROMPT_VERSION,
+    RECEIPTS_MODEL_NAME,
+    EXPENSE_CATEGORIES,
+    _bounded_ocr_text,
+    _classify_receipt,
+    _classify_receipt_with_model,
+    _normalize,
+    _normalize_expense_category,
+    _preflight_review_reasons,
+    _simple_receipt_prompt,
+)
+from app.services.finance_workbook_service import build_finance_workbook
+from app.services.supabase_service import supabase_service
 
 
-RECEIPT_CLASSIFICATION_BUDGET_SECONDS = 1560
+router = APIRouter()
+
+# Local aliases keep the route implementation readable without leaking service internals.
+_receipt_fingerprint = receipt_fingerprint
+_receipt_hints = receipt_hints
+_receipt_identity_key = receipt_identity_key
+_legacy_receipt_key = legacy_receipt_key
+
+
+RECEIPT_CLASSIFICATION_BUDGET_SECONDS = 300
 _receipt_classification_lock = asyncio.Lock()
 
 
@@ -85,7 +124,9 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
         document_id=payload.document_id,
         payload=normalized,
     )
-    if payload.save_to_archive:
+    # A duplicate analysis may have a new finance_record_id, but it must not
+    # create another archive card for the same physical receipt.
+    if payload.save_to_archive and duplicate_record is None:
         supabase_service.save_receipt_archive(
             user_email=user.email,
             document_id=payload.document_id,
@@ -125,6 +166,8 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
     if category and category != "UNCLASSIFIED" and category not in ALLOWED_EXPENSE_CATEGORIES:
         raise HTTPException(status_code=422, detail="지원하지 않는 영수증 카테고리입니다.")
     archive = supabase_service.list_receipt_archive(user.email, category=category)
+    unique_archive = []
+    seen_receipts = set()
     for item in archive:
         record = item.get("finance_records") or {}
         if isinstance(record, list):
@@ -134,6 +177,17 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
             item["merchant"] = record.get("merchant")
             item["transaction_date"] = record.get("transaction_date")
             item["total_amount"] = record.get("total_amount") or 0
+        structured_data = record.get("structured_data") or {}
+        duplicate_key = (
+            item.get("receipt_fingerprint")
+            or structured_data.get("receipt_identity_key")
+            or structured_data.get("receipt_fingerprint")
+            or _legacy_receipt_key(record)
+        )
+        if duplicate_key and duplicate_key in seen_receipts:
+            continue
+        if duplicate_key:
+            seen_receipts.add(duplicate_key)
         document = item.get("ocr_documents") or {}
         if isinstance(document, list):
             document = document[0] if document else {}
@@ -141,7 +195,8 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
         if not item.get("source_file_name") and document.get("file_name"):
             item["source_file_name"] = document["file_name"]
         item["image_url"] = supabase_service.create_document_signed_url(storage_path) if storage_path else None
-    return archive
+        unique_archive.append(item)
+    return unique_archive
 
 
 @router.get("/history")

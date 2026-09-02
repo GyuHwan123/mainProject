@@ -33,27 +33,21 @@ class FinanceEvaluationRouteTests(unittest.TestCase):
         self.assertEqual(prediction["items"][0]["name"], "노트")
         self.assertEqual(raw["source_filename"], "receipt.jpg")
 
-    def test_pipeline_trace_collects_existing_classification_diagnostics(self):
+    def test_pipeline_trace_collects_simple_one_call_diagnostics(self):
         trace = _pipeline_trace({
-            "llm_trace": {"summary_raw": {"merchant": "문구점"}},
-            "validator_trace": {"changed": True},
-            "deterministic_hints": {"total_amount": 5000},
-            "item_extraction_diagnostics": {
-                "candidates": [{"name_candidate": "노트"}],
-                "model_items": [{"name": "노트"}],
-                "resolved_items": [{"name": "노트"}],
-            },
+            "llm_trace": {"raw_output": {"merchant": "문구점"}, "call_count": 1},
+            "automation_validation": {"decision": "PASS", "reasons": []},
         })
 
-        self.assertEqual(trace["llm"]["summary_raw"]["merchant"], "문구점")
-        self.assertTrue(trace["validator"]["changed"])
-        self.assertEqual(trace["item_candidates"][0]["name_candidate"], "노트")
+        self.assertEqual(trace["llm"]["raw_output"]["merchant"], "문구점")
+        self.assertEqual(trace["llm"]["call_count"], 1)
+        self.assertEqual(trace["validation"]["decision"], "PASS")
+        self.assertNotIn("item_candidates", trace)
 
-    def test_legacy_raw_prediction_unwraps_items_raw_object(self):
+    def test_raw_prediction_uses_single_model_output(self):
         raw = _raw_prediction_from_trace({
             "llm": {
-                "summary_raw": {"merchant": "store"},
-                "items_raw": {"items": [{"name": "item"}]},
+                "raw_output": {"merchant": "store", "items": [{"name": "item"}]},
             },
         }, {"items": [{"name": "fallback"}]})
 

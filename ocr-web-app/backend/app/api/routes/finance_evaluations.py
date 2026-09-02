@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.api.routes.auth import require_current_user
-from app.api.routes.finance import _receipt_item_candidates
 from app.core.config import settings
 from app.models.user import User
 from app.services.finance_evaluation_service import (
@@ -43,16 +42,14 @@ def _prediction_from_finance_record(record: dict[str, Any]) -> tuple[dict[str, A
 
 
 def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, Any]:
-    """Expose the same compact OCR evidence that is passed to the receipt LLM."""
+    """Expose only OCR volume metrics used by the simple one-call pipeline."""
     page_list = pages or []
-    candidates = _receipt_item_candidates(page_list)
     table_rows = sum(
         len(table.get("rows") or [])
         for page in page_list
         for table in (page.get("tables") or [])
     )
     return {
-        "candidates": candidates,
         "summary": {
             "pages": len(page_list),
             "ocr_boxes": sum(len(page.get("items") or []) for page in page_list),
@@ -62,42 +59,24 @@ def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, 
                 1 for page in page_list for region in (page.get("regions") or [])
                 if region.get("type") == "items"
             ),
-            "item_candidates": len(candidates),
-            "uncertain_candidates": sum(1 for candidate in candidates if candidate.get("uncertainty")),
         },
     }
 
 
 def _pipeline_trace(structured: dict[str, Any]) -> dict[str, Any]:
-    diagnostics = structured.get("item_extraction_diagnostics") or {}
     return {
         "llm": structured.get("llm_trace") or {},
-        "semantic_evidence": structured.get("semantic_evidence") or {},
-        "validator": structured.get("validator_trace") or {},
-        "deterministic_hints": structured.get("deterministic_hints") or {},
-        "item_candidates": diagnostics.get("candidates") or [],
-        "model_items": diagnostics.get("model_items") or [],
-        "resolved_items": diagnostics.get("resolved_items") or [],
+        "validation": structured.get("automation_validation") or {},
     }
 
 
 def _raw_prediction_from_trace(
     pipeline_trace: dict[str, Any], prediction: dict[str, Any],
 ) -> dict[str, Any]:
-    """Rebuild legacy raw output without nesting ``items_raw.items`` twice."""
+    """Return the single raw model object, or the final prediction for old rows."""
     llm_trace = pipeline_trace.get("llm") or {}
-    summary_raw = llm_trace.get("summary_raw") or {}
-    items_raw = llm_trace.get("items_raw")
-    if isinstance(items_raw, dict):
-        raw_items = items_raw.get("items") or []
-    elif isinstance(items_raw, list):
-        raw_items = items_raw
-    else:
-        raw_items = prediction.get("items") or []
-    return {
-        **(summary_raw if isinstance(summary_raw, dict) else {}),
-        "items": raw_items if isinstance(raw_items, list) else [],
-    }
+    raw_output = llm_trace.get("raw_output")
+    return raw_output if isinstance(raw_output, dict) else dict(prediction)
 
 
 
@@ -369,6 +348,14 @@ def evaluate_existing_finance_record(
                 "error_analysis": error_analysis,
                 "score": score,
                 "ocr_impact": estimate_ocr_impact(text, truth, score),
+                "automation": {
+                    **(structured.get("automation_validation") or {}),
+                    "auto_approved": (structured.get("automation_validation") or {}).get("decision") == "PASS",
+                    "auto_approved_correct": bool(
+                        (structured.get("automation_validation") or {}).get("decision") == "PASS"
+                        and score.get("complete_match")
+                    ),
+                },
                 "workbook": verify_workbook(record),
             },
         }],

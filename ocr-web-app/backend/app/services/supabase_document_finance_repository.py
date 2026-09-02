@@ -173,9 +173,12 @@ class DocumentFinanceMixin:
         source_storage_path: str,
     ) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)
+        structured_data = finance_record.get("structured_data") or {}
+        receipt_fingerprint = structured_data.get("receipt_identity_key") or structured_data.get("receipt_fingerprint")
+        conflict_columns = "user_id,receipt_fingerprint" if receipt_fingerprint else "finance_record_id"
         response = _legacy_httpx().post(
             f"{self.url}/rest/v1/receipt_archive",
-            params={"on_conflict": "finance_record_id"},
+            params={"on_conflict": conflict_columns},
             headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
             json={
                 "user_id": user_id,
@@ -183,6 +186,7 @@ class DocumentFinanceMixin:
                 "finance_record_id": finance_record["id"],
                 "source_file_name": source_file_name[:500],
                 "source_storage_path": source_storage_path,
+                "receipt_fingerprint": receipt_fingerprint,
                 "expense_category": finance_record.get("expense_category"),
                 "merchant": finance_record.get("merchant"),
                 "transaction_date": finance_record.get("transaction_date"),

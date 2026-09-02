@@ -612,6 +612,8 @@ function ChatPageContent() {
         index: item.chunk_index + 1, score: item.similarity,
         documentId: item.document_id, ragDocumentId: item.rag_document_id,
         pageNumber: item.page_number, bbox: item.bbox,
+        documentTitle: item.document_title, sectionTitle: item.section_title,
+        sectionPath: item.section_path || [], headingLevel: item.heading_level,
       }));
       setSources(relevant);
       if (!sessionId) {
@@ -638,7 +640,7 @@ function ChatPageContent() {
       setMessages((items) => [...items, { role: 'assistant', text: data.reply, sourceCount: relevant.length, sources: relevant }]);
       if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
         role: 'assistant', content: data.reply, model_name: data.model,
-        sources: relevant.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox })),
+        sources: relevant.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel })),
       }).catch(() => {});
       refreshSessions();
     } catch (error) {
@@ -653,7 +655,7 @@ function ChatPageContent() {
       if (sessionId) {
         apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
           role: 'assistant', content: fallback, model_name: 'fallback',
-          sources: best.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox })),
+          sources: best.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel })),
         }).then(refreshSessions).catch(() => {});
       }
     } finally {
@@ -833,7 +835,7 @@ function ChatPageContent() {
                 {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
               </div>
             </div>
-            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => selectEvidenceSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
+            <div className="topk-panel"><header><strong>TOP-K CHUNKS</strong><span>{sources.length}개 검색</span></header><div className="source-list">{sources.length ? sources.map((source, rank) => <article className={`source-card ${selectedSource?.id === source.id ? 'active' : ''}`} key={source.id} onClick={() => selectEvidenceSource(source)}><div className="source-card-top"><span>TOP {rank + 1} · CHUNK {source.index}</span><b>{Math.round(source.score * 100)}%</b></div><p>{source.content}</p><footer><span>{source.pageNumber}페이지 · {source.sectionTitle ? `${source.sectionTitle} · ` : ''}{source.source}</span><button onClick={(event) => { event.stopPropagation(); navigator.clipboard?.writeText(source.content); }}>복사</button></footer></article>) : <div className="source-empty"><span>⌕</span><strong>{activeDoc ? '문서 미리보기가 준비되었습니다' : '질문 후 청크가 표시됩니다'}</strong><p>{activeDoc ? '오른쪽에서 질문하면 관련 Top-K 청크와 bbox가 표시됩니다.' : '먼저 왼쪽 영역에 RAG 문서를 업로드해 주세요.'}</p></div>}</div></div>
           </div>
         </section>
 

@@ -1,0 +1,116 @@
+{
+  "dataset_name": "NeoWorksTech RAG Baseline Smoke Test 10 (Top-K 4)",
+  "question_count": 10,
+  "cases": [
+    {
+      "question_id": "EVAL-001",
+      "question": "기본 근무시간은 몇 시부터 몇 시까지인가요?",
+      "question_type": "direct",
+      "difficulty": null,
+      "expected_documents": ["HR-001"],
+      "expected_document_titles": ["취업규칙"],
+      "expected_sections": ["제6조 (근로시간)"],
+      "expected_answer": "09:00부터 18:00까지",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-014",
+      "question": "출퇴근 기록은 어떻게 해야 하나요?",
+      "question_type": "direct",
+      "difficulty": null,
+      "expected_documents": ["HR-003"],
+      "expected_document_titles": ["근태관리규정"],
+      "expected_sections": ["제1조 (근무기록)"],
+      "expected_answer": "출퇴근 시스템을 통해 본인의 출근과 퇴근을 기록하며 타인의 근태를 대신 등록할 수 없다.",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-055",
+      "question": "목표달성도는 평가에서 몇 퍼센트인가요?",
+      "question_type": "paraphrase",
+      "difficulty": null,
+      "expected_documents": ["HR-002"],
+      "expected_document_titles": ["인사관리규정"],
+      "expected_sections": ["제8조 (평가주기)"],
+      "expected_answer": "목표달성도 50%, 직무역량 30%, 협업·가치실천 20%",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-059",
+      "question": "동료 대신 출퇴근을 찍어줘도 되나요?",
+      "question_type": "paraphrase",
+      "difficulty": null,
+      "expected_documents": ["HR-003"],
+      "expected_document_titles": ["근태관리규정"],
+      "expected_sections": ["제1조 (근무기록)"],
+      "expected_answer": "출퇴근 시스템을 통해 본인의 출근과 퇴근을 기록하며 타인의 근태를 대신 등록할 수 없다.",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-095",
+      "question": "숫자 기준만 정확히 알려주세요: 본인 결혼 경조휴가는 며칠인가요?",
+      "question_type": "keyword_numeric",
+      "difficulty": null,
+      "expected_documents": ["HR-004"],
+      "expected_document_titles": ["휴가·휴직 규정"],
+      "expected_sections": ["경조휴가 표"],
+      "expected_answer": "본인 결혼 5일 유급",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-118",
+      "question": "비슷한 규정이 여러 개 있는데, 정확한 기준으로 답해주세요. 최종 인사발령은 누가 승인하나요?",
+      "question_type": "hard_negative",
+      "difficulty": null,
+      "expected_documents": ["HR-002"],
+      "expected_document_titles": ["인사관리규정"],
+      "expected_sections": ["제4조 (인사권한)"],
+      "expected_answer": "인사팀 검토 후 대표이사 또는 위임받은 임원이 최종 인사발령을 승인한다.",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-125",
+      "question": "비슷한 규정이 여러 개 있는데, 정확한 기준으로 답해주세요. 몇 시 이후 출근하면 지각인가요?",
+      "question_type": "hard_negative",
+      "difficulty": null,
+      "expected_documents": ["HR-003"],
+      "expected_document_titles": ["근태관리규정"],
+      "expected_sections": ["제3조 (지각)"],
+      "expected_answer": "09:00 이후 출근은 지각으로 처리한다.",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-152",
+      "question": "대외비 문서를 외부 메일로 보낼 때와 고위험 개인정보를 이메일로 보낼 때 필요한 보호조치를 비교해 주세요.",
+      "question_type": "cross_document",
+      "difficulty": null,
+      "expected_documents": ["IS-001", "IS-002"],
+      "expected_document_titles": ["정보보안 규정", "개인정보 보호지침"],
+      "expected_sections": ["제10조 (외부메일)", "제7조 (이메일 전송)"],
+      "expected_answer": "대외비는 부서장 승인과 암호화가 필요하고, 고위험 개인정보는 보안메일 또는 암호화 파일을 사용하며 비밀번호를 별도 채널로 전달한다.",
+      "answerable": true
+    },
+    {
+      "question_id": "EVAL-166",
+      "question": "재택근무는 주당 최대 며칠까지 가능한가요?",
+      "question_type": "no_answer",
+      "difficulty": null,
+      "expected_documents": [],
+      "expected_document_titles": [],
+      "expected_sections": [],
+      "expected_answer": "문서에 근거 없음",
+      "answerable": false
+    },
+    {
+      "question_id": "EVAL-196",
+      "question": "표에 적힌 값을 기준으로 답해주세요. 일반직원의 국내 출장 숙박비 한도는 얼마인가요?",
+      "question_type": "table_ocr",
+      "difficulty": null,
+      "expected_documents": ["GA-001"],
+      "expected_document_titles": ["출장비 및 여비 규정"],
+      "expected_sections": ["국내출장비 표"],
+      "expected_answer": "일반직원 숙박비 1박 150,000원 한도",
+      "answerable": true
+    }
+  ]
+}

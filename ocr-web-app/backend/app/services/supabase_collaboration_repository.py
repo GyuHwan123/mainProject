@@ -186,7 +186,7 @@ class CollaborationMixin:
             headers={**self._service_headers(), "Prefer": "resolution=merge-duplicates,return=representation"},
             json={
                 "doc_id": document["id"],
-                "title": Path(filename).stem,
+                "title": document.get("rag_title") or Path(filename).stem,
                 "owner": user_email,
                 "security": "PRIVATE",
                 "version": "v1.0",
@@ -206,6 +206,11 @@ class CollaborationMixin:
         rows = [{
             "document_id": rag_document["id"],
             "chunk_index": index, "page_number": chunk["page_number"], "content": chunk["content"],
+            "document_title": chunk.get("document_title") or document.get("rag_title") or Path(filename).stem,
+            "section_title": chunk.get("section_title"),
+            "section_path": chunk.get("section_path") or [],
+            "heading_level": chunk.get("heading_level"),
+            "bbox": chunk.get("bbox"),
             "embedding": embedding,
         } for index, (chunk, embedding) in enumerate(zip(chunks, embeddings))]
         for start in range(0, len(rows), 50):
@@ -274,8 +279,72 @@ class CollaborationMixin:
             row["rag_document_id"] = rag_id
             row["document_id"] = document["doc_id"]
             row["source"] = document["filename"]
-            row["bbox"] = None
+            row.setdefault("bbox", None)
         return rows
+
+    def list_accessible_rag_chunks(
+        self, user_email: str, rag_document_id: str | None, *,
+        include_company_documents: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Return the same document scope used by vector search for lexical retrieval."""
+        personal_documents = self.list_rag_documents(user_email)
+        company_documents: list[dict[str, Any]] = []
+        if include_company_documents:
+            response = _legacy_httpx().get(
+                f"{self.url}/rest/v1/rag_documents",
+                params={
+                    "select": "id,doc_id,title,owner,filename",
+                    "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
+                },
+                headers=self._service_headers(), timeout=15,
+            )
+            self._raise_for_supabase(response, "RAG company documents lookup failed")
+            company_documents = response.json()
+
+        personal_by_id = {row["id"]: row for row in personal_documents}
+        company_by_id = {row["id"]: row for row in company_documents}
+        accessible_by_id = {**personal_by_id, **company_by_id}
+        if rag_document_id and rag_document_id not in accessible_by_id:
+            raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
+
+        document_by_id = dict(company_by_id)
+        if rag_document_id:
+            document_by_id[rag_document_id] = accessible_by_id[rag_document_id]
+        allowed_ids = list(document_by_id)
+        if not allowed_ids:
+            return []
+
+        rows: list[dict[str, Any]] = []
+        page_size = 1_000
+        while True:
+            response = _legacy_httpx().get(
+                f"{self.url}/rest/v1/rag_chunks",
+                params={
+                    "select": "id,document_id,chunk_index,page_number,content,document_title,section_title,section_path,heading_level,bbox",
+                    "document_id": f"in.({','.join(allowed_ids)})",
+                    "order": "document_id.asc,chunk_index.asc",
+                    "limit": str(page_size),
+                    "offset": str(len(rows)),
+                },
+                headers=self._service_headers(), timeout=30,
+            )
+            self._raise_for_supabase(response, "RAG BM25 후보 조회 실패")
+            page = response.json()
+            rows.extend(page)
+            if len(page) < page_size:
+                break
+
+        decorated = []
+        for row in rows:
+            document = document_by_id.get(row.get("document_id"))
+            if not document:
+                continue
+            row["rag_document_id"] = row["document_id"]
+            row["document_id"] = document["doc_id"]
+            row["source"] = document["filename"]
+            row.setdefault("bbox", None)
+            decorated.append(row)
+        return decorated
 
     def list_rag_document_catalog(self) -> list[dict[str, Any]]:
         response = _legacy_httpx().get(
@@ -316,7 +385,7 @@ class CollaborationMixin:
             response = _legacy_httpx().get(
                 f"{self.url}/rest/v1/rag_chunks",
                 params={
-                    "select": "id,document_id,chunk_index,page_number,content",
+                    "select": "id,document_id,chunk_index,page_number,content,document_title,section_title,section_path,heading_level,bbox",
                     "document_id": f"eq.{rag_document_id}",
                     "order": "chunk_index.asc",
                     "limit": str(page_size),
@@ -349,7 +418,7 @@ class CollaborationMixin:
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/rag_chunks",
             params={
-                "select": "id,document_id,chunk_index,page_number,content",
+                "select": "id,document_id,chunk_index,page_number,content,document_title,section_title,section_path,heading_level,bbox",
                 "document_id": f"eq.{rag_document_id}",
                 "order": "chunk_index.asc",
                 "limit": "5000",
@@ -363,7 +432,7 @@ class CollaborationMixin:
             row["rag_document_id"] = rag_document_id
             row["document_id"] = owned_document["doc_id"]
             row["source"] = owned_document["filename"]
-            row["bbox"] = None
+            row.setdefault("bbox", None)
         return rows
 
 

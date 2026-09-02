@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from itertools import count
 from typing import Any, Literal
@@ -99,6 +100,47 @@ class KnowledgeScrapCreate(BaseModel):
 class KnowledgeScrap(KnowledgeScrapCreate):
     model_config = ConfigDict(extra="allow")
     id: str
+
+
+def _table_structure_answer(message: str, context: str) -> str | None:
+    """Answer explicit table-schema questions from deterministic RAG metadata."""
+    question = re.sub(r"\s+", " ", str(message or "")).strip()
+    asks_columns = bool(re.search(
+        r"(컬럼\s*명|열\s*(?:이름|명)|헤더|(?:컬럼|열).*(?:알려|무엇|뭐|전부|모두))",
+        question,
+    ))
+    asks_size = bool(re.search(r"(몇\s*행|몇\s*열|몇\s*컬럼|행.*열|열.*행|표\s*크기)", question))
+    if not asks_columns and not asks_size:
+        return None
+
+    blocks = re.findall(
+        r"\[근거\s+(\d+)[^\]]*\]\s*(.*?)(?=\n\n\[근거\s+\d+|\Z)",
+        str(context or ""),
+        flags=re.S,
+    )
+    for evidence_number, content in blocks:
+        size_match = re.search(
+            r"\[표 크기\]\s*(?:헤더 포함\s*)?(\d+)행\s*[×xX*]\s*(\d+)열",
+            content,
+        )
+        columns_match = re.search(r"\[표 테이블 열 컬럼명\]\s*([^\n]+)", content)
+        if asks_columns and not columns_match:
+            continue
+        if asks_size and not size_match:
+            continue
+
+        sentences = []
+        if size_match:
+            sentences.append(
+                f"이 표는 헤더를 포함해 {int(size_match.group(1))}행 × {int(size_match.group(2))}열입니다."
+            )
+        if columns_match:
+            columns = [value.strip() for value in columns_match.group(1).split("|") if value.strip()]
+            if columns:
+                sentences.append("컬럼은 " + ", ".join(columns) + "입니다.")
+        if sentences:
+            return " ".join(sentences) + f" [근거 {evidence_number}]"
+    return None
 
 
 async def generate(
@@ -214,6 +256,9 @@ async def _ask_chatbot(
     if not payload.context or not payload.context.strip():
         return ChatReply(reply=GROUNDED_REJECTION_RESPONSE, model="grounded-rejection")
     context = payload.context[:6000]
+    table_answer = _table_structure_answer(payload.message, context)
+    if table_answer:
+        return ChatReply(reply=table_answer, model="table-metadata")
     history = "\n".join(
         f"{'사용자' if item.get('role') == 'user' else 'AI'}: {str(item.get('content', ''))[:800]}"
         for item in payload.history[-8:]
@@ -304,6 +349,9 @@ async def chatbot_status() -> dict[str, Any]:
         "embedding_model": settings.RAG_EMBEDDING_MODEL,
         "embedding_dimensions": settings.RAG_EMBEDDING_DIMENSIONS,
         "rerank_model": settings.RAG_RERANK_MODEL or None,
+        "retrieval_method": "dense_bm25_hybrid",
+        "dense_candidate_count": settings.RAG_DENSE_CANDIDATE_COUNT,
+        "bm25_candidate_count": settings.RAG_BM25_CANDIDATE_COUNT,
         "query_rewriting": False,
         "prompt_version": settings.RAG_PROMPT_VERSION,
         "top_k": settings.RAG_TOP_K,

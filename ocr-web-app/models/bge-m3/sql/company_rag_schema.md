@@ -117,6 +117,11 @@ create table public.rag_chunks (
   chunk_index integer not null check (chunk_index >= 0),
   page_number integer not null check (page_number >= 1),
   content text not null check (length(btrim(content)) > 0),
+  document_title text not null,
+  section_title text,
+  section_path text[] not null default '{}'::text[],
+  heading_level smallint check (heading_level is null or heading_level between 1 and 6),
+  bbox jsonb,
   embedding vector(1024) not null,
   created_at timestamptz not null default now(),
   constraint uq_rag_chunks_document_index unique (document_id, chunk_index)
@@ -165,6 +170,11 @@ returns table (
   chunk_index integer,
   page_number integer,
   content text,
+  document_title text,
+  section_title text,
+  section_path text[],
+  heading_level smallint,
+  bbox jsonb,
   similarity double precision
 )
 language sql
@@ -186,6 +196,11 @@ as $$
     chunk.chunk_index,
     chunk.page_number,
     chunk.content,
+    chunk.document_title,
+    chunk.section_title,
+    chunk.section_path,
+    chunk.heading_level,
+    chunk.bbox,
     (1 - (chunk.embedding <=> query_embedding))::double precision as similarity
   from public.rag_chunks as chunk
   join public.rag_documents as document

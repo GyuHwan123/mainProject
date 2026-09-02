@@ -16,6 +16,7 @@ from app.services.file_classifier import (
 )
 from app.services.pdf_service import extract_pdf_text, extract_pdf_text_and_images
 from app.services.docx_service import extract_docx_text, extract_docx_text_and_images
+from app.services.document_table_service import enhance_document_tables
 from app.services.ocr.ocr_parser import build_ocr_page
 from app.services.preprocess_service import preprocess_image, scale_bbox_to_image
 from app.services.receipt_preprocess_service import PreprocessOptions, preprocess_receipt_image
@@ -262,7 +263,8 @@ async def process_ocr(
             if file_extension == ".pdf":
 
                 pages = extract_pdf_text(
-                    temp_path
+                    temp_path,
+                    document_layout=processing_mode == "document",
                 )
 
             # -----------------------------
@@ -309,11 +311,17 @@ async def process_ocr(
 
             if file_extension == ".pdf":
                 pages = run_paddle_ocr(temp_path, receipt_layout=processing_mode == "receipt")
+                if processing_mode == "document":
+                    for page in pages:
+                        enhance_document_tables(page)
             elif file_extension == ".docx":
                 pages = extract_docx_text_and_images(
                     temp_path,
                     run_paddle_ocr,
                 )
+                if processing_mode == "document":
+                    for page in pages:
+                        enhance_document_tables(page)
             else:
                 preprocess_started = perf_counter()
                 receipt_result = preprocess_receipt_image(temp_path) if processing_mode == "receipt" else None
@@ -322,6 +330,9 @@ async def process_ocr(
                 ocr_started = perf_counter()
                 pages = run_paddle_ocr(processed_image, receipt_layout=processing_mode == "receipt")
                 ocr_ms = (perf_counter() - ocr_started) * 1000
+                if processing_mode == "document":
+                    for page in pages:
+                        enhance_document_tables(page, processed_image)
                 original_image = cv2.imread(str(temp_path), cv2.IMREAD_COLOR)
                 if receipt_result:
                     for page in pages:
@@ -348,6 +359,12 @@ async def process_ocr(
                         for item in page.items:
                             item.bbox = scale_bbox_to_image(
                                 item.bbox,
+                                processed_image.shape,
+                                original_image.shape,
+                            )
+                        for table in page.tables or []:
+                            table.bbox = scale_bbox_to_image(
+                                table.bbox,
                                 processed_image.shape,
                                 original_image.shape,
                             )
@@ -397,7 +414,11 @@ async def process_ocr(
                 pages = extract_pdf_text_and_images(
                     temp_path,
                     run_paddle_ocr,
+                    document_layout=processing_mode == "document",
                 )
+                if processing_mode == "document":
+                    for page in pages:
+                        enhance_document_tables(page)
 
             elif file_extension == ".docx":
 
@@ -409,6 +430,9 @@ async def process_ocr(
                     temp_path,
                     run_paddle_ocr,
                 )
+                if processing_mode == "document":
+                    for page in pages:
+                        enhance_document_tables(page)
 
             else:
 

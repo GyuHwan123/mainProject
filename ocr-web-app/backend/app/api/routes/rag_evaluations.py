@@ -24,11 +24,35 @@ from app.services.supabase_service import COMPANY_RAG_DOCUMENT_IDS, supabase_ser
 
 router = APIRouter()
 _latest_evaluations: dict[str, dict[str, Any]] = {}
+_rag_evaluation_states: dict[str, dict[str, Any]] = {}
+_rag_evaluation_lock = Lock()
 _umap_cache: dict[str, Any] = {}
 _umap_cache_lock = Lock()
 _llm_evaluation_lock = Lock()
 _llm_evaluation_states: dict[str, dict[str, Any]] = {}
 _UMAP_COLORS = {"HR": "#2563eb", "GA": "#16a34a", "IS": "#9333ea", "SH": "#ea580c", "ER": "#dc2626"}
+
+
+def _rag_progress(user_email: str) -> dict[str, Any]:
+    with _rag_evaluation_lock:
+        state = dict(_rag_evaluation_states.get(user_email) or {
+            "status": "idle", "current": 0, "total": 0, "question_id": None,
+        })
+    started_at = state.get("started_at")
+    finished_at = state.get("finished_at")
+    elapsed = max(0.0, float(finished_at or time.time()) - float(started_at)) if started_at else 0.0
+    current = int(state.get("current") or 0)
+    total = int(state.get("total") or 0)
+    completed_elapsed = float(state.get("completed_elapsed_seconds") or elapsed)
+    average = completed_elapsed / current if current else None
+    remaining = average * max(0, total - current) if average is not None else None
+    return {
+        **state,
+        "elapsed_seconds": round(elapsed, 1),
+        "average_seconds_per_case": round(average, 1) if average is not None else None,
+        "estimated_remaining_seconds": round(remaining, 1) if remaining is not None else None,
+        "progress_percent": round(current / total * 100, 1) if total else 0.0,
+    }
 
 
 class RagEvaluationCase(BaseModel):
@@ -133,6 +157,12 @@ async def evaluate_rag(
     dataset: RagEvaluationDataset,
     user: User = Depends(require_developer),
 ) -> dict[str, Any]:
+    started_at = time.time()
+    with _rag_evaluation_lock:
+        _rag_evaluation_states[user.email] = {
+            "status": "running", "current": 0, "total": len(dataset.cases),
+            "question_id": None, "started_at": started_at,
+        }
     top_k = settings.RAG_TOP_K
     answer_threshold = settings.RAG_EVALUATION_ANSWER_THRESHOLD
     filename_to_id, title_to_id = _catalog_maps()
@@ -149,7 +179,11 @@ async def evaluate_rag(
         name: [] for name in ("query_rewrite", "embedding", "dense", "bm25", "reranker", "retrieval", "llm_answer", "total")
     }
 
-    for case in dataset.cases:
+    for case_index, case in enumerate(dataset.cases, 1):
+        with _rag_evaluation_lock:
+            _rag_evaluation_states[user.email].update(
+                current=case_index - 1, question_id=case.question_id,
+            )
         case_started = time.perf_counter()
         sources = await rag_service.search(
             user.email, case.question, None, top_k,
@@ -244,6 +278,11 @@ async def evaluate_rag(
                 "total": round(total_elapsed_ms, 2),
             },
         })
+        with _rag_evaluation_lock:
+            _rag_evaluation_states[user.email].update(
+                current=case_index,
+                completed_elapsed_seconds=time.time() - started_at,
+            )
 
     result = {
         "dataset_name": dataset.dataset_name,
@@ -290,7 +329,17 @@ async def evaluate_rag(
         "cases": case_results,
     }
     _latest_evaluations[user.email] = result
+    with _rag_evaluation_lock:
+        _rag_evaluation_states[user.email].update(
+            status="completed", current=len(dataset.cases), question_id=None,
+            finished_at=time.time(),
+        )
     return result
+
+
+@router.get("/evaluate/status")
+def rag_evaluation_status(user: User = Depends(require_developer)) -> dict[str, Any]:
+    return _rag_progress(user.email)
 
 
 @router.get("/evaluate/latest")

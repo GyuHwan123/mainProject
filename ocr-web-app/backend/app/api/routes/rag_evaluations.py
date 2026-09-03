@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import html
 import json
 import math
+import os
 import re
 import time
+from pathlib import Path
 from threading import Lock
 from typing import Any
 
@@ -26,11 +29,14 @@ router = APIRouter()
 _latest_evaluations: dict[str, dict[str, Any]] = {}
 _rag_evaluation_states: dict[str, dict[str, Any]] = {}
 _rag_evaluation_lock = Lock()
+_running_rag_evaluations: set[str] = set()
 _umap_cache: dict[str, Any] = {}
 _umap_cache_lock = Lock()
 _llm_evaluation_lock = Lock()
 _llm_evaluation_states: dict[str, dict[str, Any]] = {}
 _UMAP_COLORS = {"HR": "#2563eb", "GA": "#16a34a", "IS": "#9333ea", "SH": "#ea580c", "ER": "#dc2626"}
+_CHECKPOINT_DIR = Path(os.getenv("RAG_EVALUATION_CHECKPOINT_DIR", "/app/data/rag-evaluations"))
+_RETRY_DELAYS_SECONDS = (2, 5, 10)
 
 
 def _rag_progress(user_email: str) -> dict[str, Any]:
@@ -152,8 +158,349 @@ def _retrieved_document_ids(
     return _unique(resolved)
 
 
+def _evaluation_configuration() -> dict[str, Any]:
+    return {
+        "retrieval_method": "dense_bm25_hybrid",
+        "embedding_model": settings.RAG_EMBEDDING_MODEL,
+        "reranker_model": settings.RAG_RERANK_MODEL,
+        "query_rewriting": settings.RAG_QUERY_REWRITING,
+        "query_rewrite_model": settings.RAG_QUERY_REWRITE_MODEL or settings.RAG_LLM_MODEL,
+        "top_k": settings.RAG_TOP_K,
+        "dense_candidate_count": settings.RAG_DENSE_CANDIDATE_COUNT,
+        "bm25_candidate_count": settings.RAG_BM25_CANDIDATE_COUNT,
+    }
+
+
+def _dataset_hash(dataset: RagEvaluationDataset) -> str:
+    canonical = json.dumps(
+        dataset.model_dump(mode="json"), ensure_ascii=False, sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _checkpoint_path(dataset_hash: str) -> Path:
+    return _CHECKPOINT_DIR / f"{dataset_hash}.json"
+
+
+def _utc_timestamp() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _load_checkpoint(dataset: RagEvaluationDataset) -> dict[str, Any]:
+    dataset_hash = _dataset_hash(dataset)
+    path = _checkpoint_path(dataset_hash)
+    if path.exists():
+        try:
+            checkpoint = json.loads(path.read_text(encoding="utf-8"))
+            if (
+                checkpoint.get("dataset_hash") == dataset_hash
+                and checkpoint.get("total") == len(dataset.cases)
+                and checkpoint.get("configuration") == _evaluation_configuration()
+            ):
+                return checkpoint
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+    now = _utc_timestamp()
+    return {
+        "dataset_hash": dataset_hash,
+        "dataset_name": dataset.dataset_name,
+        "total": len(dataset.cases),
+        "completed_question_ids": [],
+        "results": {},
+        "errors": {},
+        "retry_counts": {},
+        "configuration": _evaluation_configuration(),
+        "status": "ready",
+        "started_at": now,
+        "updated_at": now,
+    }
+
+
+def _save_checkpoint(checkpoint: dict[str, Any]) -> None:
+    _CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    checkpoint["updated_at"] = _utc_timestamp()
+    path = _checkpoint_path(str(checkpoint["dataset_hash"]))
+    temporary = path.with_suffix(f".json.{os.getpid()}.tmp")
+    temporary.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _processed_question_ids(checkpoint: dict[str, Any]) -> set[str]:
+    return set(checkpoint.get("completed_question_ids") or []).union(checkpoint.get("errors") or {})
+
+
+def _is_transient_evaluation_error(exc: BaseException) -> bool:
+    current: BaseException | None = exc
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if isinstance(current, (httpx.ConnectError, httpx.TimeoutException)):
+            return True
+        if isinstance(current, HTTPException):
+            return current.status_code == 503
+        current = current.__cause__ or current.__context__
+    return False
+
+
+async def _evaluate_rag_case(
+    case: RagEvaluationCase,
+    user: User,
+    filename_to_id: dict[str, str],
+    title_to_id: dict[str, str],
+) -> dict[str, Any]:
+    # Keep this calculation aligned with the original evaluator; checkpointing and
+    # retries wrap the complete case and do not alter retrieval or scoring.
+    top_k = settings.RAG_TOP_K
+    answer_threshold = settings.RAG_EVALUATION_ANSWER_THRESHOLD
+    case_started = time.perf_counter()
+    sources = await rag_service.search(
+        user.email, case.question, None, top_k,
+        user_role=user.role, subscription_tier=user.subscription_tier,
+    )
+    measured_retrieval = (sources[0].get("retrieval_latency_ms") or {}) if sources else {}
+    retrieval_elapsed_ms = float(measured_retrieval.get("total") or ((time.perf_counter() - case_started) * 1000))
+    retrieved_documents = _retrieved_document_ids(sources, filename_to_id, title_to_id)
+    expected = set(case.expected_documents)
+    matched = expected.intersection(retrieved_documents)
+    hit = bool(matched)
+    recall = len(matched) / len(expected) if expected else 0.0
+    first_rank = next((rank for rank, doc_id in enumerate(retrieved_documents, 1) if doc_id in expected), None)
+    reciprocal_rank = 1.0 / first_rank if first_rank else 0.0
+    ndcg = _ndcg(retrieved_documents, expected, top_k)
+    citation_accuracy = len(matched) / len(set(retrieved_documents)) if retrieved_documents else 0.0
+
+    context = "\n\n".join(
+        f"[洹쇨굅 {index + 1} 쨌 {source.get('source', '臾몄꽌')} 쨌 "
+        f"{source.get('page_number', 1)}?섏씠吏 쨌 Chunk {source.get('chunk_index', 0) + 1}] "
+        f"{source.get('content', '')}"
+        for index, source in enumerate(sources)
+    )
+    llm_started = time.perf_counter()
+    reply = await ask_chatbot(ChatMessage(message=case.question, context=context, history=[]), user)
+    llm_answer_ms = (time.perf_counter() - llm_started) * 1000
+    answer = reply.reply
+    rejected = _is_rejection(answer)
+    answer_score: float | None = None
+    answer_correct: bool | None = None
+    if case.answerable:
+        expected_vector, answer_vector, context_vector = await embed_texts([
+            case.expected_answer, answer, context or "?쒓났??臾몄꽌 洹쇨굅媛 ?놁뒿?덈떎.",
+        ])
+        answer_score = sum(left * right for left, right in zip(expected_vector, answer_vector))
+        answer_correct = answer_score >= answer_threshold
+        faithfulness_score = sum(left * right for left, right in zip(answer_vector, context_vector))
+    else:
+        if rejected:
+            faithfulness_score = 1.0
+        elif context:
+            answer_vector, context_vector = await embed_texts([answer, context])
+            faithfulness_score = sum(left * right for left, right in zip(answer_vector, context_vector))
+        else:
+            faithfulness_score = 0.0
+    faithfulness_score = max(0.0, min(1.0, faithfulness_score))
+    total_elapsed_ms = (time.perf_counter() - case_started) * 1000
+
+    return {
+        "question_id": case.question_id,
+        "question": case.question,
+        "question_type": case.question_type,
+        "difficulty": case.difficulty,
+        "answerable": case.answerable,
+        "expected_documents": case.expected_documents,
+        "retrieved_documents": retrieved_documents,
+        "answer": answer,
+        "expected_answer": case.expected_answer,
+        "hit": hit,
+        "recall": recall,
+        "reciprocal_rank": reciprocal_rank,
+        "ndcg_at_k": ndcg,
+        "answer_score": answer_score,
+        "answer_correct": answer_correct,
+        "faithfulness": faithfulness_score,
+        "hallucination_score": 1.0 - faithfulness_score,
+        "citation_accuracy": citation_accuracy,
+        "rejected": rejected,
+        "sources": sources,
+        "latency_ms": {
+            **{stage: float(measured_retrieval.get(stage) or 0) for stage in ("query_rewrite", "embedding", "dense", "bm25", "reranker")},
+            "retrieval": retrieval_elapsed_ms,
+            "llm_answer": round(llm_answer_ms, 2),
+            "total": round(total_elapsed_ms, 2),
+        },
+    }
+
+
+def _build_evaluation_result(dataset: RagEvaluationDataset, case_results: list[dict[str, Any]]) -> dict[str, Any]:
+    top_k = settings.RAG_TOP_K
+    answer_threshold = settings.RAG_EVALUATION_ANSWER_THRESHOLD
+    retrieval_results = [item for item in case_results if item.get("expected_documents")]
+    answer_results = [item for item in case_results if item.get("answerable")]
+    unanswerable_results = [item for item in case_results if not item.get("answerable")]
+    citation_accuracies = [float(item["citation_accuracy"]) for item in case_results]
+    faithfulness_scores = [float(item["faithfulness"]) for item in case_results]
+    stages = ("query_rewrite", "embedding", "dense", "bm25", "reranker", "retrieval", "llm_answer", "total")
+    stage_latencies = {
+        stage: [float(item.get("latency_ms", {}).get(stage) or 0) for item in case_results]
+        for stage in stages
+    }
+    return {
+        "dataset_name": dataset.dataset_name,
+        "created_at": _utc_timestamp(),
+        "configuration": _evaluation_configuration(),
+        "latency": {
+            stage: {
+                "average_ms": round(_mean(values), 2),
+                "p50_ms": round(_percentile(values, 0.50), 2),
+                "p95_ms": round(_percentile(values, 0.95), 2),
+            }
+            for stage, values in stage_latencies.items()
+        },
+        "summary": {
+            "total": len(dataset.cases),
+            "retrieval_evaluated": len(retrieval_results),
+            "top_k": top_k,
+            "answer_threshold": answer_threshold,
+            "hit_at_k": _mean([float(item["hit"]) for item in retrieval_results]),
+            "hit_at_1": _mean([float(bool(set(item["expected_documents"]).intersection(item["retrieved_documents"][:1]))) for item in retrieval_results]),
+            "hit_at_3": _mean([float(bool(set(item["expected_documents"]).intersection(item["retrieved_documents"][:3]))) for item in retrieval_results]),
+            "hit_at_4": _mean([float(bool(set(item["expected_documents"]).intersection(item["retrieved_documents"][:4]))) for item in retrieval_results]),
+            "hit_at_5": _mean([float(bool(set(item["expected_documents"]).intersection(item["retrieved_documents"][:5]))) for item in retrieval_results]),
+            "recall_at_k": _mean([float(item["recall"]) for item in retrieval_results]),
+            "mrr": _mean([float(item["reciprocal_rank"]) for item in retrieval_results]),
+            "ndcg_at_k": _mean([float(item["ndcg_at_k"]) for item in retrieval_results]),
+            "answer_accuracy": _mean([float(bool(item["answer_correct"])) for item in answer_results]),
+            "citation_accuracy": _mean(citation_accuracies),
+            "context_precision": _mean(citation_accuracies),
+            "faithfulness": _mean(faithfulness_scores),
+            "hallucination_rate": _mean([1.0 - score for score in faithfulness_scores]),
+            "faithfulness_method": "BGE-M3 cosine(answer, context); grounded rejection=1.0",
+            "unanswerable_rejection_rate": _mean([float(bool(item["rejected"])) for item in unanswerable_results]),
+        },
+        "cases": case_results,
+    }
+
+
 @router.post("/evaluate")
 async def evaluate_rag(
+    dataset: RagEvaluationDataset,
+    user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    dataset_hash = _dataset_hash(dataset)
+    with _rag_evaluation_lock:
+        if dataset_hash in _running_rag_evaluations:
+            raise HTTPException(status_code=409, detail="The same evaluation dataset is already running.")
+        _running_rag_evaluations.add(dataset_hash)
+
+    started_at = time.time()
+    checkpoint = _load_checkpoint(dataset)
+    processed_ids = _processed_question_ids(checkpoint)
+    checkpoint.update(status="running", configuration=_evaluation_configuration())
+    _save_checkpoint(checkpoint)
+    with _rag_evaluation_lock:
+        _rag_evaluation_states[user.email] = {
+            "status": "running", "current": len(processed_ids), "total": len(dataset.cases),
+            "question_id": None, "started_at": started_at, "dataset_hash": dataset_hash,
+        }
+
+    try:
+        filename_to_id, title_to_id = _catalog_maps()
+        completed_ids = set(checkpoint.get("completed_question_ids") or [])
+        for case in dataset.cases:
+            if case.question_id in completed_ids:
+                continue
+            with _rag_evaluation_lock:
+                _rag_evaluation_states[user.email].update(question_id=case.question_id)
+
+            case_result: dict[str, Any] | None = None
+            last_error: BaseException | None = None
+            retries_used = 0
+            for attempt in range(len(_RETRY_DELAYS_SECONDS) + 1):
+                try:
+                    case_result = await _evaluate_rag_case(case, user, filename_to_id, title_to_id)
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if not _is_transient_evaluation_error(exc) or attempt >= len(_RETRY_DELAYS_SECONDS):
+                        break
+                    retries_used += 1
+                    checkpoint.setdefault("retry_counts", {})[case.question_id] = retries_used
+                    _save_checkpoint(checkpoint)
+                    await asyncio.sleep(_RETRY_DELAYS_SECONDS[attempt])
+
+            checkpoint.setdefault("retry_counts", {})[case.question_id] = retries_used
+            if case_result is not None:
+                checkpoint.setdefault("results", {})[case.question_id] = case_result
+                checkpoint.setdefault("errors", {}).pop(case.question_id, None)
+                checkpoint.setdefault("completed_question_ids", []).append(case.question_id)
+                completed_ids.add(case.question_id)
+            else:
+                checkpoint.setdefault("results", {}).pop(case.question_id, None)
+                checkpoint.setdefault("errors", {})[case.question_id] = {
+                    "question_id": case.question_id,
+                    "status": "error",
+                    "retry_count": retries_used,
+                    "error_type": type(last_error).__name__ if last_error else "UnknownError",
+                    "message": str(last_error) if last_error else "Unknown evaluation error",
+                }
+            processed_ids.add(case.question_id)
+            checkpoint["status"] = "running"
+            _save_checkpoint(checkpoint)
+            with _rag_evaluation_lock:
+                _rag_evaluation_states[user.email].update(
+                    current=len(processed_ids), completed_elapsed_seconds=time.time() - started_at,
+                )
+
+        case_results = [
+            checkpoint["results"][case.question_id]
+            for case in dataset.cases
+            if case.question_id in checkpoint.get("results", {})
+        ]
+        result = _build_evaluation_result(dataset, case_results)
+        _latest_evaluations[user.email] = result
+        checkpoint.update(status="completed", result=result)
+        _save_checkpoint(checkpoint)
+        with _rag_evaluation_lock:
+            _rag_evaluation_states[user.email].update(
+                status="completed", current=len(processed_ids), question_id=None,
+                finished_at=time.time(), error_count=len(checkpoint.get("errors") or {}),
+            )
+        return result
+    except Exception:
+        checkpoint["status"] = "interrupted"
+        _save_checkpoint(checkpoint)
+        with _rag_evaluation_lock:
+            _rag_evaluation_states[user.email].update(
+                status="error", question_id=None, finished_at=time.time(),
+            )
+        raise
+    finally:
+        with _rag_evaluation_lock:
+            _running_rag_evaluations.discard(dataset_hash)
+
+
+@router.post("/evaluate/checkpoint-status")
+def rag_evaluation_checkpoint_status(
+    dataset: RagEvaluationDataset,
+    _user: User = Depends(require_developer),
+) -> dict[str, Any]:
+    checkpoint = _load_checkpoint(dataset)
+    processed = len(_processed_question_ids(checkpoint))
+    total = len(dataset.cases)
+    return {
+        "status": "running" if checkpoint["dataset_hash"] in _running_rag_evaluations else checkpoint.get("status", "ready"),
+        "current": processed,
+        "total": total,
+        "question_id": None,
+        "dataset_hash": checkpoint["dataset_hash"],
+        "completed_count": len(checkpoint.get("completed_question_ids") or []),
+        "error_count": len(checkpoint.get("errors") or {}),
+        "progress_percent": round(processed / total * 100, 1) if total else 0.0,
+        "elapsed_seconds": 0,
+        "estimated_remaining_seconds": None,
+    }
+
+
+async def _evaluate_rag_without_checkpoint(
     dataset: RagEvaluationDataset,
     user: User = Depends(require_developer),
 ) -> dict[str, Any]:

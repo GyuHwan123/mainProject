@@ -20,6 +20,9 @@ __pycache__/
 venv/
 .venv/
 .paddlex/
+# Local RAG evaluation checkpoints
+backend/data/rag-evaluations/
+data/rag-evaluations/
 # Local LLM model files
 models/llama3b-receipt-v3-real-final/venv/
 models/llama3b-receipt-v3-real-final/merged/

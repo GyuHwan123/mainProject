@@ -93,3 +93,20 @@ class BackendAuthRouteTests(TestCase):
             response = auth.exchange_oauth_session(OAuthExchangeRequest(provider="supabase", token="social-token"))
         self.assertEqual(response.user_email, "social@example.com")
         upsert_user.assert_called_once()
+
+    def test_google_social_exchange_imports_calendar_without_changing_login(self):
+        record = {
+            "id": "user-3", "name": "Google 사용자", "email": "google@example.com",
+            "password_hash": None, "social_provider": "google", "social_id": "google-id",
+            "role": "USER", "subscription_tier": "PERSONAL", "is_active": True,
+        }
+        identity = {"id": "google-id", "email": "google@example.com", "name": "Google 사용자", "provider": "google"}
+        with patch.object(auth.supabase_service, "get_user_from_social_token", return_value=identity), patch.object(
+            auth.supabase_service, "get_user_by_email", return_value=record
+        ), patch.object(auth.google_calendar_service, "import_primary", return_value=3) as import_primary:
+            response = auth.exchange_oauth_session(OAuthExchangeRequest(
+                provider="supabase", token="social-token", provider_access_token="google-token"
+            ))
+        self.assertEqual(response.calendar_imported, 3)
+        self.assertIsNone(response.calendar_sync_error)
+        import_primary.assert_called_once_with("google@example.com", "google-token")

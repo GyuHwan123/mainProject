@@ -54,9 +54,18 @@ export async function exchangeSocialSession(session) {
   if (!session?.access_token) throw new Error('소셜 로그인 세션을 확인할 수 없습니다.');
   if (!pendingSocialExchange) {
     pendingSocialExchange = apiClient.post('/auth/oauth/exchange', {
-      provider: 'supabase', token: session.access_token,
+      provider: 'supabase',
+      token: session.access_token,
+      provider_access_token: session.provider_token || null,
     }, { timeout: 45000 }).then((response) => {
       saveAppSession(response.data);
+      if (response.data.calendar_sync_error) {
+        sessionStorage.setItem('docunex_dashboard_notice', response.data.calendar_sync_error);
+      } else if (response.data.calendar_imported > 0) {
+        sessionStorage.setItem('docunex_dashboard_notice', `Google Calendar 일정 ${response.data.calendar_imported}건을 가져왔습니다.`);
+      } else if (session.provider_token) {
+        sessionStorage.setItem('docunex_dashboard_notice', 'Google Calendar가 최신 상태입니다.');
+      }
       return response.data;
     }).finally(() => { pendingSocialExchange = null; });
   }

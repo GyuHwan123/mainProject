@@ -382,3 +382,75 @@
     width: 100%;
   }
 }
+
+.meeting-share-form {
+  padding: 18px 22px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px auto;
+  gap: 10px;
+  align-items: end;
+  border-bottom: 1px solid #e7eef2;
+
+  label { display: grid; gap: 6px; color: #526a7a; font-size: 11px; font-weight: 700; }
+  input, select { min-height: 38px; padding: 0 11px; border: 1px solid #d7e1e7; border-radius: 8px; background: #fff; }
+  .share-error { grid-column: 1/-1; margin: 0; color: #bd4e4e; font-size: 11px; }
+}
+.meeting-share-list {
+  padding: 12px 22px 20px;
+  display: grid;
+  gap: 8px;
+
+  section { display: flex; align-items: center; gap: 8px; padding: 11px; background: #f6f9fb; border-radius: 9px; }
+  section > div { min-width: 0; flex: 1; }
+  strong, p { display: block; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  strong { color: #334f61; font-size: 12px; }
+  p { margin-top: 3px; color: #78909f; font-size: 10px; }
+  button { min-height: 30px; padding: 0 9px; display: inline-flex; align-items: center; gap: 4px; border: 0; border-radius: 7px; color: #246f9e; background: #e6f2f8; cursor: pointer; }
+  .share-remove { color: #b65050; background: #fff0f0; }
+}
+.invitation-button { color: #fff !important; background: #d67a35 !important; }
+.sharing-section-title {
+  padding: 18px 22px 0;
+  display: grid;
+  gap: 3px;
+  border-top: 1px solid #e7eef2;
+
+  strong { color: #334f61; font-size: 13px; }
+  span { color: #78909f; font-size: 10px; }
+}
+
+.participant-picker {
+  position: relative;
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 7px !important;
+
+  > small { color: #78909f; font-size: 10px; }
+}
+.participant-results {
+  max-height: 150px;
+  overflow-y: auto;
+  display: grid;
+  padding: 5px;
+  border: 1px solid #dbe5ea;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(35, 69, 89, 0.12);
+
+  button { padding: 8px; display: flex; justify-content: space-between; gap: 12px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; text-align: left; }
+  button:hover { background: #edf6fa; }
+  strong { color: #276f99; }
+  span { color: #7a8f9d; font-size: 10px; }
+}
+.participant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  button { min-height: 28px; padding: 0 9px; display: inline-flex; align-items: center; gap: 5px; color: #226e9d; background: #e7f3f9; border: 0; border-radius: 14px; cursor: pointer; }
+}
+
+@media (max-width: 700px) {
+  .meeting-share-form { grid-template-columns: 1fr; }
+  .meeting-share-form .share-error { grid-column: 1; }
+}

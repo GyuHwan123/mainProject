@@ -5,6 +5,7 @@ from app.core.security import create_access_token, decode_access_token, get_pass
 from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResponse, OAuthExchangeRequest, SignupRequest
 from app.services.supabase_service import supabase_service
+from app.services.google_calendar_service import google_calendar_service
 
 router = APIRouter()
 security = HTTPBearer()
@@ -88,9 +89,19 @@ def exchange_oauth_session(payload: OAuthExchangeRequest) -> LoginResponse:
         ))
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 사용자입니다.")
+    calendar_imported = 0
+    calendar_sync_error = None
+    if identity.get("provider") == "google" and payload.provider_access_token:
+        try:
+            calendar_imported = google_calendar_service.import_primary(email, payload.provider_access_token)
+        except HTTPException as exc:
+            calendar_sync_error = str(exc.detail)
+        except Exception:
+            calendar_sync_error = "Google Calendar 동기화 중 오류가 발생했습니다."
     return LoginResponse(
         access_token=create_access_token(subject=user.email), user_email=user.email,
         user_name=user.name, user_role=user.role, user_subscription_tier=user.subscription_tier,
+        calendar_imported=calendar_imported, calendar_sync_error=calendar_sync_error,
     )
 
 

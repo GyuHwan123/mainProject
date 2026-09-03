@@ -1,0 +1,25 @@
+services:
+  company-rag-worker:
+    build:
+      context: ./models/bge-m3/worker
+      dockerfile: Dockerfile
+    image: ocr-web-app-company-rag-worker:latest
+    container_name: company-rag-worker
+    working_dir: /worker
+    command: ["sleep", "infinity"]
+    environment:
+      EMBEDDING_MODEL: ${COMPANY_RAG_EMBEDDING_MODEL:-BAAI/bge-m3}
+      HF_HOME: /cache/huggingface
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+    volumes:
+      - ./models/bge-m3/worker:/worker:ro
+      - ./models/bge-m3/data/company_documents/processed/company_chunks.pkl:/input/company_chunks.pkl:ro
+      - ./models/bge-m3/data/company_documents/processed/company_ingest_manifest.json:/input/company_ingest_manifest.json:ro
+      - ./models/bge-m3/data/company_documents/embedding_variants:/output
+      - ./models/bge-m3/model_checkpoints:/models:ro
+      - company_rag_huggingface_cache:/cache/huggingface
+    restart: unless-stopped
+
+volumes:
+  company_rag_huggingface_cache:

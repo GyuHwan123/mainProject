@@ -1,0 +1,18 @@
+{
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_dimension": 1024,
+  "normalize_embeddings": true,
+  "document_count": 18,
+  "chunk_count": 37,
+  "embedding_shape": [
+    37,
+    1024
+  ],
+  "table_row_count": 107,
+  "table_chunk_count": 26,
+  "table_samples": [
+    "[표 행] 구분: 시행일 | 내용: 2026-07-01",
+    "[표 행] 구분: 주관부서 | 내용: 인사팀",
+    "[표 행] 구분: 보안등급 | 내용: 사내공개"
+  ]
+}

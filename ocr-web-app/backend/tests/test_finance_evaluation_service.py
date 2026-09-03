@@ -44,6 +44,7 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             "카테고리": "취미/쇼핑",
             "결제방식": "현금",
             "카드번호": None,
+            "할인액": 300,
         })
 
         self.assertEqual(truth["merchant"], "(주)바늘이야기-팝업스토어")
@@ -52,12 +53,38 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(truth["payment_method"], "현금")
         self.assertEqual(truth["total_quantity"], 7)
         self.assertEqual(truth["expense_category"], "취미/선물")
-        self.assertIsNone(truth["discount_amount"])
+        self.assertEqual(truth["discount_amount"], 300)
         self.assertIsNone(truth["card_number"])
         self.assertEqual(truth["items"][1], {
             "name": "알파카 실", "unit_price": 12600, "quantity": 6, "total_amount": 75600,
         })
         self.assertNotIn("document_type", truth)
+
+    def test_does_not_create_optional_truth_fields_that_are_absent(self):
+        truth = normalize_ground_truth({
+            "가게명": "테스트 상점",
+            "총 결제액": 10000,
+        })
+
+        self.assertNotIn("supply_amount", truth)
+        self.assertNotIn("tax_amount", truth)
+        self.assertNotIn("discount_amount", truth)
+        self.assertNotIn("card_number", truth)
+
+        score = score_fields(
+            {
+                "merchant": "테스트 상점",
+                "supply_amount": 9000,
+                "tax_amount": 1000,
+                "discount_amount": 300,
+                "total_amount": 10000,
+            },
+            truth,
+        )
+        self.assertEqual(score["evaluated_fields"], 2)
+        self.assertNotIn("supply_amount", score["fields"])
+        self.assertNotIn("tax_amount", score["fields"])
+        self.assertNotIn("discount_amount", score["fields"])
 
     def test_scores_model_schema_against_normalized_korean_truth(self):
         truth = normalize_ground_truth({
@@ -78,8 +105,8 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
             "items": [{"name": "상품", "unit_price": 6000.0, "quantity": 1.0, "total_amount": 6000}],
         }, truth)
 
-        self.assertEqual(score["evaluated_fields"], 11)
-        self.assertEqual(score["correct_fields"], 11)
+        self.assertEqual(score["evaluated_fields"], 10)
+        self.assertEqual(score["correct_fields"], 10)
         self.assertNotIn("document_type", score["fields"])
         self.assertIn("expense_category", score["fields"])
 

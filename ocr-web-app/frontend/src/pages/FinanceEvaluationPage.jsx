@@ -412,7 +412,7 @@ export function truthOf(row) {
   })) : [];
   const category = source['카테고리'] ?? source['구매물품']?.find((item) => item?.['카테고리'])?.['카테고리'];
   const totalQuantity = source['총 물품 수량'] ?? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
-  return {
+  const truth = {
     merchant: source['가게명'],
     transaction_date: String(source['구매일자'] || '').slice(0, 10) || null,
     expense_category: category,
@@ -421,6 +421,19 @@ export function truthOf(row) {
     total_quantity: totalQuantity,
     items,
   };
+
+  [
+    ['공급가액', 'supply_amount'],
+    ['부가세', 'tax_amount'],
+    ['할인액', 'discount_amount'],
+    ['카드번호', 'card_number'],
+  ].forEach(([sourceKey, targetKey]) => {
+    if (Object.prototype.hasOwnProperty.call(source, sourceKey)) {
+      truth[targetKey] = source[sourceKey];
+    }
+  });
+
+  return truth;
 }
 
 function nameOf(row) {

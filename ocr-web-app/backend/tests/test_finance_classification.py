@@ -74,6 +74,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         call_options = generator.await_args.kwargs
         self.assertEqual(call_options["keep_alive"], "0s")
         self.assertEqual(call_options["num_ctx"], 4096)
+        self.assertEqual(call_options["request_timeout_seconds"], 600)
         self.assertEqual(result["llm_trace"]["call_count"], 1)
         self.assertEqual(result["llm_trace"]["call_status"], "success")
         self.assertEqual(result["automation_validation"]["decision"], "PASS")

@@ -130,11 +130,6 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
     if "expense_category" in normalized:
         normalized["expense_category"] = _normalize_expense_category(normalized["expense_category"])
 
-    # 할인액은 선택 필드다. 정답에서 생략된 경우 모델도 값을 만들지
-    # 않았는지 평가할 수 있도록 명시적인 null로 정규화한다.
-    if "discount_amount" not in normalized:
-        normalized["discount_amount"] = None
-
     raw_date = truth.get("transaction_date", truth.get("구매일자"))
     if raw_date is not None:
         normalized["transaction_date"] = normalize_date(raw_date)

@@ -16,6 +16,7 @@ from app.constants.finance_taxonomy import (
     CATEGORY_TO_DOCUMENT_TYPE,
     validate_classification,
 )
+from app.core.config import settings
 from app.models.finance_receipt import FinanceClassifyRequest, FinanceExportRequest, FinanceRecord, FinanceRecordUpdate
 from app.models.user import User
 from app.services.finance_receipt_identity import legacy_receipt_key, receipt_fingerprint, receipt_hints, receipt_identity_key
@@ -44,7 +45,7 @@ _receipt_identity_key = receipt_identity_key
 _legacy_receipt_key = legacy_receipt_key
 
 
-RECEIPT_CLASSIFICATION_BUDGET_SECONDS = 300
+RECEIPT_CLASSIFICATION_BUDGET_SECONDS = settings.RECEIPTS_CLASSIFICATION_BUDGET_SECONDS
 _receipt_classification_lock = asyncio.Lock()
 
 

@@ -780,7 +780,12 @@ function ChatPageContent() {
       });
       if (Number(parsed.question_count) !== parsed.cases.length) throw new Error('question_count와 cases 개수가 일치하지 않습니다.');
       setEvaluationDataset(parsed); setEvaluationStatus('대기');
-      setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
+      try {
+        const { data } = await apiClient.post('/rag/evaluate/checkpoint-status', parsed);
+        setEvaluationProgress(data);
+      } catch {
+        setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
+      }
     } catch (error) {
       setEvaluationDataset(null); setEvaluationStatus('대기');
       setEvaluationError(error.message || '정답 JSON을 읽을 수 없습니다.');
@@ -793,7 +798,9 @@ function ChatPageContent() {
     setEvaluationRunning(true);
     setEvaluationError(''); setEvaluationResult(null);
     setEvaluationStatus('평가 중...');
-    setEvaluationProgress({ status: 'running', current: 0, total: evaluationDataset.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
+    setEvaluationProgress((progress) => ({
+      ...progress, status: 'running', total: evaluationDataset.cases.length, question_id: null,
+    }));
     try {
       const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 36000000 });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));

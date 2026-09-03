@@ -60,6 +60,9 @@ services:
       SUPABASE_USERS_TABLE: ${SUPABASE_USERS_TABLE:-users}
       SUPABASE_OCR_DOCUMENTS_TABLE: ${SUPABASE_OCR_DOCUMENTS_TABLE:-ocr_documents}
       SUPABASE_DOCUMENTS_BUCKET: ${SUPABASE_DOCUMENTS_BUCKET:-documents}
+      RAG_EVALUATION_CHECKPOINT_DIR: /app/data/rag-evaluations
+    volumes:
+      - backend_data:/app/data
     depends_on:
       ollama:
         condition: service_healthy
@@ -119,6 +122,7 @@ services:
 
 volumes:
   ollama_data:
+  backend_data:
 
 networks:
   ocr-network:

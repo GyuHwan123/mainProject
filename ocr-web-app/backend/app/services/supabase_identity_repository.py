@@ -71,9 +71,7 @@ class IdentityMixin:
                 f"{self.url}/rest/v1/{self.users_table}",
                 params={"on_conflict": "email"},
                 headers={
-                    "Authorization": f"Bearer {self.service_role_key}",
-                    "apikey": self.service_role_key,
-                    "Content-Type": "application/json",
+                    **self._service_headers(),
                     "Prefer": "resolution=merge-duplicates,return=representation",
                 },
                 json={
@@ -112,49 +110,29 @@ class IdentityMixin:
             raise HTTPException(status_code=502, detail="Supabase 사용자 저장 결과를 확인할 수 없습니다.")
         return user
 
-    def get_user_from_token(self, access_token: str) -> dict[str, Any]:
+    def get_user_from_social_token(self, access_token: str) -> dict[str, Any]:
+        """Validate a Supabase-brokered social token and normalize its identity."""
         if not self.url or not self.anon_key:
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="Supabase 환경 변수가 아직 설정되지 않았습니다. SUPABASE_URL, SUPABASE_ANON_KEY를 입력해주세요.",
-            )
-
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "apikey": self.anon_key,
-        }
-
+            raise HTTPException(status_code=503, detail="소셜 로그인 서버 설정이 필요합니다.")
         try:
             response = _legacy_httpx().get(
                 f"{self.url}/auth/v1/user",
-                headers=headers,
+                headers={"Authorization": f"Bearer {access_token}", "apikey": self.anon_key},
                 timeout=15,
             )
         except _legacy_httpx().RequestError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Supabase 인증 서버에 연결할 수 없습니다.",
-            ) from exc
-
+            raise HTTPException(status_code=502, detail="소셜 인증 서버에 연결할 수 없습니다.") from exc
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Supabase 인증 토큰이 유효하지 않습니다.",
-            )
+            raise HTTPException(status_code=401, detail="소셜 로그인 토큰이 유효하지 않습니다.")
 
         data = response.json()
         metadata = data.get("user_metadata") or {}
-        provider = data.get("app_metadata", {}).get("provider") or "supabase"
-        # Supabase Custom OAuth can retain a verified provider email in user
-        # metadata while leaving auth.users.email empty for the new identity.
-        email = data.get("email") or (
-            metadata.get("email") if provider == "custom:naver" else None
-        )
+        provider = data.get("app_metadata", {}).get("provider") or "social"
+        email = data.get("email") or (metadata.get("email") if provider == "custom:naver" else None)
         return {
             "id": data.get("id"),
             "email": email,
             "name": metadata.get("full_name") or metadata.get("name") or metadata.get("nickname") or email,
             "provider": provider.removeprefix("custom:"),
         }
-
 

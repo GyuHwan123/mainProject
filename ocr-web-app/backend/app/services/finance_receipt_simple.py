@@ -22,14 +22,15 @@ from app.core.config import settings
 from app.services.finance_normalization import normalize_date
 
 
-FINANCE_PROMPT_VERSION = "receipt-simple-v1-one-call"
+FINANCE_PROMPT_VERSION = "receipt-simple-v1.1-one-call-amount-evidence"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
 RECEIPT_LLM_TIMEOUT_SECONDS = settings.RECEIPTS_LLM_TIMEOUT_SECONDS
-RECEIPT_LLM_NUM_PREDICT = 600
+RECEIPT_LLM_NUM_PREDICT = 800
 RECEIPT_LLM_KEEP_ALIVE = settings.RECEIPTS_LLM_KEEP_ALIVE
 RECEIPT_LLM_NUM_CTX = settings.RECEIPTS_LLM_NUM_CTX
 MAX_OCR_PROMPT_CHARS = 8000
+AMOUNT_ROUNDING_TOLERANCE = 10
 logger = logging.getLogger(__name__)
 
 _MONEY_RE = re.compile(r"(?<!\d)(?:\d{1,3}(?:[,.]\d{3})+|\d{3,8})(?!\d)")
@@ -135,6 +136,8 @@ def _preflight_review_reasons(text: str) -> list[str]:
 
 def _simple_receipt_prompt(text: str, filename: str) -> tuple[str, dict[str, Any]]:
     ocr_text, diagnostics = _bounded_ocr_text(text)
+    amount_evidence = _extract_amount_evidence(text)
+    diagnostics["amount_evidence"] = amount_evidence
     category_lines = "\n".join(f"- {value}" for value in EXPENSE_CATEGORIES)
     prompt = f"""다음 OCR은 한국 영수증입니다. OCR에 실제로 보이는 값만 사용해 JSON 객체 하나로 반환하세요.
 설명, 마크다운, 코드 블록은 출력하지 마세요. 알 수 없는 값은 null, 품목 근거가 없으면 items는 []입니다.
@@ -148,14 +151,24 @@ name, quantity, unit_price, total_amount
 
 규칙:
 1. transaction_date는 YYYY-MM-DD입니다.
-2. 금액과 수량은 숫자입니다. 할인·쿠폰·소계·부가세·결제 행을 품목으로 만들지 마세요.
+2. 금액과 수량은 숫자입니다. 할인·쿠폰·소계·부가세·결제 행을 품목으로 만들지 마세요. 단, 쇼핑백·포장비·배달비처럼 실제로 대가를 지불한 유상 거래 행은 품목입니다.
 3. total_amount는 실제 최종 결제·승인·받을 금액입니다.
-4. 일반적인 상품 행이 없는 택시·승차권·미용·서비스 승인전표는 items=[]를 허용합니다.
-5. expense_category는 아래 목록에서만 고릅니다.
+4. supply_amount는 과세상품의 세전 금액과 면세상품금액을 합한 전체 공급액입니다.
+5. 면세상품만 있으면 supply_amount는 면세상품금액이고 tax_amount는 0입니다.
+6. 과세상품과 면세상품이 함께 있으면 supply_amount는 과세상품가액과 면세상품가액의 합입니다. 예: 과세상품가액 38,000, 면세상품가액 100, 부가세 3,800이면 supply_amount=38,100입니다.
+7. 과세액·과세물품가액은 세전 공급액이며 부가세액이 아닙니다. 부가세·부가세액·VAT만 tax_amount입니다.
+8. '부가세포함 (2,109)'처럼 결제금액 아래 괄호로 표시된 값은 tax_amount입니다.
+9. 아래 금액 근거는 OCR 라벨과 숫자의 연결이 명확한 값입니다. null인 값은 추정하지 마세요.
+10. 일반적인 상품 행이 없는 택시·승차권·미용·서비스 승인전표는 items=[]를 허용합니다.
+11. 공급가액과 부가세가 할인 전 세금 요약으로 명시된 경우 그 OCR 값을 유지하세요. 공급가액+부가세가 최종 결제액과 다르다는 이유만으로 값을 다시 계산하지 마세요.
+12. expense_category는 아래 목록에서만 고릅니다.
 {category_lines}
 
 [파일명]
 {filename}
+
+[규칙 기반 금액 근거]
+{json.dumps(amount_evidence, ensure_ascii=False)}
 
 [OCR 행]
 {ocr_text}
@@ -221,6 +234,121 @@ def _amount_is_grounded(value: Any, text: str) -> bool:
     return any(abs(float(number) - float(candidate)) < .01 for candidate in observed)
 
 
+def _labeled_amount(text: str, label_pattern: str) -> int | None:
+    """Return an amount only when its label and value share one OCR line."""
+    pattern = re.compile(
+        rf"{label_pattern}[()\[\]:：]*(-?\d{{1,3}}(?:[,.]\d{{3}})+|-?\d{{1,8}})(?:원)?(?![\d*xX])",
+        re.IGNORECASE,
+    )
+    lines = [re.sub(r"\s+", "", raw_line) for raw_line in str(text or "").splitlines()]
+    for compact in lines:
+        match = pattern.search(compact)
+        if match:
+            return _receipt_number(match.group(1)) * (-1 if match.group(1).startswith("-") else 1)
+    return None
+
+
+def _extract_amount_evidence(text: str) -> dict[str, Any]:
+    compact_text = "\n".join(re.sub(r"\s+", "", line) for line in str(text or "").splitlines())
+    taxable_pattern = r"(?<!부가세)과세(?:물품|상품)?(?:가액|금액|합계|매출|액)"
+    exempt_pattern = r"면세(?:물품|상품)?(?:가액|금액|합계|매출|액)"
+    tax_pattern = r"(?:부가가치세(?!법)|부가세(?:액|포함)?(?!과세|면세)|(?<!과)세액|VAT)"
+    tax_amount = _labeled_amount(text, tax_pattern)
+    total_amount = _labeled_amount(text, r"(?:(?:총)?결제(?:금액|요금|액)|승인금액|받을금액|구매금액)")
+    if total_amount is None:
+        tax_included_pair = re.search(
+            r"\[금액\][:：]?(\d{1,3}(?:[,.]\d{3})+|\d{1,8})(?:원)?.*?"
+            r"(?:부가세(?:액|포함)?|VAT)[()\[\]:：]*(\d{1,3}(?:[,.]\d{3})+|\d{1,8})(?:원)?",
+            compact_text,
+            re.IGNORECASE,
+        )
+        if tax_included_pair:
+            total_amount = _receipt_number(tax_included_pair.group(1))
+            tax_amount = _receipt_number(tax_included_pair.group(2))
+    return {
+        "supply_amount": _labeled_amount(text, r"공급(?:가액|액)"),
+        "taxable_supply_amount": _labeled_amount(text, taxable_pattern),
+        "tax_exempt_amount": _labeled_amount(text, exempt_pattern),
+        "tax_amount": tax_amount,
+        "total_amount": total_amount,
+        "discount_amount": _labeled_amount(text, r"(?:총할인(?:금액|액)?|할인금액)"),
+        "rounding_adjustment": _labeled_amount(text, r"(?:절사금액|절삭금액|반올림)"),
+        "labels": {
+            "supply": bool(re.search(r"공급(?:가액|액)", compact_text, re.IGNORECASE)),
+            "taxable_supply": bool(re.search(taxable_pattern, compact_text, re.IGNORECASE)),
+            "tax_exempt": bool(re.search(exempt_pattern, compact_text, re.IGNORECASE)),
+            "tax": bool(re.search(tax_pattern, compact_text, re.IGNORECASE)),
+            "total": bool(re.search(r"(?:(?:총)?결제(?:금액|요금|액)|승인금액|받을금액|구매금액)", compact_text, re.IGNORECASE)),
+        },
+    }
+
+
+def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
+    """Prefer explicit receipt evidence and use arithmetic only when it is unambiguous."""
+    evidence = _extract_amount_evidence(text)
+    explicit_supply = evidence["supply_amount"]
+    taxable_supply = evidence["taxable_supply_amount"]
+    exempt_supply = evidence["tax_exempt_amount"]
+    explicit_tax = evidence["tax_amount"]
+    explicit_total = evidence["total_amount"]
+    rounding = evidence["rounding_adjustment"]
+    labels = evidence["labels"]
+
+    trace: dict[str, Any] = {
+        "policy": "explicit_ocr_then_components_then_guarded_arithmetic",
+        "explicit": evidence,
+        "changes": [],
+    }
+
+    tax_supported = explicit_tax is not None and any(
+        value is not None for value in (explicit_total, explicit_supply, taxable_supply, exempt_supply)
+    )
+    if tax_supported:
+        result["tax_amount"] = explicit_tax
+        trace["changes"].append("tax_from_explicit_ocr")
+    elif explicit_tax is not None:
+        trace["rejected_tax_amount"] = {
+            "value": explicit_tax,
+            "reason": "missing_total_or_supply_cross_check",
+        }
+    if explicit_total is not None:
+        result["total_amount"] = explicit_total
+        trace["changes"].append("total_from_explicit_ocr")
+
+    resolved_supply = explicit_supply
+    supply_source = "explicit_ocr"
+    if resolved_supply is None and taxable_supply is not None and (exempt_supply is not None or not labels["tax_exempt"]):
+        resolved_supply = taxable_supply + (exempt_supply or 0)
+        supply_source = "taxable_plus_exempt_ocr"
+    elif resolved_supply is None and exempt_supply is not None and not labels["taxable_supply"]:
+        resolved_supply = exempt_supply
+        supply_source = "tax_exempt_ocr"
+        if explicit_tax is None:
+            result["tax_amount"] = 0
+            trace["changes"].append("tax_zero_from_exempt_only_ocr")
+
+    if resolved_supply is not None:
+        result["supply_amount"] = resolved_supply
+        trace["changes"].append(f"supply_from_{supply_source}")
+    else:
+        total = _as_number(result.get("total_amount"))
+        tax = _as_number(result.get("tax_amount"))
+        model_supply = _as_number(result.get("supply_amount"))
+        components_incomplete = (
+            (labels["taxable_supply"] and taxable_supply is None)
+            or (labels["tax_exempt"] and exempt_supply is None)
+        )
+        if explicit_total is not None and tax_supported and not components_incomplete:
+            calculated = float(total) - float(tax) - float(rounding or 0)
+            calculated = int(calculated) if calculated.is_integer() else calculated
+            if calculated >= 0 and (model_supply is None or abs(float(model_supply) + float(tax) + float(rounding or 0) - float(total)) > 10):
+                result["supply_amount"] = calculated
+                trace["changes"].append("supply_from_guarded_arithmetic")
+
+    result["amount_resolution"] = trace
+    return trace
+
+
 def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
     reasons: list[str] = []
     required = ("merchant", "transaction_date", "total_amount", "expense_category")
@@ -248,18 +376,50 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
     total = _as_number(result.get("total_amount"))
     if total is not None and not _amount_is_grounded(total, text):
         reasons.append("TOTAL_AMOUNT_NOT_IN_OCR")
-    supply, tax, discount = (
+    supply, tax, raw_discount = (
         _as_number(result.get("supply_amount")),
         _as_number(result.get("tax_amount")),
-        _as_number(result.get("discount_amount")) or 0,
+        _as_number(result.get("discount_amount")),
     )
+    # Receipts and models may represent a discount as either 1,200 or -1,200.
+    # Validation treats both as a 1,200 reduction without rewriting the OCR value.
+    discount = abs(float(raw_discount)) if raw_discount is not None else 0.0
+    evidence = _extract_amount_evidence(text)
+    labels = evidence["labels"]
+    if (labels["supply"] or labels["taxable_supply"] or labels["tax_exempt"]) and supply is None:
+        reasons.append("SUPPLY_AMOUNT_UNRESOLVED")
+    if labels["tax"] and tax is None:
+        reasons.append("TAX_AMOUNT_UNRESOLVED")
+    amount_resolution = result.get("amount_resolution")
+    if isinstance(amount_resolution, dict) and amount_resolution.get("rejected_tax_amount"):
+        reasons.append("TAX_EVIDENCE_UNCORROBORATED")
     if supply is not None and tax is not None and total is not None:
-        if abs(float(supply) + float(tax) - float(discount) - float(total)) > 1:
+        tax_summary = float(supply) + float(tax)
+        direct_delta = abs(tax_summary - float(total))
+        discounted_delta = abs(tax_summary - discount - float(total)) if discount else None
+        if direct_delta <= AMOUNT_ROUNDING_TOLERANCE:
+            amount_relation_basis = "post_discount_tax_summary"
+        elif discounted_delta is not None and discounted_delta <= AMOUNT_ROUNDING_TOLERANCE:
+            amount_relation_basis = "pre_discount_tax_summary"
+        else:
+            amount_relation_basis = "explicit_ocr_mismatch" if (
+                evidence.get("tax_amount") is not None
+                and any(evidence.get(field) is not None for field in (
+                    "supply_amount", "taxable_supply_amount", "tax_exempt_amount"
+                ))
+            ) else "unresolved_mismatch"
             reasons.append("AMOUNT_RELATION_MISMATCH")
+    else:
+        # A missing supply or tax value is valid partial information. There is no
+        # three-way relation to check and the missing side must not be inferred.
+        amount_relation_basis = "not_checkable_partial_amounts"
     item_amounts = [_as_number(item.get("total_amount")) for item in result["items"]]
     if result["items"] and all(value is not None for value in item_amounts) and total is not None:
         item_sum = sum(float(value) for value in item_amounts if value is not None)
-        if abs(item_sum - float(discount) - float(total)) > 1 and abs(item_sum - float(total)) > 1:
+        if (
+            abs(item_sum - discount - float(total)) > AMOUNT_ROUNDING_TOLERANCE
+            and abs(item_sum - float(total)) > AMOUNT_ROUNDING_TOLERANCE
+        ):
             reasons.append("ITEM_SUM_MISMATCH")
     for item in result["items"]:
         quantity = _as_number(item.get("quantity"))
@@ -279,6 +439,7 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
             "json_schema": "PASS",
             "total_grounded": bool(total is not None and _amount_is_grounded(total, text)),
             "amount_relation": "AMOUNT_RELATION_MISMATCH" not in reasons,
+            "amount_relation_basis": amount_relation_basis,
             "item_sum": "ITEM_SUM_MISMATCH" not in reasons,
             "item_arithmetic": "ITEM_ARITHMETIC_MISMATCH" not in reasons,
         },
@@ -322,6 +483,7 @@ async def _classify_receipt_with_model(
     parsed = json.loads(raw)
     if not isinstance(parsed, dict):
         raise ValueError("receipt JSON object expected")
+    _reconcile_amounts(parsed, text)
     parsed["automation_validation"] = _simple_validation(parsed, text)
     parsed["llm_trace"] = {
         "model_name": model_name,
@@ -408,8 +570,8 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "expense_category": category,
         "merchant": merchant,
         "transaction_date": result.get("transaction_date"),
-        "supply_amount": _as_number(result.get("supply_amount")) or 0,
-        "tax_amount": _as_number(result.get("tax_amount")) or 0,
+        "supply_amount": _as_number(result.get("supply_amount")),
+        "tax_amount": _as_number(result.get("tax_amount")),
         "total_amount": _as_number(result.get("total_amount")) or 0,
         "payment_method": payment_method,
         "description": merchant,

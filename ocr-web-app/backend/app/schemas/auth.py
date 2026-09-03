@@ -21,6 +21,6 @@ class LoginResponse(BaseModel):
     user_subscription_tier: str = "PERSONAL"
 
 
-class SocialLoginRequest(BaseModel):
+class OAuthExchangeRequest(BaseModel):
     provider: str
     token: str

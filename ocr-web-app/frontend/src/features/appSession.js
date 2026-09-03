@@ -7,7 +7,7 @@ const ROLE_KEY = 'pic_to_text_role';
 const SUBSCRIPTION_TIER_KEY = 'pic_to_text_subscription_tier';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
-let pendingExchange = null;
+let pendingSocialExchange = null;
 
 export function hasAppSession() {
   return Boolean(localStorage.getItem(TOKEN_KEY));
@@ -50,25 +50,15 @@ export function saveAppUser(user) {
   if (user?.subscription_tier) localStorage.setItem(SUBSCRIPTION_TIER_KEY, user.subscription_tier);
 }
 
-export async function exchangeSupabaseSession(session) {
-  if (!session?.access_token) {
-    throw new Error('Google 로그인 세션을 확인할 수 없습니다.');
+export async function exchangeSocialSession(session) {
+  if (!session?.access_token) throw new Error('소셜 로그인 세션을 확인할 수 없습니다.');
+  if (!pendingSocialExchange) {
+    pendingSocialExchange = apiClient.post('/auth/oauth/exchange', {
+      provider: 'supabase', token: session.access_token,
+    }, { timeout: 45000 }).then((response) => {
+      saveAppSession(response.data);
+      return response.data;
+    }).finally(() => { pendingSocialExchange = null; });
   }
-
-  if (!pendingExchange) {
-    pendingExchange = apiClient
-      .post('/auth/social-login', {
-        provider: 'supabase',
-        token: session.access_token,
-      }, { timeout: 45000 })
-      .then((response) => {
-        saveAppSession(response.data);
-        return response.data;
-      })
-      .finally(() => {
-        pendingExchange = null;
-      });
-  }
-
-  return pendingExchange;
+  return pendingSocialExchange;
 }

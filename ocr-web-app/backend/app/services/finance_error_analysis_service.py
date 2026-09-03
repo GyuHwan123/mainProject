@@ -564,7 +564,7 @@ def analyze_finance_evaluation_failure(
         ))
 
     supply, tax = _number(prediction.get("supply_amount")), _number(prediction.get("tax_amount"))
-    if supply is not None and tax is not None and total is not None and any((supply, tax)) and abs(supply + tax - total) >= 0.01:
+    if supply is not None and tax is not None and total is not None and any((supply, tax)) and abs(supply + tax - total) > 10:
         tags.append(_tag(
             "VALIDATION_ERROR", "SUPPLY_TAX_MISMATCH", confidence=1.0,
             message="공급가액과 부가세의 합이 최종 결제액과 일치하지 않습니다.",

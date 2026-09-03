@@ -20,7 +20,7 @@ const SESSION_KEYS = [
 const PUBLIC_AUTH_PATHS = [
   '/auth/login',
   '/auth/signup',
-  '/auth/social-login',
+  '/auth/oauth/exchange',
 ];
 
 function isPublicAuthRequest(config) {

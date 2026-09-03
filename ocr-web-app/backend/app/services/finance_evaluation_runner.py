@@ -27,15 +27,9 @@ async def evaluate_models(
             system_prediction["discount_amount"] = structured.get("discount_amount")
             system_prediction["card_number"] = structured.get("card_number")
             system_score = score_fields(system_prediction, truth, pure, pages)
-            structured_trace = structured.get("item_extraction_diagnostics") or {}
             pipeline_trace = {
                 "llm": structured.get("llm_trace") or {},
-                "semantic_evidence": structured.get("semantic_evidence") or {},
-                "validator": structured.get("validator_trace") or {},
-                "deterministic_hints": structured.get("deterministic_hints") or {},
-                "item_candidates": structured_trace.get("candidates") or [],
-                "model_items": structured_trace.get("model_items") or [],
-                "resolved_items": structured_trace.get("resolved_items") or [],
+                "validation": structured.get("automation_validation") or {},
             }
             error_analysis = analyze_finance_evaluation_failure(
                 ocr_text=text,
@@ -53,6 +47,14 @@ async def evaluate_models(
                     "error_analysis": error_analysis,
                     "score": system_score,
                     "ocr_impact": estimate_ocr_impact(text, truth, system_score),
+                    "automation": {
+                        **(structured.get("automation_validation") or {}),
+                        "auto_approved": (structured.get("automation_validation") or {}).get("decision") == "PASS",
+                        "auto_approved_correct": bool(
+                            (structured.get("automation_validation") or {}).get("decision") == "PASS"
+                            and system_score.get("complete_match")
+                        ),
+                    },
                     "workbook": verify_workbook(system),
                 },
             })

@@ -24,15 +24,20 @@ FIELD_LABEL_PATTERNS = {
     "total_quantity": re.compile(r"총\s*(?:수량|매수)", re.IGNORECASE),
 }
 CATEGORY_EVIDENCE_PATTERNS = {
-    "취미/쇼핑": re.compile(r"취미|쇼핑|의류|꽃|식물|소품", re.IGNORECASE),
-    "미용": re.compile(r"미용|헤어|네일|뷰티", re.IGNORECASE),
+    "외식/식사": re.compile(r"식대|식사|음식|메뉴|식당|주문|포케|떡볶이|고기|파스타", re.IGNORECASE),
+    "카페/음료": re.compile(r"카페|음료|커피|라떼|아메리카노|스무디|주스|공차|투썸|베이커리", re.IGNORECASE),
+    "식품/장보기": re.compile(r"식품|마트|편의점|슈퍼|장보기|과자|라면|생수|봉투", re.IGNORECASE),
+    "생활용품": re.compile(r"생활|물티슈|세제|주방|욕실|청소|종량제|스펀지", re.IGNORECASE),
+    "의류/패션": re.compile(r"의류|패션|셔츠|가디건|저지|원피스|바지|재킷|신발|가방", re.IGNORECASE),
+    "취미/선물": re.compile(r"취미|선물|꽃|식물|공예|게임|소품", re.IGNORECASE),
+    "미용/뷰티": re.compile(r"미용|헤어|네일|뷰티|화장품|립|스킨|트리트먼트", re.IGNORECASE),
     "도서": re.compile(r"도서|서적|책|문고", re.IGNORECASE),
     "전자제품/문구": re.compile(r"전자|가전|컴퓨터|휴대폰|케이블|문구|사무용품|노트|펜", re.IGNORECASE),
-    "교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임|주유소|유종|휘발유|경유|주유|정비|oil", re.IGNORECASE),
-    "식비": re.compile(r"식대|식사|음식|메뉴|카페|음료|커피|식품|마트|간식|생활|소주|맥주|와인|위스키|주류", re.IGNORECASE),
-    "레저": re.compile(r"레저|여가|스포츠|숙박|호텔|리조트", re.IGNORECASE),
+    "대중교통": re.compile(r"버스|택시|철도|korail|ktx|승차권|운임", re.IGNORECASE),
+    "주유/차량": re.compile(r"주유소|유종|휘발유|경유|주유|정비|oil|lpg", re.IGNORECASE),
     "의료": re.compile(r"병원|의원|약국|의료|진료", re.IGNORECASE),
     "문화": re.compile(r"문화|공연|영화|전시", re.IGNORECASE),
+    "레저/스포츠": re.compile(r"레저|여가|스포츠|골프|숙박|호텔|리조트", re.IGNORECASE),
 }
 OCR_DIGIT_CONFUSIONS = str.maketrans({
     "o": "0", "O": "0",
@@ -312,7 +317,11 @@ def analyze_finance_evaluation_failure(
             "category_counts": dict(category_counts),
         }
 
-    llm_summary = (trace.get("llm") or {}).get("summary_raw") or {}
+    llm_summary = (
+        (trace.get("llm") or {}).get("raw_output")
+        or (trace.get("llm") or {}).get("summary_raw")
+        or {}
+    )
     validator = trace.get("validator") or {}
     validator_input = validator.get("input") or {}
     validator_output = validator.get("output") or {}

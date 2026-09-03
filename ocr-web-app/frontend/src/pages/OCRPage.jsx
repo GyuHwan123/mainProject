@@ -1682,7 +1682,7 @@ export default function OCRPage() {
                     const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
                     return <button type="button" key={item.id} className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
                       {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
-                      <span><strong>{item.merchant || item.source_file_name}</strong><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
+                      <span><strong>{item.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={item.source_file_name || ''}>{item.source_file_name || '원본 파일명 없음'}</small><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
                       <em>{financeMoney(item.total_amount)}</em>
                     </button>;
                   })}

@@ -28,6 +28,18 @@ class Bm25RankingTests(unittest.TestCase):
         self.assertEqual(merged[0]["dense_rank"], 1)
         self.assertEqual(merged[0]["bm25_rank"], 1)
 
+    def test_merges_original_and_rewritten_query_candidates(self):
+        merged = merge_hybrid_candidates(
+            [{"id": "original", "content": "근무시간", "similarity": 0.8}],
+            [],
+            [{"id": "rewritten", "content": "근로시간", "similarity": 0.7}],
+            [{"id": "original", "content": "근무시간", "bm25_score": 2.0}],
+        )
+
+        self.assertEqual({row["id"] for row in merged}, {"original", "rewritten"})
+        original = next(row for row in merged if row["id"] == "original")
+        self.assertEqual(original["retrieval_queries"], ["original", "rewritten"])
+
 
 class HybridSearchFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_dense_and_bm25_candidates_are_both_sent_to_reranker(self):
@@ -38,6 +50,10 @@ class HybridSearchFlowTests(unittest.IsolatedAsyncioTestCase):
             return candidates
 
         with (
+            patch(
+                "app.services.rag_service.rewrite_query", new_callable=AsyncMock,
+                return_value={"query": "숙박비 한도", "status": "unchanged", "latency_ms": 1},
+            ),
             patch(
                 "app.services.rag_service._embed_texts_cached", new_callable=AsyncMock,
                 return_value=([[0.1], [0.1]], {"hits": 0, "misses": 2}),

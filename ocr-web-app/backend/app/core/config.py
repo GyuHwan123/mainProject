@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     RAG_TOP_K: int = 4
     RAG_DENSE_CANDIDATE_COUNT: int = 12
     RAG_BM25_CANDIDATE_COUNT: int = 12
+    RAG_QUERY_REWRITING: bool = False
+    RAG_QUERY_REWRITE_MODEL: str = ""
+    RAG_QUERY_REWRITE_TIMEOUT_SECONDS: float = 45.0
     RAG_ANSWERABILITY_THRESHOLD: float = 0.01
     RAG_CHUNK_TARGET_CHARS: int = 380
     RAG_TEXT_CHUNK_MAX_CHARS: int = 900
@@ -47,10 +50,6 @@ class Settings(BaseSettings):
     SUPABASE_USERS_TABLE: str = "users"
     SUPABASE_OCR_DOCUMENTS_TABLE: str = "ocr_documents"
     SUPABASE_DOCUMENTS_BUCKET: str = "documents"
-    GOOGLE_CLIENT_ID: str = ""
-    APPLE_CLIENT_ID: str = ""
-    KAKAO_CLIENT_ID: str = ""
-
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),
         extra="ignore",

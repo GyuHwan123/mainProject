@@ -1120,6 +1120,29 @@
   display: grid;
   gap: 13px;
 }
+
+.rag-report-tab-bar { margin-bottom: 18px; }
+.rag-ablation-report { display: grid; gap: 16px; }
+.rag-ablation-run-label { margin-right: auto; color: #64748b; font-size: 13px; }
+.rag-ablation-config-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px 20px 22px; }
+.rag-ablation-config-grid > div { padding: 16px; border: 1px solid #e2e8f0; border-radius: 12px; background: #f8fafc; }
+.rag-ablation-config-grid span, .rag-ablation-metrics span { display: block; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.rag-ablation-config-grid strong { display: block; margin-top: 8px; color: #123f68; font-size: 15px; }
+.rag-ablation-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.rag-ablation-metrics article { padding: 20px; }
+.rag-ablation-metrics strong { display: block; margin: 8px 0 4px; color: #154d7c; font-size: 28px; }
+.rag-ablation-metrics small { color: #94a3b8; }
+.rag-ablation-latency-table, .rag-ablation-cases > div { padding: 0 20px 20px; }
+.rag-ablation-latency-table > div, .rag-ablation-cases > div > div { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(90px, 1fr)); gap: 12px; align-items: center; min-height: 46px; border-bottom: 1px solid #edf2f7; }
+.rag-ablation-latency-table .head, .rag-ablation-cases .head { color: #64748b; font-size: 12px; font-weight: 800; text-transform: uppercase; }
+.rag-ablation-cases > div > div { grid-template-columns: minmax(120px, 1.4fr) repeat(4, minmax(90px, 1fr)); }
+.rag-ablation-cases strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #174c79; }
+@media (max-width: 900px) {
+  .rag-ablation-config-grid { grid-template-columns: 1fr; }
+  .rag-ablation-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rag-ablation-latency-table, .rag-ablation-cases > div { overflow-x: auto; }
+  .rag-ablation-latency-table > div, .rag-ablation-cases > div > div { min-width: 650px; }
+}
 .rag-report-controls {
   min-height: 35px;
   display: flex;
@@ -2364,7 +2387,8 @@
 
 @media print {
   @page {
-    margin: 9mm;
+    size: A4 landscape;
+    margin: 7mm;
   }
   * {
     -webkit-print-color-adjust: exact !important;
@@ -2387,6 +2411,16 @@
     width: 100%;
     margin: 0 !important;
     padding: 0 !important;
+    opacity: 1 !important;
+    transform: none !important;
+    animation: none !important;
+  }
+  .developer-report-shell { display: block !important; }
+  .rag-umap-visual img {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 78mm !important;
+    object-fit: contain !important;
   }
   .report-header {
     min-height: 54px;

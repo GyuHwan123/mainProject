@@ -166,7 +166,7 @@ ocr-web-app/
 - JWT 토큰 발급
 - 보호 라우트
 - 로컬 저장 기반 로그인 유지
-- Supabase OAuth 연동 준비
+- 백엔드 자체 이메일/비밀번호 인증
 
 ### 사용자 관리
 - `users` 테이블 저장
@@ -197,10 +197,16 @@ ocr-web-app/
 - 비밀번호 길이 검증
 
 ### 소셜 로그인 구조
-- Frontend가 Supabase OAuth 시작
-- Supabase 세션 수신
-- `provider: "supabase"` 로 서버 `/auth/social-login` 호출
-- 서버는 Supabase 토큰 검증 후 내부 JWT 발급
+- Frontend가 Supabase OAuth를 소셜 로그인 중개자로 사용
+- Backend `/auth/oauth/exchange`가 소셜 토큰을 검증하고 앱 JWT 발급
+- 이후 모든 업무 API는 Backend JWT만 사용
+
+### Google Calendar 가져오기
+- Google 로그인에서는 `calendar.readonly` 범위만 요청합니다.
+- 로그인 콜백 또는 대시보드의 `Google Calendar 가져오기` 버튼에서 일정을 Backend로 전달합니다.
+- Backend는 최근 30일부터 향후 1년까지의 기본 캘린더 일정을 `schedules`에 저장하고 동일 제목·시간 일정은 중복 저장하지 않습니다.
+- Google Cloud Console에서 Calendar API를 활성화하고 OAuth 동의 화면의 Data Access에 `https://www.googleapis.com/auth/calendar.readonly` 범위를 추가해야 합니다.
+- OAuth 앱이 Testing 상태라면 사용할 Google 계정을 Test users에 등록해야 합니다.
 
 ## 5. 환경 변수
 
@@ -213,6 +219,7 @@ SECRET_KEY=change-this-secret-key
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+VITE_API_BASE_URL=http://localhost:8000/api/v1
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 RAG_EMBEDDING_MODEL=BAAI/bge-m3
@@ -260,7 +267,7 @@ http://localhost:3000
 POST /api/v1/auth/signup
 POST /api/v1/auth/login
 GET  /api/v1/auth/me
-POST /api/v1/auth/social-login
+POST /api/v1/auth/oauth/exchange
 ```
 
 ## 8. DB 구조
@@ -281,7 +288,8 @@ POST /api/v1/auth/social-login
 ## 9. 보안 규칙
 
 ### 브라우저에 공개 가능
-- `anon key`
+- `VITE_API_BASE_URL`
+- `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 
 ### 서버에서만 보관
@@ -296,7 +304,7 @@ POST /api/v1/auth/social-login
 - ✅ 로그인/회원가입 UI 구성
 - ✅ DB 기반 사용자 저장
 - ✅ JWT 발급 및 보호 라우트
-- ✅ Supabase OAuth 준비 구조
+- ✅ 백엔드 자체 이메일/비밀번호 인증과 Supabase 중개 소셜 로그인
 - ✅ 로컬 개발용 실행 검증
 - ✅ 대시보드 기반 화면 구성
 - ⏳ PaddleOCR 실 OCR 엔진 연동

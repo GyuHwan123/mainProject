@@ -7,6 +7,7 @@ import DashboardCalendar from '../components/dashboard/DashboardCalendar';
 import RecentMeetings from '../components/dashboard/RecentMeetings';
 import TaskList from '../components/dashboard/TaskList';
 import {createDashboardEvent, createDashboardMeeting, createDashboardTask, deleteDashboardEvent, deleteDashboardMeeting, deleteDashboardTask, getDashboardData, sendAgentMessage, updateDashboardEvent, updateDashboardMeeting, updateDashboardTask,} from '../features/dashboardService';
+import { supabase } from '../lib/supabase';
 import '../style/DashboardPage.scss';
 import '../style/DashboardInteractions.scss';
 import '../style/DashboardAgentActions.scss';
@@ -22,7 +23,11 @@ export default function DashboardPage() {
   const [events, setEvents] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [meetings, setMeetings] = useState([]);
-  const [apiNotice, setApiNotice] = useState('');
+  const [apiNotice, setApiNotice] = useState(() => {
+    const notice = sessionStorage.getItem('docunex_dashboard_notice') || '';
+    sessionStorage.removeItem('docunex_dashboard_notice');
+    return notice;
+  });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,7 +39,6 @@ export default function DashboardPage() {
           setEvents(data.events);
           setTasks(data.tasks);
           setMeetings(data.meetings);
-          setApiNotice('');
         }
       })
       .catch(() => {
@@ -74,6 +78,27 @@ export default function DashboardPage() {
   const removeEvent = async (id) => {
     await deleteDashboardEvent(id);
     setEvents((list) => list.filter((item) => item.id !== id));
+  };
+
+  const connectGoogleCalendar = async () => {
+    if (!supabase) return setApiNotice('Google Calendar 연결 환경 변수를 확인해 주세요.');
+    const shouldContinue = window.confirm(
+      'Google Calendar를 가져오려면 Google 계정 인증과 캘린더 읽기 권한이 필요합니다.\n\n현재 앱이 테스트 상태인 경우 관리자가 Google Cloud의 테스트 사용자로 승인한 계정만 연결할 수 있습니다. 승인되지 않은 계정은 Google에서 접근이 차단될 수 있습니다.\n\nGoogle 인증을 계속하시겠습니까?',
+    );
+    if (!shouldContinue) return;
+    sessionStorage.setItem('docunex_google_calendar_connect', '1');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: 'https://www.googleapis.com/auth/calendar.readonly',
+        queryParams: { prompt: 'consent select_account', access_type: 'offline' },
+      },
+    });
+    if (error) {
+      sessionStorage.removeItem('docunex_google_calendar_connect');
+      setApiNotice(error.message || 'Google Calendar 연결을 시작하지 못했습니다.');
+    }
   };
 
   const addTask = async (values) => {
@@ -163,6 +188,7 @@ export default function DashboardPage() {
             onAdd={addEvent}
             onUpdate={editEvent}
             onDelete={removeEvent}
+            onImportGoogle={connectGoogleCalendar}
           />
           <RecentMeetings
             meetings={meetings}

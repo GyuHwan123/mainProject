@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import math
 import re
+import time
 from collections import Counter
 from collections import OrderedDict
 from functools import lru_cache
@@ -12,6 +14,7 @@ from threading import Lock
 from typing import Any
 
 from fastapi import HTTPException
+import httpx
 
 from app.core.config import settings
 from app.services.supabase_service import supabase_service
@@ -25,6 +28,8 @@ TEXT_CHUNK_MAX_CHARS = settings.RAG_TEXT_CHUNK_MAX_CHARS
 TEXT_CHUNK_OVERLAP_CHARS = settings.RAG_TEXT_CHUNK_OVERLAP_CHARS
 DENSE_CANDIDATE_COUNT = settings.RAG_DENSE_CANDIDATE_COUNT
 BM25_CANDIDATE_COUNT = settings.RAG_BM25_CANDIDATE_COUNT
+QUERY_REWRITING_ENABLED = settings.RAG_QUERY_REWRITING
+QUERY_REWRITE_MODEL = settings.RAG_QUERY_REWRITE_MODEL or settings.RAG_LLM_MODEL
 
 _EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v1"
 _EMBEDDING_CACHE_MAX_SIZE = 2048
@@ -704,11 +709,19 @@ def bm25_candidates(
 
 def merge_hybrid_candidates(
     dense: list[dict[str, Any]], lexical: list[dict[str, Any]],
+    rewritten_dense: list[dict[str, Any]] | None = None,
+    rewritten_lexical: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Deduplicate Dense and BM25 candidates before cross-encoder reranking."""
     merged: dict[str, dict[str, Any]] = {}
     order: list[str] = []
-    for method, candidates in (("dense", dense), ("bm25", lexical)):
+    groups = (
+        ("dense", "original", dense),
+        ("bm25", "original", lexical),
+        ("dense", "rewritten", rewritten_dense or []),
+        ("bm25", "rewritten", rewritten_lexical or []),
+    )
+    for method, query_origin, candidates in groups:
         for rank, candidate in enumerate(candidates, start=1):
             key = str(candidate.get("id") or (
                 candidate.get("rag_document_id"), candidate.get("chunk_index")
@@ -721,13 +734,83 @@ def merge_hybrid_candidates(
             methods = target.setdefault("retrieval_methods", [])
             if method not in methods:
                 methods.append(method)
+            query_origins = target.setdefault("retrieval_queries", [])
+            if query_origin not in query_origins:
+                query_origins.append(query_origin)
             if method == "dense":
-                target["dense_rank"] = rank
+                target[f"{query_origin}_dense_rank"] = rank
+                target.setdefault("dense_rank", rank)
                 target["vector_similarity"] = float(candidate.get("similarity") or 0)
             else:
-                target["bm25_rank"] = int(candidate.get("bm25_rank") or rank)
+                resolved_rank = int(candidate.get("bm25_rank") or rank)
+                target[f"{query_origin}_bm25_rank"] = resolved_rank
+                target.setdefault("bm25_rank", resolved_rank)
                 target["bm25_score"] = float(candidate.get("bm25_score") or 0)
     return [merged[key] for key in order]
+
+
+def _query_numbers(value: str) -> set[str]:
+    return set(re.findall(r"\d+(?:[.,:]\d+)*(?:원|일|개월|시간|분|%|퍼센트)?", value))
+
+
+async def rewrite_query(query: str) -> dict[str, Any]:
+    """Rewrite a user question for retrieval, falling back safely to the original."""
+    started = time.perf_counter()
+    if not QUERY_REWRITING_ENABLED:
+        return {"query": query, "status": "disabled", "latency_ms": 0}
+    prompt = f"""당신은 한국어 사내문서 RAG 검색 질의 재작성기입니다.
+사용자 질문을 답하지 말고 문서 검색에 적합한 한 문장으로만 재작성하세요.
+규칙:
+1. 숫자, 날짜, 시간, 금액, 비율, 부서명, 규정명, 고유명사를 그대로 보존합니다.
+2. 원문에 없는 조건이나 사실을 추가하지 않습니다.
+3. 부정 표현(안 됨, 없음, 금지, 불가)을 보존합니다.
+4. 질문 의도를 유지하며 문서에 나올 핵심 용어를 사용합니다.
+5. 120자 이내로 작성합니다.
+JSON 형식 {{"query":"재작성 질의"}}만 출력하세요.
+
+사용자 질문: {query}"""
+    try:
+        async with httpx.AsyncClient(
+            base_url=settings.OLLAMA_BASE_URL.rstrip("/"),
+            timeout=settings.RAG_QUERY_REWRITE_TIMEOUT_SECONDS,
+        ) as client:
+            response = await client.post("/api/generate", json={
+                "model": QUERY_REWRITE_MODEL,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "keep_alive": "30m",
+                "options": {"temperature": 0, "num_predict": 80, "num_ctx": 2048},
+            })
+            response.raise_for_status()
+        body = response.json()
+        parsed = json.loads(str(body.get("response") or "{}"))
+        rewritten = re.sub(r"\s+", " ", str(parsed.get("query") or "")).strip()[:120]
+        if not rewritten:
+            raise ValueError("empty rewritten query")
+        original_numbers = _query_numbers(query)
+        rewritten_numbers = _query_numbers(rewritten)
+        if original_numbers != rewritten_numbers:
+            raise ValueError("query rewrite changed protected numeric values")
+        negative_markers = ("안 ", "않", "없", "못", "금지", "불가")
+        if any(marker in query for marker in negative_markers) and not any(
+            marker in rewritten for marker in negative_markers
+        ):
+            raise ValueError("query rewrite removed negation")
+        status = "unchanged" if rewritten == query else "rewritten"
+        return {
+            "query": rewritten,
+            "status": status,
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "model": QUERY_REWRITE_MODEL,
+        }
+    except (httpx.HTTPError, ValueError, json.JSONDecodeError, TypeError):
+        return {
+            "query": query,
+            "status": "fallback",
+            "latency_ms": round((time.perf_counter() - started) * 1000),
+            "model": QUERY_REWRITE_MODEL,
+        }
 
 
 _EVIDENCE_STOP_WORDS = {
@@ -964,6 +1047,11 @@ async def search(
     user_email: str, query: str, rag_document_id: str | None, limit: int, *,
     user_role: str = "USER", subscription_tier: str = "PERSONAL",
 ) -> list[dict[str, Any]]:
+    retrieval_started = time.perf_counter()
+    stage_latency_ms = {
+        "query_rewrite": 0.0, "embedding": 0.0, "dense": 0.0,
+        "bm25": 0.0, "reranker": 0.0,
+    }
     # A selected document already contains deterministic OCR table metadata.
     # Fetch it directly: vector similarity is not a reliable way to locate a
     # schema marker for short questions such as "what are all the columns?".
@@ -979,22 +1067,59 @@ async def search(
                 row["vector_similarity"] = 1.0
             return schema_candidates[:limit]
 
+    rewrite_result = (
+        {"query": query, "status": "structural_bypass", "latency_ms": 0}
+        if _is_table_structure_query(query)
+        else await rewrite_query(query)
+    )
+    stage_latency_ms["query_rewrite"] = float(rewrite_result.get("latency_ms") or 0)
+    rewritten_query = str(rewrite_result.get("query") or query)
+    use_rewritten_query = rewritten_query != query
+
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
-    query_texts = [query, facets["query"], *strong_subjects]
+    facet_texts = [facets["query"], *strong_subjects]
+    query_texts = [query, *facet_texts]
+    if use_rewritten_query:
+        query_texts.append(rewritten_query)
+    stage_started = time.perf_counter()
     query_vectors, _ = await _embed_texts_cached(query_texts)
+    stage_latency_ms["embedding"] = (time.perf_counter() - stage_started) * 1000
     embedding = query_vectors[0]
-    facet_vectors = query_vectors[1:]
+    facet_vectors = query_vectors[1:1 + len(facet_texts)]
+    rewritten_embedding = query_vectors[-1] if use_rewritten_query else None
+    stage_started = time.perf_counter()
     dense_candidates = supabase_service.search_rag_chunks(
         user_email, embedding, rag_document_id, DENSE_CANDIDATE_COUNT,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
+    dense_original_elapsed = (time.perf_counter() - stage_started) * 1000
+    stage_started = time.perf_counter()
     lexical_chunks = supabase_service.list_accessible_rag_chunks(
         user_email, rag_document_id,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
     lexical_candidates = bm25_candidates(query, lexical_chunks, BM25_CANDIDATE_COUNT)
-    candidates = merge_hybrid_candidates(dense_candidates, lexical_candidates)
+    bm25_original_elapsed = (time.perf_counter() - stage_started) * 1000
+    stage_started = time.perf_counter()
+    rewritten_dense_candidates = (
+        supabase_service.search_rag_chunks(
+            user_email, rewritten_embedding, rag_document_id, DENSE_CANDIDATE_COUNT,
+            include_company_documents=can_access_company_rag(user_role, subscription_tier),
+        )
+        if rewritten_embedding is not None else []
+    )
+    stage_latency_ms["dense"] = dense_original_elapsed + (time.perf_counter() - stage_started) * 1000
+    stage_started = time.perf_counter()
+    rewritten_lexical_candidates = (
+        bm25_candidates(rewritten_query, lexical_chunks, BM25_CANDIDATE_COUNT)
+        if use_rewritten_query else []
+    )
+    stage_latency_ms["bm25"] = bm25_original_elapsed + (time.perf_counter() - stage_started) * 1000
+    candidates = merge_hybrid_candidates(
+        dense_candidates, lexical_candidates,
+        rewritten_dense_candidates, rewritten_lexical_candidates,
+    )
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]
     query_terms = {
@@ -1021,7 +1146,9 @@ async def search(
         if schema_candidates:
             return schema_candidates[:limit]
 
+    stage_started = time.perf_counter()
     candidates = await rerank_candidates(query, candidates)
+    stage_latency_ms["reranker"] = (time.perf_counter() - stage_started) * 1000
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
         all_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)
@@ -1069,6 +1196,16 @@ async def search(
                     "content": f"[문서 제목] {title}", "bbox": bbox, "similarity": 1.0,
                     "vector_similarity": 1.0, "source": document["file_name"],
                 })
+    for candidate in candidates:
+        candidate["original_query"] = query
+        candidate["rewritten_query"] = rewritten_query if use_rewritten_query else None
+        candidate["query_rewrite_status"] = rewrite_result.get("status")
+        candidate["query_rewrite_latency_ms"] = int(rewrite_result.get("latency_ms") or 0)
+        candidate["query_rewrite_model"] = rewrite_result.get("model")
+        candidate["retrieval_latency_ms"] = {
+            **{name: round(value, 2) for name, value in stage_latency_ms.items()},
+            "total": round((time.perf_counter() - retrieval_started) * 1000, 2),
+        }
     candidates = candidates[:limit]
     return candidates if await _has_facet_evidence(
         query, candidates, facets=facets, facet_vectors=facet_vectors,

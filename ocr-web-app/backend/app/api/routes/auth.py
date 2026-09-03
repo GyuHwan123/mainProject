@@ -3,8 +3,9 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.security import create_access_token, decode_access_token, get_password_hash, verify_password
 from app.models.user import User
-from app.schemas.auth import LoginRequest, LoginResponse, SignupRequest, SocialLoginRequest
+from app.schemas.auth import LoginRequest, LoginResponse, OAuthExchangeRequest, SignupRequest
 from app.services.supabase_service import supabase_service
+from app.services.google_calendar_service import google_calendar_service
 
 router = APIRouter()
 security = HTTPBearer()
@@ -45,8 +46,8 @@ def login(payload: LoginRequest) -> LoginResponse:
     )
 
 
-@router.post("/signup")
-def signup(payload: SignupRequest) -> dict[str, str]:
+@router.post("/signup", response_model=LoginResponse, status_code=status.HTTP_201_CREATED)
+def signup(payload: SignupRequest) -> LoginResponse:
     name = payload.name.strip()
     if not name:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="이름을 입력해주세요.")
@@ -59,31 +60,48 @@ def signup(payload: SignupRequest) -> dict[str, str]:
         name=name, email=email, password_hash=get_password_hash(payload.password),
         provider="local", provider_id=email,
     ))
-    return {"message": "회원가입이 완료되었습니다.", "name": user.name, "email": user.email}
-
-
-@router.post("/social-login", response_model=LoginResponse)
-def social_login(payload: SocialLoginRequest) -> LoginResponse:
-    if payload.provider.lower() != "supabase":
-        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="해당 소셜 제공자는 아직 준비 중입니다.")
-    identity = supabase_service.get_user_from_token(payload.token)
-    email = (identity.get("email") or "").lower()
-    if not email:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Supabase 사용자 이메일을 확인할 수 없습니다.")
-    existing = _user_from_email(email)
-    if existing and existing.provider == "local":
-        user = existing
-    else:
-        user = User.from_record(supabase_service.upsert_user(
-            email=email, name=identity.get("name") or "Supabase User",
-            provider=identity.get("provider") or "supabase", provider_id=identity.get("id"),
-            role=existing.role if existing else "USER",
-        ))
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 사용자입니다.")
     return LoginResponse(
         access_token=create_access_token(subject=user.email), user_email=user.email,
         user_name=user.name, user_role=user.role, user_subscription_tier=user.subscription_tier,
+    )
+
+
+@router.post("/oauth/exchange", response_model=LoginResponse)
+def exchange_oauth_session(payload: OAuthExchangeRequest) -> LoginResponse:
+    if payload.provider.lower() != "supabase":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="지원하지 않는 소셜 인증 중개자입니다.")
+    identity = supabase_service.get_user_from_social_token(payload.token)
+    email = (identity.get("email") or "").lower()
+    if not email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="소셜 계정 이메일을 확인할 수 없습니다.")
+
+    existing = _user_from_email(email)
+    if existing:
+        # 동일 이메일의 로컬 계정은 비밀번호 해시와 권한을 그대로 유지한다.
+        user = existing
+    else:
+        user = User.from_record(supabase_service.upsert_user(
+            email=email,
+            name=identity.get("name") or "소셜 사용자",
+            provider=identity.get("provider") or "social",
+            provider_id=identity.get("id"),
+            role="USER",
+        ))
+    if not user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="비활성화된 사용자입니다.")
+    calendar_imported = 0
+    calendar_sync_error = None
+    if identity.get("provider") == "google" and payload.provider_access_token:
+        try:
+            calendar_imported = google_calendar_service.import_primary(email, payload.provider_access_token)
+        except HTTPException as exc:
+            calendar_sync_error = str(exc.detail)
+        except Exception:
+            calendar_sync_error = "Google Calendar 동기화 중 오류가 발생했습니다."
+    return LoginResponse(
+        access_token=create_access_token(subject=user.email), user_email=user.email,
+        user_name=user.name, user_role=user.role, user_subscription_tier=user.subscription_tier,
+        calendar_imported=calendar_imported, calendar_sync_error=calendar_sync_error,
     )
 
 

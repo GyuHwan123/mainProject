@@ -62,6 +62,12 @@
     }
   }
 
+  .login-window.reset-password-window {
+    width: min(560px, 92vw);
+    min-height: 520px;
+    display: block;
+  }
+
   .login-visual {
     min-height: 100%;
     padding: 30px;
@@ -188,10 +194,40 @@
       }
     }
 
+    .recover-heading {
+      margin-bottom: 20px;
+
+      strong { color: $main-color; font-size: 1.25rem; }
+      p { margin: 7px 0 0; color: rgba($bgd, 0.58); font-size: 0.9rem; }
+    }
+
+    > .auth-message {
+      margin: 0 0 16px;
+      padding: 11px 13px;
+      border: 1px solid;
+      border-radius: 9px;
+      font-size: 0.85rem;
+      line-height: 1.45;
+
+      &.error { color: #a53b48; background: #fff3f4; border-color: #f2c7cc; }
+      &.success { color: #176c49; background: #eefaf4; border-color: #bde5d2; }
+    }
+
     .login-form {
       display: flex;
       flex-direction: column;
       gap: 16px;
+
+      label {
+        display: grid;
+        gap: 7px;
+
+        > span {
+          color: $midel-color;
+          font-size: 0.82rem;
+          font-weight: 700;
+        }
+      }
 
       input {
         @extend %form-control-base;
@@ -208,6 +244,78 @@
         &:focus {
           border-color: $sub-color;
           box-shadow: 0 0 0 3px rgba($sub-color, 0.16);
+        }
+
+        &:disabled {
+          cursor: not-allowed;
+          opacity: 0.68;
+        }
+      }
+
+      .auth-text-button {
+        align-self: center;
+        padding: 0;
+        color: $midel-color;
+        background: transparent;
+        border: 0;
+        font-size: 0.83rem;
+        text-decoration: underline;
+        cursor: pointer;
+
+        &:disabled { cursor: not-allowed; opacity: 0.5; }
+      }
+
+      .confirmation-reminder {
+        padding: 11px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        color: #68511c;
+        background: #fff9e8;
+        border: 1px solid #ead9a5;
+        border-radius: 9px;
+        font-size: 0.78rem;
+
+        span { min-width: 0; overflow-wrap: anywhere; }
+        button {
+          flex: none;
+          padding: 6px 8px;
+          color: $main-color;
+          background: #fff;
+          border: 1px solid rgba($line, 0.65);
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        button:disabled { cursor: not-allowed; opacity: 0.5; }
+      }
+
+      .password-hint {
+        margin: -9px 0 -5px;
+        color: rgba($bgd, 0.58);
+        font-size: 0.78rem;
+      }
+
+      .auth-message {
+        margin: 0;
+        padding: 11px 13px;
+        border: 1px solid;
+        border-radius: 9px;
+        font-size: 0.85rem;
+        line-height: 1.45;
+
+        &.error {
+          color: #a53b48;
+          background: #fff3f4;
+          border-color: #f2c7cc;
+        }
+
+        &.success {
+          color: #176c49;
+          background: #eefaf4;
+          border-color: #bde5d2;
         }
       }
     }
@@ -234,6 +342,22 @@
       &:disabled {
         opacity: 0.55;
         cursor: not-allowed;
+      }
+    }
+
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: rgba($bgd, 0.42);
+      font-size: 0.78rem;
+
+      &::before,
+      &::after {
+        height: 1px;
+        flex: 1;
+        content: '';
+        background: rgba($line, 0.5);
       }
     }
 

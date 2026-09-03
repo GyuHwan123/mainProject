@@ -232,7 +232,11 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
         raise HTTPException(status_code=422, detail=f"유효하지 않은 비용 분류입니다: {reason}")
     values["document_type"] = document_type
     values["expense_category"] = expense_category
-    if not values["total_amount"]:
+    if (
+        not values["total_amount"]
+        and values["supply_amount"] is not None
+        and values["tax_amount"] is not None
+    ):
         values["total_amount"] = values["supply_amount"] + values["tax_amount"]
     current = next(
         (item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id),

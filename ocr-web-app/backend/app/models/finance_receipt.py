@@ -22,8 +22,8 @@ class FinanceRecordUpdate(BaseModel):
     expense_category: str = Field(min_length=1, max_length=100)
     merchant: str | None = Field(default=None, max_length=200)
     transaction_date: date | None = None
-    supply_amount: float = Field(default=0, ge=0)
-    tax_amount: float = Field(default=0, ge=0)
+    supply_amount: float | None = Field(default=None, ge=0)
+    tax_amount: float | None = Field(default=None, ge=0)
     total_amount: float = Field(default=0, ge=0)
     payment_method: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
@@ -37,8 +37,8 @@ class FinanceRecord(BaseModel):
     expense_category: str | None
     merchant: str | None = None
     transaction_date: date | None = None
-    supply_amount: float = 0
-    tax_amount: float = 0
+    supply_amount: float | None = None
+    tax_amount: float | None = None
     total_amount: float = 0
     payment_method: str | None = None
     description: str | None = None

@@ -205,9 +205,9 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 
 `.env.example`을 복사해 `.env`를 만들고 실제 값을 입력합니다. `.env`는 커밋하지 않습니다.
 
-- 브라우저 공개 가능: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`
+- 브라우저 공개 가능: `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
 - 서버 전용: `SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, DB 비밀번호
-- 공통 연결: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_USERS_TABLE`
+- 서버 연결: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_USERS_TABLE`
 
 운영 환경에서는 기본 `SECRET_KEY=change-me`와 기본 PostgreSQL 비밀번호를 절대 사용하지 않습니다.
 

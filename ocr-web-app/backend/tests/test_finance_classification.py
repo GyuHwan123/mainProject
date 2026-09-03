@@ -15,6 +15,8 @@ from app.api.routes.finance import (  # noqa: E402
     _preflight_review_reasons,
     _simple_receipt_prompt,
 )
+from app.services.finance_receipt_simple import _reconcile_amounts  # noqa: E402
+from app.services.finance_receipt_simple import _simple_validation  # noqa: E402
 
 
 SAMPLE_OCR = """GS25 청주테크노점
@@ -32,9 +34,14 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_simple_v1_prompt_requests_all_fields_once(self):
         prompt, diagnostics = _simple_receipt_prompt(SAMPLE_OCR, "receipt.jpg")
 
-        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1-one-call")
+        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1.1-one-call-amount-evidence")
         self.assertIn("merchant, transaction_date, expense_category", prompt)
         self.assertIn("items의 키", prompt)
+        self.assertIn("과세상품의 세전 금액과 면세상품금액을 합한 전체 공급액", prompt)
+        self.assertIn("면세상품만 있으면 supply_amount는 면세상품금액이고 tax_amount는 0", prompt)
+        self.assertIn("supply_amount=38,100", prompt)
+        self.assertIn("쇼핑백·포장비·배달비", prompt)
+        self.assertIn("할인 전 세금 요약", prompt)
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
         self.assertNotIn("semantic_evidence", prompt)
         self.assertNotIn("candidate", prompt)
@@ -106,6 +113,216 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         validation = normalized["structured_data"]["automation_validation"]
         self.assertEqual(validation["decision"], "REVIEW")
         self.assertIn("TOTAL_AMOUNT_NOT_IN_OCR", validation["reasons"])
+
+    def test_normalization_preserves_unknown_supply_and_tax_as_null(self):
+        result = {
+            "merchant": "법인택시",
+            "transaction_date": "2020-05-16",
+            "expense_category": "대중교통",
+            "supply_amount": None,
+            "tax_amount": None,
+            "discount_amount": None,
+            "total_amount": 5300,
+            "payment_method": "카드",
+            "items": [],
+        }
+
+        normalized = _normalize(result, "taxi.jpg", "결제요금 5,300원")
+
+        self.assertIsNone(normalized["supply_amount"])
+        self.assertIsNone(normalized["tax_amount"])
+        self.assertIsNone(normalized["structured_data"]["supply_amount"])
+        self.assertIsNone(normalized["structured_data"]["tax_amount"])
+
+    def test_reconcile_combines_taxable_and_exempt_supply(self):
+        result = {"supply_amount": 36212, "tax_amount": 9999, "total_amount": 55813}
+        text = """면세물품가액 7,280
+과세물품가액 36,212
+부가세 3,621
+절사금액 -3
+결제금액 47,110"""
+
+        trace = _reconcile_amounts(result, text)
+
+        self.assertEqual(result["supply_amount"], 43492)
+        self.assertEqual(result["tax_amount"], 3621)
+        self.assertEqual(result["total_amount"], 47110)
+        self.assertIn("supply_from_taxable_plus_exempt_ocr", trace["changes"])
+
+    def test_reconcile_repairs_ungrounded_supply_only_without_adjustments(self):
+        result = {"supply_amount": 30000, "tax_amount": 2727, "total_amount": 30000}
+
+        trace = _reconcile_amounts(result, "부가세액 2,727\n결제금액 30,000")
+
+        self.assertEqual(result["supply_amount"], 27273)
+        self.assertIn("supply_from_guarded_arithmetic", trace["changes"])
+
+    def test_reconcile_uses_explicit_tax_and_total_despite_discount(self):
+        result = {"supply_amount": 10000, "tax_amount": 1000, "total_amount": 15000}
+
+        trace = _reconcile_amounts(result, "부가세 1,000\n할인 2,000\n결제금액 15,000")
+
+        self.assertEqual(result["supply_amount"], 14000)
+        self.assertIn("supply_from_guarded_arithmetic", trace["changes"])
+
+    def test_reconcile_does_not_confuse_taxable_amount_with_vat(self):
+        result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
+
+        _reconcile_amounts(result, "과세액 21,091\n부가세액 2,109\n결제금액 23,200")
+
+        self.assertEqual(result["supply_amount"], 21091)
+        self.assertEqual(result["tax_amount"], 2109)
+        self.assertEqual(result["total_amount"], 23200)
+
+    def test_reconcile_recognizes_parenthesized_tax_included(self):
+        result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
+
+        _reconcile_amounts(result, "결제금액 23,200\n(부가세포함) (2,109)\n할인금액 3,100")
+
+        self.assertEqual(result["supply_amount"], 21091)
+        self.assertEqual(result["tax_amount"], 2109)
+        self.assertEqual(result["total_amount"], 23200)
+
+    def test_reconcile_does_not_force_ambiguous_next_line_amounts(self):
+        result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
+
+        _reconcile_amounts(result, "공급가액\n21,091\n부가세\n2,109\n결제액\n23,200")
+
+        self.assertIsNone(result["supply_amount"])
+        self.assertIsNone(result["tax_amount"])
+        self.assertIsNone(result["total_amount"])
+
+    def test_reconcile_does_not_assume_missing_exempt_value_is_zero(self):
+        result = {"supply_amount": None, "tax_amount": 1000, "total_amount": 12000}
+
+        trace = _reconcile_amounts(result, "과세물품가액 10,000\n면세물품가액\n부가세 1,000\n결제금액 12,000")
+
+        self.assertIsNone(result["supply_amount"])
+        self.assertNotIn("supply_from_taxable_plus_exempt_ocr", trace["changes"])
+
+    def test_taxable_amount_is_not_reused_as_payment_total(self):
+        result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
+
+        _reconcile_amounts(result, "과세금액 27,273 부가세액 2,727")
+
+        self.assertEqual(result["supply_amount"], 27273)
+        self.assertEqual(result["tax_amount"], 2727)
+        self.assertIsNone(result["total_amount"])
+
+    def test_masked_card_number_is_not_used_as_payment_total(self):
+        result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
+
+        _reconcile_amounts(result, "카드결제액 65562082520*")
+
+        self.assertIsNone(result["total_amount"])
+
+    def test_uncorroborated_tax_evidence_requires_review(self):
+        result = {
+            "merchant": "가맹점", "transaction_date": "2025-10-01", "expense_category": "식품/장보기",
+            "supply_amount": None, "tax_amount": 17300, "discount_amount": None,
+            "total_amount": 17300, "payment_method": "카드", "items": [],
+        }
+        text = "매입사명 삼성카드 17,300원 부가세 17,300원"
+        _reconcile_amounts(result, text)
+
+        validation = _simple_validation(result, text)
+
+        self.assertIn("TAX_EVIDENCE_UNCORROBORATED", validation["reasons"])
+
+    def test_validation_allows_small_rounding_difference_after_discount(self):
+        result = {
+            "merchant": "NC신구로점",
+            "transaction_date": "2026-08-10",
+            "expense_category": "식품/장보기",
+            "supply_amount": 27772,
+            "tax_amount": 1860,
+            "discount_amount": 6380,
+            "total_amount": 29630,
+            "payment_method": "카드",
+            "items": [{"name": "상품 합계", "quantity": 1, "unit_price": 36012, "total_amount": 36012}],
+        }
+
+        validation = _simple_validation(result, "총합계액 36,012\n총할인액 -6,380\n절사금액 -2\n결제액 29,630")
+
+        self.assertNotIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
+        self.assertNotIn("ITEM_SUM_MISMATCH", validation["reasons"])
+
+    def test_validation_accepts_explicit_pre_discount_tax_summary(self):
+        result = {
+            "merchant": "공차 선릉중앙점",
+            "transaction_date": "2025-10-01",
+            "expense_category": "식품/장보기",
+            "supply_amount": 10910,
+            "tax_amount": 1090,
+            "discount_amount": 1200,
+            "total_amount": 10800,
+            "payment_method": "카드",
+            "items": [],
+        }
+        text = "공급가액 10,910\n부가세 1,090\n할인금액 1,200\n결제금액 10,800"
+
+        validation = _simple_validation(result, text)
+
+        self.assertNotIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
+        self.assertEqual(validation["checks"]["amount_relation_basis"], "pre_discount_tax_summary")
+
+    def test_validation_accepts_negative_discount_sign(self):
+        result = {
+            "merchant": "공차 선릉중앙점",
+            "transaction_date": "2025-10-01",
+            "expense_category": "식품/장보기",
+            "supply_amount": 10910,
+            "tax_amount": 1090,
+            "discount_amount": -1200,
+            "total_amount": 10800,
+            "payment_method": "카드",
+            "items": [],
+        }
+
+        validation = _simple_validation(
+            result,
+            "공급가액 10,910\n부가세 1,090\n할인금액 -1,200\n결제금액 10,800",
+        )
+
+        self.assertNotIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
+        self.assertEqual(validation["checks"]["amount_relation_basis"], "pre_discount_tax_summary")
+
+    def test_validation_skips_amount_relation_for_partial_tax_information(self):
+        result = {
+            "merchant": "팀홀튼",
+            "transaction_date": "2026-02-23",
+            "expense_category": "식품/장보기",
+            "supply_amount": None,
+            "tax_amount": 1027,
+            "discount_amount": None,
+            "total_amount": 11300,
+            "payment_method": "카드",
+            "items": [],
+        }
+
+        validation = _simple_validation(result, "부가세포함 (1,027)\n결제금액 11,300")
+
+        self.assertNotIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
+        self.assertEqual(validation["checks"]["amount_relation_basis"], "not_checkable_partial_amounts")
+
+    def test_validation_keeps_review_for_unexplained_explicit_mismatch(self):
+        result = {
+            "merchant": "가맹점",
+            "transaction_date": "2025-10-01",
+            "expense_category": "식품/장보기",
+            "supply_amount": 10000,
+            "tax_amount": 1000,
+            "discount_amount": 500,
+            "total_amount": 9000,
+            "payment_method": "카드",
+            "items": [],
+        }
+        text = "공급가액 10,000\n부가세 1,000\n할인금액 500\n결제금액 9,000"
+
+        validation = _simple_validation(result, text)
+
+        self.assertIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
+        self.assertEqual(validation["checks"]["amount_relation_basis"], "explicit_ocr_mismatch")
 
 
 if __name__ == "__main__":

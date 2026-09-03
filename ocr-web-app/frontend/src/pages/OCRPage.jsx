@@ -46,7 +46,12 @@ const FINANCE_DOCUMENTS = {
   WELFARE_BENEFIT: { title: '복리후생비신청서', headers: ['영수증 ID', '품목 순번', '지원 항목(구분)', '결제일자', '내용(품목명/사유)', '결제처', '신청 금액', '증빙서류', '비고'] },
 };
 
-const financeMoney = (value) => `${Math.round(Number(value || 0)).toLocaleString('ko-KR')}원`;
+const financeMoney = (value) => value === null || value === undefined || value === ''
+  ? '-'
+  : `${Math.round(Number(value)).toLocaleString('ko-KR')}원`;
+const optionalFinanceNumber = (value) => value === null || value === undefined || value === ''
+  ? null
+  : Number(value);
 
 const RECEIPT_SEMANTICS = {
   issuer: { label: '발행처·사업자', color: '#7c3aed', sections: ['issuer', 'business_info'] },
@@ -1375,8 +1380,8 @@ export default function OCRPage() {
       expense_category: financeRecord.expense_category || '',
       merchant: financeRecord.merchant || '',
       transaction_date: financeRecord.transaction_date || '',
-      supply_amount: Number(financeRecord.supply_amount || 0),
-      tax_amount: Number(financeRecord.tax_amount || 0),
+      supply_amount: financeRecord.supply_amount ?? '',
+      tax_amount: financeRecord.tax_amount ?? '',
       total_amount: Number(financeRecord.total_amount || 0),
       payment_method: financeRecord.payment_method || '',
       description: financeRecord.description || '',
@@ -1392,8 +1397,8 @@ export default function OCRPage() {
     try {
       const { data } = await apiClient.patch(`/finance/records/${financeRecord.id}`, {
         ...financeReviewDraft,
-        supply_amount: Number(financeReviewDraft.supply_amount || 0),
-        tax_amount: Number(financeReviewDraft.tax_amount || 0),
+        supply_amount: optionalFinanceNumber(financeReviewDraft.supply_amount),
+        tax_amount: optionalFinanceNumber(financeReviewDraft.tax_amount),
         total_amount: Number(financeReviewDraft.total_amount || 0),
         merchant: financeReviewDraft.merchant || null,
         transaction_date: financeReviewDraft.transaction_date || null,
@@ -1430,8 +1435,8 @@ export default function OCRPage() {
         expense_category: financeRecord.expense_category,
         merchant: financeRecord.merchant || null,
         transaction_date: financeRecord.transaction_date || null,
-        supply_amount: Number(financeRecord.supply_amount || 0),
-        tax_amount: Number(financeRecord.tax_amount || 0),
+        supply_amount: optionalFinanceNumber(financeRecord.supply_amount),
+        tax_amount: optionalFinanceNumber(financeRecord.tax_amount),
         total_amount: Number(financeRecord.total_amount || 0),
         payment_method: financeRecord.payment_method || null,
         description: financeRecord.description || null,
@@ -1707,7 +1712,7 @@ export default function OCRPage() {
                 <label><span>결제수단</span><input maxLength="100" value={financeReviewDraft.payment_method} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, payment_method: event.target.value }))} /></label>
                 <label className="wide"><span>적요·사용 내역</span><textarea maxLength="1000" value={financeReviewDraft.description} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, description: event.target.value }))} /></label>
               </div>
-              <div className="finance-review-check"><strong>금액 검산</strong><span>{financeMoney(financeReviewDraft.supply_amount)} + {financeMoney(financeReviewDraft.tax_amount)} = {financeMoney(Number(financeReviewDraft.supply_amount || 0) + Number(financeReviewDraft.tax_amount || 0))}</span><em className={Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount || 0) + Number(financeReviewDraft.tax_amount || 0) ? 'valid' : ''}>{Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount || 0) + Number(financeReviewDraft.tax_amount || 0) ? '일치' : '합계 확인 필요'}</em></div>
+              <div className="finance-review-check"><strong>금액 검산</strong>{optionalFinanceNumber(financeReviewDraft.supply_amount) === null || optionalFinanceNumber(financeReviewDraft.tax_amount) === null ? <><span>공급가액 또는 부가세 정보 없음</span><em>검산 불가</em></> : <><span>{financeMoney(financeReviewDraft.supply_amount)} + {financeMoney(financeReviewDraft.tax_amount)} = {financeMoney(Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount))}</span><em className={Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount) ? 'valid' : ''}>{Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount) ? '일치' : '합계 확인 필요'}</em></>}</div>
               <footer><button type="button" disabled={loading} onClick={() => setFinanceReviewOpen(false)}>취소</button><button type="submit" className="save" disabled={loading}>{loading ? '저장 중...' : '수정 내용 저장'}</button></footer>
             </form>
           </section>

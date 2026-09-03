@@ -229,12 +229,13 @@ supply_amount = total_amount - tax_amount - rounding_adjustment
 - 총 결제액이 OCR 숫자에 없음
 - 공급가액·부가세·할인액·총액의 두 정상 관계에 모두 해당하지 않음
 - 품목 합계와 총액 불일치
-- 수량 × 단가와 품목 금액 불일치
 - 세금 라벨은 있으나 값을 해석하지 못함
 - 교차 확인되지 않은 부가세 근거
 - LLM timeout, JSON 오류 또는 서버 오류
 
 금액 관계와 할인 후 품목 합계에는 10원의 절사·반올림 허용 오차를 적용한다.
+
+품목 단위의 `quantity × unit_price != item.total_amount`는 쿠폰, 행사 할인, 회원 할인, 묶음 할인으로 정상적으로 발생할 수 있다. 이 불일치는 원래 추출값을 다시 계산하거나 덮어쓰지 않으며 PASS/REVIEW 판정에도 영향을 주지 않는다. 차이가 1원을 초과하면 `automation_validation.warnings`에 `ITEM_AMOUNT_RELATION_WARNING`을 디버깅·모니터링 정보로만 기록한다.
 
 ```text
 직접 일치:

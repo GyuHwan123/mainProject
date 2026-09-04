@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IoBookmarkOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoLockClosedOutline, IoRefreshOutline, IoServerOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoCardOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoInformationCircleOutline, IoLockClosedOutline, IoPersonOutline, IoRefreshOutline, IoServerOutline, IoTrashOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
 import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
-import { getAppUser } from '../features/appSession';
+import { clearAppSession, getAppUser, saveAppUser } from '../features/appSession';
 import '../style/MyPage.scss';
 
 export default function MyPage() {
@@ -20,16 +20,23 @@ export default function MyPage() {
   const [cancelReason, setCancelReason] = useState('');
   const [cancelSaving, setCancelSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
-  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
+  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [], billingHistory: [] });
+  const [profileName, setProfileName] = useState(user.name || '');
+  const [accountNotice, setAccountNotice] = useState('');
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ current: '', next: '', confirm: '' });
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({ password: '', confirmation: '' });
   const initialRequestRef = useRef(null);
 
   const loadAccountData = useCallback(async () => {
     setLoading(true); setError('');
     const results = await Promise.allSettled([
-      apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'), apiClient.get('/finance/history'),
+      apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'), apiClient.get('/finance/history'), apiClient.get('/users/billing-history'),
     ]);
     const values = results.map((result) => result.status === 'fulfilled' && Array.isArray(result.value.data) ? result.value.data : []);
-    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3], financeHistory: values[5] });
+    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3], financeHistory: values[5], billingHistory: values[6] });
     if (results[4]?.status === 'fulfilled') setSubscription(results[4].value.data);
     if (results.every((result) => result.status === 'rejected')) setError('계정 사용 현황을 불러오지 못했습니다.');
     setLoading(false);
@@ -40,13 +47,45 @@ export default function MyPage() {
     initialRequestRef.current.finally(() => setInitialLoading(false));
   }, [loadAccountData]);
 
-  const initials = useMemo(() => (user.name || user.email || 'U').trim().slice(0, 2).toUpperCase(), [user]);
+  const initials = useMemo(() => (profileName || user.email || 'U').trim().slice(0, 2).toUpperCase(), [profileName, user.email]);
   const isEnterprise = user.subscriptionTier === 'ENTERPRISE';
   const roleLabel = user.role === 'ADMIN' ? '관리자' : user.role === 'DEVELOPER' ? '개발자' : (isEnterprise ? '기업 사용자' : '일반 사용자');
   const readyRag = data.ragDocuments.filter((document) => document.status === 'RAG_READY').length;
   const recentDocuments = data.documents.slice(0, 5);
   const cancellationScheduled = subscription.status === 'CANCEL_SCHEDULED' || subscription.cancel_at_period_end;
   const periodEndLabel = subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString('ko-KR') : null;
+
+  const updateProfile = async () => {
+    setAccountSaving(true); setAccountNotice('');
+    try { const { data: updated } = await apiClient.patch('/users/me', { name: profileName }); saveAppUser(updated); setProfileName(updated.name || ''); setAccountNotice('프로필 정보가 저장되었습니다.'); }
+    catch (requestError) { setAccountNotice(requestError.response?.data?.detail || '프로필을 저장하지 못했습니다.'); }
+    finally { setAccountSaving(false); }
+  };
+  const changePassword = async () => {
+    if (passwordForm.next !== passwordForm.confirm) { setAccountNotice('새 비밀번호 확인이 일치하지 않습니다.'); return; }
+    setAccountSaving(true); setAccountNotice('');
+    try { const { data: result } = await apiClient.post('/users/password', { current_password: passwordForm.current, new_password: passwordForm.next }); setPasswordForm({ current: '', next: '', confirm: '' }); setAccountNotice(result.message); }
+    catch (requestError) { setAccountNotice(requestError.response?.data?.detail || '비밀번호를 변경하지 못했습니다.'); }
+    finally { setAccountSaving(false); }
+  };
+  const downloadAccountData = async () => {
+    setAccountSaving(true); setAccountNotice('');
+    try { const response = await apiClient.get('/users/data-export', { responseType: 'blob', timeout: 120000 }); const url = URL.createObjectURL(response.data); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `account-data-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setAccountNotice('사용자 데이터 다운로드를 완료했습니다.'); }
+    catch (requestError) { setAccountNotice(requestError.response?.data?.detail || '사용자 데이터를 다운로드하지 못했습니다.'); }
+    finally { setAccountSaving(false); }
+  };
+  const revokeCancellation = async () => {
+    setCancelSaving(true); setUpgradeNotice('');
+    try { const { data: updated } = await apiClient.post('/users/subscription/cancel/revoke'); setSubscription(updated); setUpgradeNotice('구독 취소 예약을 철회했습니다.'); }
+    catch (requestError) { setUpgradeNotice(requestError.response?.data?.detail || '구독 취소를 철회하지 못했습니다.'); }
+    finally { setCancelSaving(false); }
+  };
+  const deleteAccount = async () => {
+    setAccountSaving(true); setAccountNotice('');
+    try { await apiClient.delete('/users/me', { data: { password: deleteForm.password || null, confirmation: deleteForm.confirmation } }); clearAppSession(); navigate('/login', { replace: true }); }
+    catch (requestError) { setAccountNotice(requestError.response?.data?.detail || '계정을 탈퇴 처리하지 못했습니다.'); setDeleteOpen(false); }
+    finally { setAccountSaving(false); }
+  };
 
   const requestCancellation = async () => {
     setCancelSaving(true); setUpgradeNotice('');
@@ -102,9 +141,19 @@ export default function MyPage() {
       {error && <p className="mypage-error">{error}</p>}
 
       <section className="profile-overview">
-        <article className="profile-card"><div className="profile-avatar">{initials}</div><div className="profile-copy"><span>{roleLabel}</span><h2>{user.name || '사용자'} 님</h2><p>{user.email || '이메일 정보 없음'}</p></div><div className="account-state"><i /> 계정 활성</div></article>
+        <article className="profile-card"><div className="profile-avatar">{initials}</div><div className="profile-copy"><span>{roleLabel}</span><h2>{profileName || '사용자'} 님</h2><p>{user.email || '이메일 정보 없음'}</p></div><div className="profile-card-actions"><div className="account-state"><i /> 계정 활성</div><button type="button" className={accountSettingsOpen ? 'active' : ''} onClick={() => setAccountSettingsOpen((open) => !open)}>{accountSettingsOpen ? '회원정보 닫기' : '회원정보 관리'}</button></div></article>
         <article className="current-plan-card"><div><small>CURRENT PLAN</small><h2>{isEnterprise ? 'Enterprise Workspace' : 'Personal Pro'}</h2><p>{isEnterprise ? '팀 협업, 사내 지식 자산화와 기업 데이터 보안을 위한 조직용 플랜입니다.' : '개인 문서 OCR, RAG 검색과 AI 비서를 위한 생산성 플랜입니다.'}</p><div className="plan-tags">{isEnterprise ? <><b>Organization</b><b>{user.role === 'ADMIN' ? 'Admin' : 'Member'}</b><b>AI 학습 제외</b><b>월 ₩89,000</b></> : <><b>개인 계정</b><b>문서 1개</b><b>월 ₩19,900</b><b>표준 AI 모델</b></>}</div>{cancellationScheduled && <p className="cancellation-summary">{periodEndLabel || '현재 이용 기간 종료일'}에 Personal로 전환 예정</p>}</div><div className="plan-card-actions"><span className={cancellationScheduled ? 'scheduled' : ''}>{cancellationScheduled ? '취소 예약됨' : '활성'}</span><button type="button" onClick={() => { setUpgradeNotice(''); setPlansOpen(true); }}>{isEnterprise ? '요금제 관리' : '업그레이드'}</button></div></article>
       </section>
+
+      {accountSettingsOpen && <section className="account-management-grid account-management-open">
+        <article className="mypage-panel account-action-card"><header><div><h2><IoPersonOutline /> 프로필 정보 수정</h2><p>서비스에 표시되는 이름을 변경합니다.</p></div></header><div className="account-form"><label>이름<input maxLength="100" value={profileName} onChange={(event) => setProfileName(event.target.value)} /></label><label>이메일<input value={user.email} disabled /></label><button type="button" disabled={accountSaving || !profileName.trim()} onClick={updateProfile}>프로필 저장</button></div></article>
+        <article className="mypage-panel account-action-card"><header><div><h2><IoLockClosedOutline /> 비밀번호 변경</h2><p>로컬 로그인 계정의 비밀번호를 변경합니다.</p></div></header><div className="account-form password"><input type="password" autoComplete="current-password" placeholder="현재 비밀번호" value={passwordForm.current} onChange={(event) => setPasswordForm((form) => ({ ...form, current: event.target.value }))} /><input type="password" autoComplete="new-password" placeholder="새 비밀번호 (8자 이상)" value={passwordForm.next} onChange={(event) => setPasswordForm((form) => ({ ...form, next: event.target.value }))} /><input type="password" autoComplete="new-password" placeholder="새 비밀번호 확인" value={passwordForm.confirm} onChange={(event) => setPasswordForm((form) => ({ ...form, confirm: event.target.value }))} /><button type="button" disabled={accountSaving || !passwordForm.current || passwordForm.next.length < 8 || !passwordForm.confirm} onClick={changePassword}>비밀번호 변경</button></div></article>
+        <article className="mypage-panel account-action-card data-policy-card"><header><div><h2><IoInformationCircleOutline /> 데이터 다운로드 및 보존</h2><p>계정에 저장된 사용자 데이터를 JSON으로 내려받습니다.</p></div></header><div><p>계정 탈퇴 시 즉시 비활성화됩니다. 관련 데이터는 복구 및 법적 의무 이행을 위해 탈퇴일로부터 30일간 보존 후 삭제 대상이 되며, 결제 기록은 관계 법령에 따른 기간 동안 별도로 보존될 수 있습니다.</p><button type="button" disabled={accountSaving} onClick={downloadAccountData}><IoDownloadOutline /> 사용자 데이터 다운로드</button></div></article>
+        <article className="mypage-panel account-action-card danger-account-card"><header><div><h2><IoTrashOutline /> 계정 탈퇴</h2><p>계정을 비활성화하고 서비스 이용을 종료합니다.</p></div></header><div><p>탈퇴 전에 필요한 문서와 데이터를 다운로드해 주세요.</p><button type="button" onClick={() => setDeleteOpen(true)}>계정 탈퇴</button></div></article>
+      </section>}
+      {accountNotice && <p className="account-action-notice" role="status">{accountNotice}</p>}
+
+      <section className="mypage-panel billing-history-panel"><header><div><h2><IoCardOutline /> 결제 이력</h2><p>Enterprise 구독의 결제 및 환불 내역입니다.</p></div>{cancellationScheduled && <button type="button" disabled={cancelSaving} onClick={revokeCancellation}>{cancelSaving ? '처리 중' : '구독 취소 철회'}</button>}</header><div className="billing-history-table"><div className="billing-history-head"><span>결제일</span><span>청구 번호</span><span>결제 수단</span><span>금액</span><span>상태</span></div>{data.billingHistory.map((payment) => <div key={payment.id}><time>{payment.paid_at ? new Date(payment.paid_at).toLocaleDateString('ko-KR') : '-'}</time><span>{payment.invoice_number || '-'}</span><span>{payment.payment_method || '-'}</span><strong>{Number(payment.amount || 0).toLocaleString('ko-KR')} {payment.currency || 'KRW'}</strong><b className={`billing-${String(payment.status || '').toLowerCase()}`}>{payment.status}</b></div>)}{!loading && !data.billingHistory.length && <p className="mypage-empty">표시할 결제 이력이 없습니다.</p>}</div></section>
 
       <section className="mypage-stat-grid">
         <article><span><IoDocumentTextOutline /></span><div><small>처리 문서</small><strong>{loading ? '—' : data.documents.length}</strong><p>OCR 및 업로드 기록</p></div></article>
@@ -134,10 +183,11 @@ export default function MyPage() {
         <article className="mypage-panel recent-account-docs"><header><div><h2>최근 문서</h2><p>최근 처리한 OCR 및 RAG 문서입니다.</p></div><button onClick={() => navigate('/ocr')}>문서 관리</button></header><div className="account-doc-table"><div className="account-doc-head"><span>문서명</span><span>상태</span><span>등록일</span></div>{recentDocuments.map((document) => <button key={document.id || document.document_id} onClick={() => navigate('/ocr')}><strong><i>DOC</i>{document.file_name || document.name || '문서'}</strong><span>{document.status || 'COMPLETED'}</span><small>{document.created_at ? new Date(document.created_at).toLocaleDateString('ko-KR') : '최근'}</small></button>)}{!loading && !recentDocuments.length && <div className="mypage-empty">아직 처리한 문서가 없습니다.</div>}</div></article>
 
         <aside className="mypage-side-column">
-          <article className="mypage-panel account-details"><header><div><h2>계정 정보</h2><p>로그인 계정과 접근 권한</p></div></header><dl><div><dt>이름</dt><dd>{user.name || '등록되지 않음'}</dd></div><div><dt>이메일</dt><dd>{user.email || '등록되지 않음'}</dd></div><div><dt>권한</dt><dd>{roleLabel}</dd></div><div><dt>인증 상태</dt><dd className="verified">인증됨</dd></div></dl></article>
+        <article className="mypage-panel account-details"><header><div><h2>계정 정보</h2><p>로그인 계정과 접근 권한</p></div></header><dl><div><dt>이름</dt><dd>{profileName || '등록되지 않음'}</dd></div><div><dt>이메일</dt><dd>{user.email || '등록되지 않음'}</dd></div><div><dt>권한</dt><dd>{roleLabel}</dd></div><div><dt>인증 상태</dt><dd className="verified">인증됨</dd></div></dl></article>
           <article className="mypage-panel security-card"><header><div><h2>보안 및 개인정보</h2><p>기업 문서 보호 정책</p></div><IoLockClosedOutline /></header><div><strong>민감정보 보호 활성화</strong><p>RAG 검색과 AI 답변에서 연락처, 주소 등의 민감정보가 보호됩니다.</p><button onClick={() => navigate('/chat')}>AI 채팅 확인</button></div></article>
         </aside>
       </section>
+      {deleteOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteOpen(false); }}><section className="account-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title"><header><div><small>ACCOUNT DELETION</small><h2 id="delete-account-title">계정을 탈퇴하시겠습니까?</h2><p>탈퇴 후에는 현재 계정으로 로그인할 수 없습니다.</p></div><button type="button" aria-label="닫기" onClick={() => setDeleteOpen(false)}><IoCloseOutline /></button></header><div><label>현재 비밀번호 <small>소셜 로그인 계정은 입력하지 않아도 됩니다.</small><input type="password" value={deleteForm.password} onChange={(event) => setDeleteForm((form) => ({ ...form, password: event.target.value }))} /></label><label>확인을 위해 <strong>계정 탈퇴</strong>를 입력하세요.<input value={deleteForm.confirmation} onChange={(event) => setDeleteForm((form) => ({ ...form, confirmation: event.target.value }))} /></label></div><footer><button type="button" onClick={() => setDeleteOpen(false)}>돌아가기</button><button type="button" className="danger" disabled={accountSaving || deleteForm.confirmation !== '계정 탈퇴'} onClick={deleteAccount}>{accountSaving ? '처리 중' : '계정 탈퇴'}</button></footer></section></div>}
       {plansOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlansOpen(false); }}><section className="plans-dialog" role="dialog" aria-modal="true" aria-label="요금제 비교"><header><div><small>WORKSPACE PLANS</small><h2>업무 방식에 맞는 플랜을 선택하세요</h2><p>가격은 현재 서비스 기획 기준이며 실제 결제 연동 전입니다.</p></div><button onClick={() => setPlansOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="plan-choice-grid">
         <article className="plan-choice current"><div className="plan-choice-title"><span>{isEnterprise ? '일반 요금제' : '현재 요금제'}</span><h3>Personal Pro</h3><p>개인 생산성을 위한 AI 문서 비서</p></div><div className="plan-price"><strong>₩19,900</strong><span>/월</span><small>매월 청구</small></div><button disabled={!isEnterprise} onClick={() => setUpgradeNotice('플랜 변경 결제 시스템 연결 전입니다. 관리자에게 Personal 변경을 문의해 주세요.')}>{isEnterprise ? 'Personal로 변경 문의' : '현재 이용 중'}</button><ul>{['한 번에 문서 1개 업로드', '기본 이미지·PDF OCR', '개인 문서 기반 RAG', '표준 AI 모델', '개인 히스토리와 캘린더'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>
         <article className="plan-choice recommended"><div className="recommended-label">{isEnterprise ? '현재 요금제' : '추천 요금제'}</div><div className="plan-choice-title"><span>기업용</span><h3>Enterprise Workspace</h3><p>최대 5명의 팀원과 지식과 업무를 공유하세요.</p></div><div className="plan-price"><strong>₩89,000</strong><span>/월</span><small>5명 포함 · 매월 청구</small></div><button disabled={isEnterprise} onClick={() => setUpgradeNotice('결제 시스템 연결 전입니다. 관리자에게 Enterprise 도입을 문의해 주세요.')}>{isEnterprise ? '현재 이용 중' : 'Enterprise로 업그레이드'}</button><ul>{['대량 문서 Batch OCR과 복잡한 표 인식', '전사·부서별 통합 RAG 지식베이스', '고성능 모델과 고용량 토큰', '기업 입력 데이터 AI 학습 제외', 'Admin / Member 권한 및 팀 프로젝트'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>

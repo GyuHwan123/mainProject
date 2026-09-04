@@ -1,5 +1,31 @@
 @use "./variables" as *;
 
+.account-management-grid { margin-bottom: 13px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; }
+.account-management-open { animation: account-panel-in .2s ease-out both; }
+@keyframes account-panel-in { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+.profile-card-actions { flex: none; display: grid; justify-items: end; gap: 9px;
+  > button { min-height: 32px; padding: 0 11px; color: #35516f; background: #fff; border: 1px solid #d8e2ec; border-radius: 7px; font-size: 10px; font-weight: 750; cursor: pointer; }
+  > button:hover, > button.active { color: #1767df; background: #edf4ff; border-color: #c4d8f2; }
+}
+.account-action-card { min-height: 225px; overflow: hidden;
+  > header h2 { display: flex; align-items: center; gap: 7px; }
+  > header h2 svg { color: $midel-color; }
+  > div { padding: 15px 17px; }
+  > div > p { margin: 0 0 14px; color: #64758b; font-size: 11px; line-height: 1.6; }
+  button { min-height: 34px; padding: 0 12px; color: #fff; background: $midel-color; border: 0; border-radius: 7px; font-size: 11px; font-weight: 750; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+}
+.account-form { display: grid; gap: 10px; label { display: grid; gap: 5px; color: #566a82; font-size: 10px; } input { width: 100%; min-width: 0; height: 34px; padding: 0 10px; box-sizing: border-box; color: #2d4058; background: #fff; border: 1px solid #d9e2ec; border-radius: 7px; outline: 0; } input:focus { border-color: #5c91d8; box-shadow: 0 0 0 2px rgba(36, 103, 195, .1); } input:disabled { color: #8794a5; background: #f3f6f9; } button { justify-self: start; } }
+.account-form.password { grid-template-columns: 1fr; }
+.data-policy-card button { display: inline-flex; align-items: center; gap: 6px; }
+.danger-account-card { border-color: #f0d6d8; button { color: #c8414b; background: #fff1f2; border: 1px solid #efc7ca; } }
+.account-action-notice { margin: 0 0 13px; padding: 10px 13px; color: #245f4b; background: #eaf7f1; border: 1px solid #cbe9dc; border-radius: 8px; font-size: 11px; }
+.billing-history-panel { margin-bottom: 13px; overflow: hidden; > header > button { min-height: 32px; padding: 0 11px; color: #1767df; background: #edf4ff; border: 1px solid #c8daf4; border-radius: 7px; font-size: 10px; font-weight: 750; cursor: pointer; } }
+.billing-history-table { overflow-x: auto; > div { min-width: 680px; min-height: 42px; padding: 0 17px; display: grid; grid-template-columns: 120px 1fr 1fr 130px 90px; align-items: center; gap: 12px; color: #5c6f87; border-bottom: 1px solid #edf1f5; font-size: 11px; } .billing-history-head { min-height: 36px; color: #74849a; background: #f7f9fc; font-weight: 750; } strong { color: #2b405c; } b { width: fit-content; padding: 4px 8px; color: #235e45; background: #e8f6ef; border-radius: 10px; font-size: 9px; } .billing-failed { color: #b33e48; background: #fff0f1; } .billing-refunded { color: #8a5b16; background: #fff4df; } .mypage-empty { display: block; min-width: 0; padding: 28px; text-align: center; } }
+.account-delete-dialog { width: min(470px, calc(100% - 30px)); overflow: hidden; background: #fff; border-radius: 13px; box-shadow: 0 24px 70px rgba(20, 31, 48, .28); > header { padding: 18px 20px; display: flex; justify-content: space-between; background: #fff7f7; border-bottom: 1px solid #f1dfe1; } header small { color: #cf3e49; font-size: 9px; font-weight: 850; letter-spacing: .12em; } h2 { margin: 5px 0; color: #3a2730; font-size: 18px; } header p { margin: 0; color: #806c73; font-size: 11px; } header button { width: 30px; height: 30px; color: #6f5c63; background: #fff; border: 1px solid #ead9db; border-radius: 7px; cursor: pointer; } > div { padding: 18px 20px; display: grid; gap: 14px; } label { display: grid; gap: 6px; color: #52657d; font-size: 11px; } label small { color: #8a98a8; } input { height: 36px; padding: 0 10px; border: 1px solid #d9e1ea; border-radius: 7px; } > footer { padding: 12px 20px; display: flex; justify-content: flex-end; gap: 8px; background: #f8fafc; border-top: 1px solid #e7ecf2; } footer button { min-height: 34px; padding: 0 13px; color: #465a72; background: #fff; border: 1px solid #d6e0ea; border-radius: 7px; cursor: pointer; } footer .danger { color: #fff; background: #cf3e49; border-color: #cf3e49; } footer button:disabled { opacity: .45; cursor: default; } }
+@media (max-width: 1300px) { .account-management-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 720px) { .account-management-grid { grid-template-columns: 1fr; } }
+
 .mypage-shell {
   min-height: 100vh;
   color: $bgd;

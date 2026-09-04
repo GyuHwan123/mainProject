@@ -1370,6 +1370,14 @@ export default function OCRPage() {
   const currentRows = pageRows[pageNumber - 1];
   const currentFinanceRecords = financeRecord ? [financeRecord] : [];
   const receiptArchiveCategories = financeTaxonomy.expense_categories;
+  const financeReviewCategories = useMemo(() => {
+    const categories = financeTaxonomy.expense_categories || [];
+    if (!financeReviewDraft?.document_type) return categories;
+    const mappedCategories = categories.filter(
+      (category) => financeTaxonomy.category_to_document_type?.[category] === financeReviewDraft.document_type,
+    );
+    return mappedCategories.length ? mappedCategories : categories;
+  }, [financeReviewDraft?.document_type, financeTaxonomy]);
   const filteredReceiptArchive = useMemo(() => [...receiptArchive].sort((left, right) => {
     const leftDate = Date.parse(left.transaction_date || left.created_at || '') || 0;
     const rightDate = Date.parse(right.transaction_date || right.created_at || '') || 0;
@@ -2039,7 +2047,7 @@ export default function OCRPage() {
             <form onSubmit={saveFinanceReview}>
               <div className="finance-review-grid">
                 <label><span>문서 유형</span><select required value={financeReviewDraft.document_type || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, document_type: event.target.value, expense_category: '' }))}><option value="" disabled>선택</option>{Object.entries(FINANCE_DOCUMENTS).filter(([value]) => !financeTaxonomy.document_types.length || financeTaxonomy.document_types.includes(value)).map(([value, definition]) => <option key={value} value={value}>{definition.title}</option>)}</select></label>
-                <label><span>카테고리</span><select required value={financeReviewDraft.expense_category || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))}><option value="" disabled>선택</option>{financeTaxonomy.expense_categories.filter((category) => !financeReviewDraft.document_type || financeTaxonomy.category_to_document_type[category] === financeReviewDraft.document_type).map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
+                <label><span>카테고리</span><select required value={financeReviewDraft.expense_category || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))}><option value="" disabled>선택</option>{financeReviewCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label><span>상호(가맹점)</span><input maxLength="200" value={financeReviewDraft.merchant} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, merchant: event.target.value }))} /></label>
                 <label><span>결제일</span><input type="date" value={financeReviewDraft.transaction_date} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, transaction_date: event.target.value }))} /></label>
                 <label><span>공급가액</span><input type="number" min="0" value={financeReviewDraft.supply_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, supply_amount: event.target.value }))} /></label>

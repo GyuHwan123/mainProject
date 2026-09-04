@@ -1,15 +1,15 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(max_length=200)
 
 
 class SignupRequest(BaseModel):
-    name: str
+    name: str = Field(max_length=80)
     email: EmailStr
-    password: str
+    password: str = Field(max_length=200)
 
 
 class LoginResponse(BaseModel):
@@ -18,7 +18,7 @@ class LoginResponse(BaseModel):
     user_email: EmailStr
     user_name: str
     user_role: str = "USER"
-    user_subscription_tier: str = "PERSONAL"
+    user_subscription_tier: str = "FREE"
     calendar_imported: int = 0
     calendar_sync_error: str | None = None
 
@@ -34,8 +34,8 @@ class PasswordResetRequest(BaseModel):
 
 
 class PasswordResetConfirmRequest(BaseModel):
-    token: str
-    new_password: str
+    token: str = Field(max_length=512)
+    new_password: str = Field(max_length=200)
 
 
 class MessageResponse(BaseModel):

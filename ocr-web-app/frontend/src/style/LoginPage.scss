@@ -236,6 +236,13 @@
           font-size: 0.82rem;
           font-weight: 700;
         }
+
+        .field-error {
+          color: #b42336;
+          font-size: 0.78rem;
+          font-weight: 600;
+          line-height: 1.4;
+        }
       }
 
       input {
@@ -253,6 +260,11 @@
         &:focus {
           border-color: $sub-color;
           box-shadow: 0 0 0 3px rgba($sub-color, 0.16);
+        }
+
+        &[aria-invalid="true"] {
+          border-color: #d94b5f;
+          box-shadow: 0 0 0 3px rgba(#d94b5f, 0.12);
         }
 
         &:disabled {

@@ -5,6 +5,7 @@ import { SiNaver } from 'react-icons/si';
 import apiClient from '../api/client';
 import LoginLoading from '../components/LoginLoading';
 import { saveAppSession } from '../features/appSession';
+import { authErrorMessage, isValidEmail, MAX_PASSWORD_LENGTH } from '../features/authValidation';
 import { supabase } from '../lib/supabase';
 import '../style/LoginPage.scss';
 
@@ -31,11 +32,6 @@ function recordFailure(email) {
   return state;
 }
 
-const authErrorMessage = (error) => {
-  if (error?.response?.status === 429) return '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.';
-  return error?.response?.data?.detail || error?.message || '인증 처리 중 오류가 발생했습니다.';
-};
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState('login');
@@ -47,6 +43,7 @@ export default function LoginPage() {
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [recovering, setRecovering] = useState(false);
+  const [emailTouched, setEmailTouched] = useState(false);
   const [now, setNow] = useState(Date.now());
   const failureState = readFailureState(email);
   const lockedSeconds = Math.max(0, Math.ceil((failureState.lockedUntil - now) / 1000));
@@ -59,7 +56,7 @@ export default function LoginPage() {
 
   const changeMode = (nextMode) => {
     if (loading) return;
-    setMode(nextMode); setRecovering(false); setFormError(''); setFormSuccess(''); setPassword(''); setConfirmPassword('');
+    setMode(nextMode); setRecovering(false); setEmailTouched(false); setFormError(''); setFormSuccess(''); setPassword(''); setConfirmPassword('');
   };
 
   const showPasswordRecovery = () => {
@@ -90,9 +87,11 @@ export default function LoginPage() {
     event.preventDefault();
     if (loading) return;
     setFormError('');
+    setEmailTouched(true);
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedName = name.trim();
     if (!normalizedEmail) return setFormError('이메일을 입력해 주세요.');
+    if (!isValidEmail(normalizedEmail)) return setFormError('올바른 이메일 형식을 입력해 주세요. 예: name@company.com');
     if (recovering) {
       setLoading(true);
       try {
@@ -107,6 +106,8 @@ export default function LoginPage() {
 
     if (!password) return setFormError('비밀번호를 입력해 주세요.');
     if (password.length < 8) return setFormError('비밀번호는 8자 이상이어야 합니다.');
+    if (password.length > MAX_PASSWORD_LENGTH) return setFormError(`비밀번호는 ${MAX_PASSWORD_LENGTH}자 이하로 입력해 주세요.`);
+    if (mode === 'signup' && !confirmPassword) return setFormError('비밀번호 확인을 입력해 주세요.');
     if (mode === 'signup' && password !== confirmPassword) return setFormError('비밀번호와 비밀번호 확인이 일치하지 않습니다.');
     if (mode === 'login' && lockedSeconds) return setFormError(`로그인이 일시 제한되었습니다. ${Math.ceil(lockedSeconds / 60)}분 후 다시 시도해 주세요.`);
 
@@ -128,7 +129,7 @@ export default function LoginPage() {
       saveAppSession(data);
       navigate('/dashboard', { replace: true });
     } catch (error) {
-      if (mode === 'login' && !credentialsAccepted) {
+      if (mode === 'login' && !credentialsAccepted && error?.response?.status === 401) {
         const state = recordFailure(normalizedEmail);
         setNow(Date.now());
         if (state.lockedUntil) setFormError('로그인에 5회 실패하여 15분 동안 로그인이 제한됩니다.');
@@ -137,7 +138,10 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
-  const update = (setter) => (event) => { setter(event.target.value); setFormError(''); };
+  const update = (setter) => (event) => { setter(event.target.value); setFormError(''); setFormSuccess(''); };
+  const emailError = emailTouched && email.trim() && !isValidEmail(email)
+    ? '올바른 이메일 형식을 입력해 주세요. 예: name@company.com'
+    : '';
   const submitLabel = mode === 'login' ? '로그인' : '회원가입';
 
   return <div className="login-shell"><div className="login-window">
@@ -153,10 +157,10 @@ export default function LoginPage() {
         {formError && <p className="auth-message error" role="alert">{formError}</p>}
         {formSuccess && <p className="auth-message success" role="status">{formSuccess}</p>}
         {!recovering && mode === 'signup' && <label><span>이름</span><input type="text" value={name} onChange={update(setName)} placeholder="이름을 입력하세요" autoComplete="name" disabled={loading} maxLength={80} /></label>}
-        <label><span>이메일</span><input type="email" value={email} onChange={update(setEmail)} placeholder="name@company.com" autoComplete="email" disabled={loading} autoFocus /></label>
-        {!recovering && <label><span>비밀번호</span><input type="password" value={password} onChange={update(setPassword)} placeholder="8자 이상 입력하세요" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} disabled={loading} minLength={8} /></label>}
+        <label><span>이메일</span><input type="email" value={email} onChange={update(setEmail)} onBlur={() => setEmailTouched(true)} placeholder="name@company.com" autoComplete="email" inputMode="email" disabled={loading} autoFocus aria-invalid={Boolean(emailError)} aria-describedby={emailError ? 'email-format-error' : undefined} />{emailError && <small id="email-format-error" className="field-error" role="alert">{emailError}</small>}</label>
+        {!recovering && <label><span>비밀번호</span><input type="password" value={password} onChange={update(setPassword)} placeholder="8자 이상 입력하세요" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} disabled={loading} minLength={8} maxLength={MAX_PASSWORD_LENGTH} /></label>}
         {!recovering && mode === 'login' && <button className="auth-text-button" type="button" disabled={loading} onClick={showPasswordRecovery}>비밀번호를 잊으셨나요?</button>}
-        {!recovering && mode === 'signup' && <label><span>비밀번호 확인</span><input type="password" value={confirmPassword} onChange={update(setConfirmPassword)} placeholder="비밀번호를 다시 입력하세요" autoComplete="new-password" disabled={loading} minLength={8} /></label>}
+        {!recovering && mode === 'signup' && <label><span>비밀번호 확인</span><input type="password" value={confirmPassword} onChange={update(setConfirmPassword)} placeholder="비밀번호를 다시 입력하세요" autoComplete="new-password" disabled={loading} minLength={8} maxLength={MAX_PASSWORD_LENGTH} /></label>}
         <button className="primary-button" type="submit" disabled={loading || (!recovering && mode === 'login' && Boolean(lockedSeconds))}>{loading ? '처리 중...' : recovering ? '재설정 메일 보내기' : submitLabel}</button>
         {recovering && <button className="auth-text-button" type="button" disabled={loading} onClick={() => { setRecovering(false); setFormError(''); setFormSuccess(''); }}>로그인으로 돌아가기</button>}
       </form>

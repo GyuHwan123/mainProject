@@ -72,7 +72,18 @@ class SupabaseBase:
         )
         self._raise_for_supabase(response, "구독 정보 조회 실패")
         rows = response.json()
-        return rows[0] if rows else None
+        subscription = rows[0] if rows else None
+        if subscription and subscription.get("status") == "CANCEL_SCHEDULED" and subscription.get("current_period_end"):
+            period_end = datetime.fromisoformat(str(subscription["current_period_end"]).replace("Z", "+00:00"))
+            if period_end <= datetime.now(timezone.utc):
+                expiry_response = httpx.post(
+                    f"{self.url}/rest/v1/rpc/expire_scheduled_subscription",
+                    headers={**self._service_headers(), "Prefer": "return=representation"},
+                    json={"p_user_id": user_id}, timeout=15,
+                )
+                self._raise_for_supabase(expiry_response, "만료 구독 처리 실패")
+                subscription = expiry_response.json()
+        return subscription
 
     def request_subscription_cancellation(self, user_email: str, reason: str | None) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)

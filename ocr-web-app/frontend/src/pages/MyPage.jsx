@@ -1,11 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { IoBookmarkOutline, IoCardOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoChevronDownOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoInformationCircleOutline, IoLockClosedOutline, IoPersonOutline, IoRefreshOutline, IoServerOutline, IoTrashOutline } from 'react-icons/io5';
+import { loadTossPayments } from '@tosspayments/tosspayments-sdk';
+import { IoBookmarkOutline, IoChatbubbleEllipsesOutline, IoCheckmarkOutline, IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoInformationCircleOutline, IoLockClosedOutline, IoPersonOutline, IoRefreshOutline, IoServerOutline, IoTrashOutline } from 'react-icons/io5';
 import Sidebar from '../components/Sidebar';
 import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
 import { clearAppSession, getAppUser, saveAppUser } from '../features/appSession';
 import '../style/MyPage.scss';
+
+const getDocumentStatus = (kind, status) => {
+  const normalized = String(status || '').toUpperCase();
+  if (['FAILED', 'ERROR'].includes(normalized)) return { label: '실패', tone: 'failed' };
+  if (kind === 'rag' && ['RAG_READY', 'READY', 'COMPLETED'].includes(normalized)) {
+    return { label: '임베딩 완료', tone: 'completed' };
+  }
+  if (kind === 'ocr' && ['COMPLETED', 'SUCCESS'].includes(normalized)) {
+    return { label: '처리 완료', tone: 'completed' };
+  }
+  return { label: '처리 중', tone: 'processing' };
+};
+
+const formatKstDate = (value) => value
+  ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value))
+  : '-';
+
+const enterpriseBenefits = [
+  '대량 문서 Batch OCR',
+  '사내 공용 RAG',
+  '고성능 모델 / 확장된 사용량',
+  'Admin / Member 권한 관리',
+  '팀 프로젝트 및 업무 자동화',
+  '기업용 리포트',
+];
+
 
 export default function MyPage() {
   const navigate = useNavigate();
@@ -14,13 +41,13 @@ export default function MyPage() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState('');
   const [plansOpen, setPlansOpen] = useState(false);
-  const [benefitsOpen, setBenefitsOpen] = useState(true);
   const [upgradeNotice, setUpgradeNotice] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelSaving, setCancelSaving] = useState(false);
+  const [paymentSaving, setPaymentSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
-  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [], billingHistory: [] });
+  const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
   const [profileName, setProfileName] = useState(user.name || '');
   const [accountNotice, setAccountNotice] = useState('');
   const [accountSaving, setAccountSaving] = useState(false);
@@ -33,10 +60,10 @@ export default function MyPage() {
   const loadAccountData = useCallback(async () => {
     setLoading(true); setError('');
     const results = await Promise.allSettled([
-      apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'), apiClient.get('/finance/history'), apiClient.get('/users/billing-history'),
+      apiClient.get('/ocr/history?upload_origin=OCR'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'), apiClient.get('/users/subscription'), apiClient.get('/finance/history'),
     ]);
     const values = results.map((result) => result.status === 'fulfilled' && Array.isArray(result.value.data) ? result.value.data : []);
-    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3], financeHistory: values[5], billingHistory: values[6] });
+    setData({ documents: values[0], ragDocuments: values[1], sessions: values[2], scraps: values[3], financeHistory: values[5] });
     if (results[4]?.status === 'fulfilled') setSubscription(results[4].value.data);
     if (results.every((result) => result.status === 'rejected')) setError('계정 사용 현황을 불러오지 못했습니다.');
     setLoading(false);
@@ -48,12 +75,30 @@ export default function MyPage() {
   }, [loadAccountData]);
 
   const initials = useMemo(() => (profileName || user.email || 'U').trim().slice(0, 2).toUpperCase(), [profileName, user.email]);
-  const isEnterprise = user.subscriptionTier === 'ENTERPRISE';
+  const currentTier = subscription.subscription_tier || user.subscriptionTier;
+  const isEnterprise = currentTier === 'ENTERPRISE';
   const roleLabel = user.role === 'ADMIN' ? '관리자' : user.role === 'DEVELOPER' ? '개발자' : (isEnterprise ? '기업 사용자' : '일반 사용자');
-  const readyRag = data.ragDocuments.filter((document) => document.status === 'RAG_READY').length;
-  const recentDocuments = data.documents.slice(0, 5);
+  const recentDocuments = useMemo(() => [
+    ...data.documents.map((document) => ({
+      document,
+      kind: 'ocr',
+      key: `ocr-${document.id || document.document_id}`,
+      createdAt: document.created_at,
+    })),
+    ...data.ragDocuments.map((document) => ({
+      document,
+      kind: 'rag',
+      key: `rag-${document.id || document.document_id}`,
+      createdAt: document.created_at,
+    })),
+  ].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0)).slice(0, 5), [data.documents, data.ragDocuments]);
   const cancellationScheduled = subscription.status === 'CANCEL_SCHEDULED' || subscription.cancel_at_period_end;
-  const periodEndLabel = subscription.current_period_end ? new Date(subscription.current_period_end).toLocaleDateString('ko-KR') : null;
+  const periodEndLabel = subscription.current_period_end ? formatKstDate(subscription.current_period_end) : null;
+  const planName = isEnterprise ? 'Enterprise Workspace' : 'FREE';
+  const planAmount = Number(subscription.monthly_amount || 0);
+  const subscriptionStatusLabel = subscription.status === 'CANCELED'
+    ? '종료'
+    : cancellationScheduled ? '취소 예정' : isEnterprise ? '활성' : '무료';
 
   const updateProfile = async () => {
     setAccountSaving(true); setAccountNotice('');
@@ -96,6 +141,63 @@ export default function MyPage() {
     } catch (requestError) {
       setUpgradeNotice(requestError.response?.data?.detail || '요금제 취소 요청을 저장하지 못했습니다.');
     } finally { setCancelSaving(false); }
+  };
+
+  const startEnterprisePayment = async () => {
+    if (paymentSaving) return;
+    setPaymentSaving(true); setUpgradeNotice('');
+    let orderId = '';
+    try {
+      const clientKey = import.meta.env.VITE_TOSS_CLIENT_KEY;
+      if (!clientKey?.startsWith('test_gck_')) throw new Error('토스페이먼츠 결제창형 테스트 클라이언트 키 설정이 필요합니다.');
+      const { data: order } = await apiClient.post('/billing/orders', { plan: 'ENTERPRISE' });
+      orderId = order.orderId;
+      sessionStorage.setItem('docunex_payment_order_id', orderId);
+      const tossPayments = await loadTossPayments(clientKey);
+      const widgets = tossPayments.widgets({ customerKey: order.customerKey });
+      await widgets.setAmount({ currency: order.currency, value: order.amount });
+      const paymentWindow = await widgets.renderPaymentWindow();
+      let requestStarted = false;
+      paymentWindow.on('paymentRequest', async () => {
+        if (requestStarted) return;
+        requestStarted = true;
+        try {
+          await widgets.requestPayment({
+            orderId: order.orderId,
+            orderName: order.orderName,
+            successUrl: `${window.location.origin}/payment/success`,
+            failUrl: `${window.location.origin}/payment/fail`,
+            customerEmail: order.customerEmail,
+            customerName: order.customerName,
+          });
+        } catch (paymentError) {
+          await apiClient.post(`/billing/orders/${encodeURIComponent(orderId)}/failure`, {
+            code: paymentError.code || 'PAYMENT_REQUEST_ERROR', message: paymentError.message, canceled: false,
+          }).catch(() => {});
+          sessionStorage.removeItem('docunex_payment_order_id');
+          setUpgradeNotice(paymentError.message || '결제 요청을 완료하지 못했습니다.');
+          setPaymentSaving(false);
+        }
+      });
+      paymentWindow.on('cancel', async () => {
+        await apiClient.post(`/billing/orders/${encodeURIComponent(orderId)}/failure`, {
+          code: 'PAYMENT_WINDOW_CANCELED', message: '사용자가 결제창을 닫았습니다.', canceled: true,
+        }).catch(() => {});
+        sessionStorage.removeItem('docunex_payment_order_id');
+        setUpgradeNotice('테스트 결제를 취소했습니다.');
+        setPaymentSaving(false);
+      });
+    } catch (requestError) {
+      const canceled = requestError.code === 'USER_CANCEL' || requestError.code === 'PAY_PROCESS_CANCELED';
+      if (orderId) {
+        await apiClient.post(`/billing/orders/${encodeURIComponent(orderId)}/failure`, {
+          code: requestError.code || 'PAYMENT_WINDOW_ERROR', message: requestError.message, canceled,
+        }).catch(() => {});
+        sessionStorage.removeItem('docunex_payment_order_id');
+      }
+      setUpgradeNotice(canceled ? '테스트 결제를 취소했습니다.' : (requestError.response?.data?.detail || requestError.message || '결제창을 열지 못했습니다.'));
+      setPaymentSaving(false);
+    }
   };
 
   const downloadFinanceDocument = async (record) => {
@@ -142,7 +244,7 @@ export default function MyPage() {
 
       <section className="profile-overview">
         <article className="profile-card"><div className="profile-avatar">{initials}</div><div className="profile-copy"><span>{roleLabel}</span><h2>{profileName || '사용자'} 님</h2><p>{user.email || '이메일 정보 없음'}</p></div><div className="profile-card-actions"><div className="account-state"><i /> 계정 활성</div><button type="button" className={accountSettingsOpen ? 'active' : ''} onClick={() => setAccountSettingsOpen((open) => !open)}>{accountSettingsOpen ? '회원정보 닫기' : '회원정보 관리'}</button></div></article>
-        <article className="current-plan-card"><div><small>CURRENT PLAN</small><h2>{isEnterprise ? 'Enterprise Workspace' : 'Personal Pro'}</h2><p>{isEnterprise ? '팀 협업, 사내 지식 자산화와 기업 데이터 보안을 위한 조직용 플랜입니다.' : '개인 문서 OCR, RAG 검색과 AI 비서를 위한 생산성 플랜입니다.'}</p><div className="plan-tags">{isEnterprise ? <><b>Organization</b><b>{user.role === 'ADMIN' ? 'Admin' : 'Member'}</b><b>AI 학습 제외</b><b>월 ₩89,000</b></> : <><b>개인 계정</b><b>문서 1개</b><b>월 ₩19,900</b><b>표준 AI 모델</b></>}</div>{cancellationScheduled && <p className="cancellation-summary">{periodEndLabel || '현재 이용 기간 종료일'}에 Personal로 전환 예정</p>}</div><div className="plan-card-actions"><span className={cancellationScheduled ? 'scheduled' : ''}>{cancellationScheduled ? '취소 예약됨' : '활성'}</span><button type="button" onClick={() => { setUpgradeNotice(''); setPlansOpen(true); }}>{isEnterprise ? '요금제 관리' : '업그레이드'}</button></div></article>
+        <article className="current-plan-card"><div><small>CURRENT PLAN</small><h2>{planName}</h2><dl className="current-plan-summary"><div><dt>구독 상태</dt><dd>{subscriptionStatusLabel}</dd></div><div><dt>월 요금</dt><dd>₩{planAmount.toLocaleString('ko-KR')}</dd></div><div><dt>다음 결제 예정일</dt><dd>{isEnterprise && !cancellationScheduled ? periodEndLabel || '-' : '-'}</dd></div></dl>{cancellationScheduled && <p className="cancellation-summary">{periodEndLabel || '현재 이용 기간 종료일'}에 구독이 종료될 예정입니다.</p>}</div><div className="plan-card-actions"><span className={cancellationScheduled ? 'scheduled' : ''}>{subscriptionStatusLabel}</span><button type="button" onClick={() => { setUpgradeNotice(''); setPlansOpen(true); }}>요금제 관리</button></div></article>
       </section>
 
       {accountSettingsOpen && <section className="account-management-grid account-management-open">
@@ -153,25 +255,34 @@ export default function MyPage() {
       </section>}
       {accountNotice && <p className="account-action-notice" role="status">{accountNotice}</p>}
 
-      <section className="mypage-panel billing-history-panel"><header><div><h2><IoCardOutline /> 결제 이력</h2><p>Enterprise 구독의 결제 및 환불 내역입니다.</p></div>{cancellationScheduled && <button type="button" disabled={cancelSaving} onClick={revokeCancellation}>{cancelSaving ? '처리 중' : '구독 취소 철회'}</button>}</header><div className="billing-history-table"><div className="billing-history-head"><span>결제일</span><span>청구 번호</span><span>결제 수단</span><span>금액</span><span>상태</span></div>{data.billingHistory.map((payment) => <div key={payment.id}><time>{payment.paid_at ? new Date(payment.paid_at).toLocaleDateString('ko-KR') : '-'}</time><span>{payment.invoice_number || '-'}</span><span>{payment.payment_method || '-'}</span><strong>{Number(payment.amount || 0).toLocaleString('ko-KR')} {payment.currency || 'KRW'}</strong><b className={`billing-${String(payment.status || '').toLowerCase()}`}>{payment.status}</b></div>)}{!loading && !data.billingHistory.length && <p className="mypage-empty">표시할 결제 이력이 없습니다.</p>}</div></section>
+      {upgradeNotice && <p className="account-action-notice" role="status">{upgradeNotice}</p>}
 
       <section className="mypage-stat-grid">
-        <article><span><IoDocumentTextOutline /></span><div><small>처리 문서</small><strong>{loading ? '—' : data.documents.length}</strong><p>OCR 및 업로드 기록</p></div></article>
-        <article><span><IoServerOutline /></span><div><small>RAG 지식</small><strong>{loading ? '—' : readyRag}</strong><p>검색 준비 완료 문서</p></div></article>
-        <article><span><IoChatbubbleEllipsesOutline /></span><div><small>AI 채팅</small><strong>{loading ? '—' : data.sessions.length}</strong><p>저장된 대화 기록</p></div></article>
+        <article><span><IoDocumentTextOutline /></span><div><small>OCR 처리</small><strong>{loading ? '—' : data.documents.length}</strong><p>영수증 OCR 처리 기록</p></div></article>
+        <article><span><IoServerOutline /></span><div><small>RAG 문서</small><strong>{loading ? '—' : data.ragDocuments.length}</strong><p>등록된 지식 문서</p></div></article>
+        <article><span><IoChatbubbleEllipsesOutline /></span><div><small>AI 대화</small><strong>{loading ? '—' : data.sessions.length}</strong><p>저장된 대화 기록</p></div></article>
         <article><span><IoBookmarkOutline /></span><div><small>지식 바구니</small><strong>{loading ? '—' : data.scraps.length}</strong><p>보관한 AI 답변</p></div></article>
       </section>
 
+      <section className="mypage-content-grid">
+        <article className="mypage-panel recent-account-docs"><header><div><h2>최근 문서</h2><p>최근 처리한 OCR 및 RAG 문서입니다.</p></div><button onClick={() => navigate('/ocr')}>문서 관리</button></header><div className="account-doc-table"><div className="account-doc-head"><span>문서명</span><span>유형</span><span>상태</span><span>등록일</span></div>{recentDocuments.map(({ document, kind, key }) => { const status = getDocumentStatus(kind, document.status); return <button key={key} onClick={() => navigate(kind === 'rag' ? '/chat' : '/ocr')}><strong title={document.file_name || document.filename || document.name || document.title || '문서'}><i>{kind === 'rag' ? 'RAG' : 'OCR'}</i><em>{document.file_name || document.filename || document.name || document.title || '문서'}</em></strong><span className={`document-type-badge ${kind}`}>{kind === 'rag' ? 'RAG 문서' : '영수증 OCR'}</span><span className={`document-status-badge ${status.tone}`}>{status.label}</span><small>{document.created_at ? new Date(document.created_at).toLocaleDateString('ko-KR') : '-'}</small></button>; })}{!loading && !recentDocuments.length && <div className="mypage-empty">아직 처리한 문서가 없습니다.</div>}</div></article>
+
+        <aside className="mypage-side-column">
+        <article className="mypage-panel account-details"><header><div><h2>계정 정보</h2><p>로그인 계정과 접근 권한</p></div></header><dl><div><dt>이름</dt><dd>{profileName || '등록되지 않음'}</dd></div><div><dt>이메일</dt><dd>{user.email || '등록되지 않음'}</dd></div><div><dt>권한</dt><dd>{roleLabel}</dd></div><div><dt>인증 상태</dt><dd className="verified">인증됨</dd></div></dl></article>
+          <article className="mypage-panel security-card"><header><div><h2>보안 및 개인정보</h2><p>기업 문서 보호 정책</p></div><IoLockClosedOutline /></header><div><strong>민감정보 보호 활성화</strong><p>RAG 검색과 AI 답변에서 연락처, 주소 등의 민감정보가 보호됩니다.</p><button onClick={() => navigate('/chat')}>AI 채팅 확인</button></div></article>
+        </aside>
+      </section>
+
       <section className="mypage-panel finance-history-panel">
-        <header><div><h2>재무 히스토리</h2><p>사용자가 최종 확정하여 재무팀에 전달한 문서입니다.</p></div><button onClick={() => navigate('/reports')}>재무 문서 관리</button></header>
+        <header><div><h2>재무 히스토리</h2><p>재무팀에 실제 전달된 문서 내역입니다.</p></div><button onClick={() => navigate('/reports')}>재무 문서 관리</button></header>
         <div className="finance-history-table">
           <div className="finance-history-head"><span>문서 파일</span><span>금액</span><span>재무팀 상태</span><span>전달일</span><span>확인 날짜</span><span>작업</span></div>
           {data.financeHistory.map((record) => <div className="finance-history-row" key={record.id}>
             <button type="button" className="finance-file" onClick={() => downloadFinanceDocument(record)}><i>XLSX</i><span><strong>{record.document_filename}</strong><small>{record.merchant || record.expense_category || '재무 문서'}</small></span></button>
             <b>{Math.round(Number(record.total_amount || 0)).toLocaleString('ko-KR')}원</b>
             <span className={record.finance_team_status === '확인' ? 'finance-checked' : 'finance-pending'}>{record.finance_team_status}</span>
-            <time>{record.submitted_at ? new Date(record.submitted_at).toLocaleDateString('ko-KR') : '-'}</time>
-            <time>{record.finance_confirmed_at ? new Date(record.finance_confirmed_at).toLocaleDateString('ko-KR') : '-'}</time>
+            <time>{record.submitted_at ? formatKstDate(record.submitted_at) : '-'}</time>
+            <time>{record.finance_confirmed_at ? formatKstDate(record.finance_confirmed_at) : '-'}</time>
             <div className="finance-history-actions"><button type="button" onClick={() => downloadFinanceDocument(record)} title="문서 다운로드"><IoDownloadOutline /></button>{['ADMIN', 'DEVELOPER'].includes(user.role) && record.finance_team_status !== '확인' && <button type="button" className="finance-confirm-button" onClick={() => confirmFinanceDocument(record)}>확인 처리</button>}</div>
           </div>)}
           {!loading && !data.financeHistory.length && <div className="mypage-empty">재무팀에 전달한 문서가 아직 없습니다.</div>}
@@ -179,19 +290,23 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className="mypage-content-grid">
-        <article className="mypage-panel recent-account-docs"><header><div><h2>최근 문서</h2><p>최근 처리한 OCR 및 RAG 문서입니다.</p></div><button onClick={() => navigate('/ocr')}>문서 관리</button></header><div className="account-doc-table"><div className="account-doc-head"><span>문서명</span><span>상태</span><span>등록일</span></div>{recentDocuments.map((document) => <button key={document.id || document.document_id} onClick={() => navigate('/ocr')}><strong><i>DOC</i>{document.file_name || document.name || '문서'}</strong><span>{document.status || 'COMPLETED'}</span><small>{document.created_at ? new Date(document.created_at).toLocaleDateString('ko-KR') : '최근'}</small></button>)}{!loading && !recentDocuments.length && <div className="mypage-empty">아직 처리한 문서가 없습니다.</div>}</div></article>
-
-        <aside className="mypage-side-column">
-        <article className="mypage-panel account-details"><header><div><h2>계정 정보</h2><p>로그인 계정과 접근 권한</p></div></header><dl><div><dt>이름</dt><dd>{profileName || '등록되지 않음'}</dd></div><div><dt>이메일</dt><dd>{user.email || '등록되지 않음'}</dd></div><div><dt>권한</dt><dd>{roleLabel}</dd></div><div><dt>인증 상태</dt><dd className="verified">인증됨</dd></div></dl></article>
-          <article className="mypage-panel security-card"><header><div><h2>보안 및 개인정보</h2><p>기업 문서 보호 정책</p></div><IoLockClosedOutline /></header><div><strong>민감정보 보호 활성화</strong><p>RAG 검색과 AI 답변에서 연락처, 주소 등의 민감정보가 보호됩니다.</p><button onClick={() => navigate('/chat')}>AI 채팅 확인</button></div></article>
-        </aside>
+      <section className="mypage-panel subscription-management-panel">
+        <header><div><h2>구독 관리</h2><p>현재 이용 중인 요금제와 결제 정보를 확인하고 관리할 수 있습니다.</p></div></header>
+        <div className="subscription-management-body">
+          <div className="subscription-management-grid">
+            <dl><div><dt>현재 요금제</dt><dd>{planName}</dd></div><div><dt>구독 상태</dt><dd className={cancellationScheduled ? 'scheduled' : subscription.status === 'CANCELED' ? 'canceled' : 'active'}>{subscriptionStatusLabel}</dd></div><div><dt>{cancellationScheduled ? '종료 예정일' : '다음 결제 예정일'}</dt><dd>{isEnterprise ? periodEndLabel || '-' : '-'}</dd></div><div><dt>다음 결제 금액</dt><dd>{isEnterprise && !cancellationScheduled ? `₩${planAmount.toLocaleString('ko-KR')}` : '-'}</dd></div></dl>
+            <div className="subscription-benefits"><strong>현재 요금제 주요 혜택</strong>{isEnterprise ? <ul>{enterpriseBenefits.map((benefit) => <li key={benefit}><IoCheckmarkOutline />{benefit}</li>)}</ul> : <p>Enterprise로 전환하면 팀 협업과 기업용 기능을 이용할 수 있습니다.</p>}</div>
+            <div className="subscription-management-actions">{!isEnterprise && <button type="button" onClick={() => { setUpgradeNotice(''); setPlansOpen(true); }}>Enterprise 시작하기</button>}{isEnterprise && !cancellationScheduled && <><button type="button" className="secondary" onClick={() => { setUpgradeNotice(''); setPlansOpen(true); }}>요금제 변경</button><button type="button" className="danger" onClick={() => setCancelOpen(true)}>구독 취소</button></>}{cancellationScheduled && <button type="button" disabled={cancelSaving} onClick={revokeCancellation}>{cancelSaving ? '처리 중' : '구독 취소 철회'}</button>}</div>
+          </div>
+          {cancellationScheduled && <p className="subscription-end-notice">구독이 {periodEndLabel || '현재 결제 기간 종료일'}에 종료될 예정입니다. 종료일까지 Enterprise 기능을 계속 사용할 수 있습니다.</p>}
+        </div>
       </section>
+      {cancelOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !cancelSaving) setCancelOpen(false); }}><section className="subscription-cancel-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-subscription-title"><header><div><small>SUBSCRIPTION</small><h2 id="cancel-subscription-title">구독을 취소하시겠습니까?</h2><p>현재 결제 기간이 끝나는 {periodEndLabel || '이용 기간 종료일'}까지 Enterprise 기능을 계속 사용할 수 있습니다.</p></div><button type="button" disabled={cancelSaving} aria-label="닫기" onClick={() => setCancelOpen(false)}><IoCloseOutline /></button></header><div><label>취소 사유 <small>선택 사항</small><select value={cancelReason} onChange={(event) => setCancelReason(event.target.value)}><option value="">선택하지 않음</option><option value="비용 부담">비용 부담</option><option value="사용 빈도 감소">사용 빈도 감소</option><option value="필요 기능 부족">필요 기능 부족</option><option value="다른 서비스 이용">다른 서비스 이용</option></select></label><p>취소를 확정해도 즉시 FREE로 변경되지 않으며, 종료 예정일까지 현재 기능이 유지됩니다.</p></div><footer><button type="button" disabled={cancelSaving} onClick={() => setCancelOpen(false)}>취소 유지</button><button type="button" className="danger" disabled={cancelSaving} onClick={requestCancellation}>{cancelSaving ? '처리 중...' : '구독 취소 확정'}</button></footer></section></div>}
       {deleteOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteOpen(false); }}><section className="account-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title"><header><div><small>ACCOUNT DELETION</small><h2 id="delete-account-title">계정을 탈퇴하시겠습니까?</h2><p>탈퇴 후에는 현재 계정으로 로그인할 수 없습니다.</p></div><button type="button" aria-label="닫기" onClick={() => setDeleteOpen(false)}><IoCloseOutline /></button></header><div><label>현재 비밀번호 <small>소셜 로그인 계정은 입력하지 않아도 됩니다.</small><input type="password" value={deleteForm.password} onChange={(event) => setDeleteForm((form) => ({ ...form, password: event.target.value }))} /></label><label>확인을 위해 <strong>계정 탈퇴</strong>를 입력하세요.<input value={deleteForm.confirmation} onChange={(event) => setDeleteForm((form) => ({ ...form, confirmation: event.target.value }))} /></label></div><footer><button type="button" onClick={() => setDeleteOpen(false)}>돌아가기</button><button type="button" className="danger" disabled={accountSaving || deleteForm.confirmation !== '계정 탈퇴'} onClick={deleteAccount}>{accountSaving ? '처리 중' : '계정 탈퇴'}</button></footer></section></div>}
-      {plansOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlansOpen(false); }}><section className="plans-dialog" role="dialog" aria-modal="true" aria-label="요금제 비교"><header><div><small>WORKSPACE PLANS</small><h2>업무 방식에 맞는 플랜을 선택하세요</h2><p>가격은 현재 서비스 기획 기준이며 실제 결제 연동 전입니다.</p></div><button onClick={() => setPlansOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="plan-choice-grid">
-        <article className="plan-choice current"><div className="plan-choice-title"><span>{isEnterprise ? '일반 요금제' : '현재 요금제'}</span><h3>Personal Pro</h3><p>개인 생산성을 위한 AI 문서 비서</p></div><div className="plan-price"><strong>₩19,900</strong><span>/월</span><small>매월 청구</small></div><button disabled={!isEnterprise} onClick={() => setUpgradeNotice('플랜 변경 결제 시스템 연결 전입니다. 관리자에게 Personal 변경을 문의해 주세요.')}>{isEnterprise ? 'Personal로 변경 문의' : '현재 이용 중'}</button><ul>{['한 번에 문서 1개 업로드', '기본 이미지·PDF OCR', '개인 문서 기반 RAG', '표준 AI 모델', '개인 히스토리와 캘린더'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>
-        <article className="plan-choice recommended"><div className="recommended-label">{isEnterprise ? '현재 요금제' : '추천 요금제'}</div><div className="plan-choice-title"><span>기업용</span><h3>Enterprise Workspace</h3><p>최대 5명의 팀원과 지식과 업무를 공유하세요.</p></div><div className="plan-price"><strong>₩89,000</strong><span>/월</span><small>5명 포함 · 매월 청구</small></div><button disabled={isEnterprise} onClick={() => setUpgradeNotice('결제 시스템 연결 전입니다. 관리자에게 Enterprise 도입을 문의해 주세요.')}>{isEnterprise ? '현재 이용 중' : 'Enterprise로 업그레이드'}</button><ul>{['대량 문서 Batch OCR과 복잡한 표 인식', '전사·부서별 통합 RAG 지식베이스', '고성능 모델과 고용량 토큰', '기업 입력 데이터 AI 학습 제외', 'Admin / Member 권한 및 팀 프로젝트'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>
-      </div>{upgradeNotice && <p className="upgrade-notice">{upgradeNotice}</p>}<button className={`all-benefits-toggle ${benefitsOpen ? 'open' : ''}`} onClick={() => setBenefitsOpen((open) => !open)}>모든 혜택 {benefitsOpen ? '숨기기' : '보기'} <IoChevronDownOutline /></button>{benefitsOpen && <div className="enterprise-benefits"><div><IoCheckmarkOutline /><span><strong>팀 업무 자동화</strong><small>커스텀 Agent, 회의록 기반 할 일 등록과 메신저 알림</small></span></div><div><IoCheckmarkOutline /><span><strong>외부 업무 도구 연동</strong><small>Slack, Google Workspace 등 기업 도구 연결</small></span></div><div><IoCheckmarkOutline /><span><strong>기업 전용 지원</strong><small>전담 엔지니어, SSO 연동과 통합 정산 지원</small></span></div></div>}{isEnterprise && <div className="subscription-cancel-zone"><div><strong>{cancellationScheduled ? '요금제 취소가 예약되어 있습니다.' : 'Enterprise 요금제를 취소하시겠습니까?'}</strong><p>{cancellationScheduled ? `${periodEndLabel || '현재 이용 기간 종료일'}까지 Enterprise 기능을 사용할 수 있습니다.` : '취소해도 현재 이용 기간 종료일까지 Enterprise 기능과 조직 데이터를 사용할 수 있습니다.'}</p></div>{cancellationScheduled ? <span>종료 예정 · {periodEndLabel || '관리자 확인 중'}</span> : <button onClick={() => setCancelOpen(true)}>요금제 취소 요청</button>}</div>}{cancelOpen && <div className="cancel-confirm-panel"><h3>Enterprise 취소 예약</h3><ul><li>Enterprise 기능은 즉시 중단되지 않습니다.</li><li>30일 후 Personal 플랜으로 전환될 예정입니다.</li><li>팀 공유 및 조직 데이터의 후속 처리 정책을 확인해 주세요.</li></ul><label>취소 사유<select value={cancelReason} onChange={(event) => setCancelReason(event.target.value)}><option value="">선택하지 않음</option><option value="비용 부담">비용 부담</option><option value="사용 빈도 감소">사용 빈도 감소</option><option value="필요 기능 부족">필요 기능 부족</option><option value="다른 서비스 이용">다른 서비스 이용</option></select></label><div><button onClick={() => setCancelOpen(false)}>돌아가기</button><button className="confirm-cancel" disabled={cancelSaving} onClick={requestCancellation}>{cancelSaving ? '저장 중...' : '취소 예약 확정'}</button></div></div>}</section></div>}
+      {plansOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !paymentSaving) setPlansOpen(false); }}><section className="plans-dialog" role="dialog" aria-modal="true" aria-label="요금제 선택"><header><div><small>WORKSPACE PLANS</small><h2>요금제를 선택하세요</h2><p>FREE와 Enterprise Workspace의 기능을 비교해보세요.</p></div><button disabled={paymentSaving} onClick={() => setPlansOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="plan-choice-grid">
+        <article className={`plan-choice ${!isEnterprise ? 'current' : ''}`}><div className="plan-choice-title"><span>{!isEnterprise ? '현재 요금제' : '무료'}</span><h3>FREE</h3><p>일반 사용자를 위한 기본 문서 AI 기능</p></div><div className="plan-price"><strong>₩0</strong><span>/월</span></div><button disabled={!isEnterprise} onClick={() => { setPlansOpen(false); setCancelOpen(true); }}>{!isEnterprise ? '현재 요금제' : 'FREE로 변경'}</button><ul>{['일반 사용자', '기본 OCR', '개인 RAG', 'AI 대화', '개인 문서 관리'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>
+        <article className={`plan-choice recommended ${isEnterprise ? 'current' : ''}`}><div className="recommended-label">{isEnterprise ? '현재 요금제' : '기업용 추천'}</div><div className="plan-choice-title"><span>최대 5명</span><h3>Enterprise Workspace</h3><p>기업 문서와 팀 업무를 위한 확장 플랜</p></div><div className="plan-price"><strong>₩99,000</strong><span>/월</span><small>테스트 1회 결제로 30일 활성화</small></div><button disabled={isEnterprise || paymentSaving} onClick={startEnterprisePayment}>{isEnterprise ? '현재 요금제' : paymentSaving ? '결제창 준비 중' : 'Enterprise 시작하기 · 결제하기'}</button><ul>{['최대 5명', '대량 OCR', '사내 공용 RAG', 'AI Agent', '재무 문서 자동화', '기업용 리포트', '확장된 사용량'].map((item) => <li key={item}><IoCheckmarkOutline />{item}</li>)}</ul></article>
+      </div>{upgradeNotice && <p className="upgrade-notice">{upgradeNotice}</p>}</section></div>}
     </main>
   </div>;
 }

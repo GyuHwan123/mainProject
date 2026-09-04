@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = ""
     SMTP_FROM_NAME: str = "DocAI"
     FRONTEND_URL: str = ""
+    TOSS_SECRET_KEY: str = ""
     model_config = SettingsConfigDict(
         env_file=(PROJECT_ROOT / ".env", BACKEND_ROOT / ".env"),
         extra="ignore",

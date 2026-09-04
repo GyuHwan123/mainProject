@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 
 DocumentType = Literal["EXPENSE_REPORT", "TRAVEL_EXPENSE", "PURCHASE_REQUEST", "WELFARE_BENEFIT"]
+PaymentMethod = Literal["카드", "현금", "기타"]
 
 
 class FinanceClassifyRequest(BaseModel):
@@ -25,8 +26,9 @@ class FinanceRecordUpdate(BaseModel):
     supply_amount: float | None = Field(default=None, ge=0)
     tax_amount: float | None = Field(default=None, ge=0)
     total_amount: float = Field(default=0, ge=0)
-    payment_method: str | None = Field(default=None, max_length=100)
+    payment_method: PaymentMethod | None = None
     description: str | None = Field(default=None, max_length=1000)
+    items: list[dict[str, Any]] | None = Field(default=None, max_length=200)
     status: Literal["REVIEW", "CONFIRMED"] = "CONFIRMED"
 
 

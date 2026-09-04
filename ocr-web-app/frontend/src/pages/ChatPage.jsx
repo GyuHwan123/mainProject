@@ -6,6 +6,7 @@ import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
+import { validateFilesBeforeUpload } from '../features/fileSecurity';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -590,6 +591,7 @@ function ChatPageContent() {
   const uploadFiles = async (files) => {
     setRagError('');
     try {
+      await validateFilesBeforeUpload(files);
       for (const file of files) {
         const formData = new FormData();
         formData.append('file', file);
@@ -605,7 +607,7 @@ function ChatPageContent() {
       setSources([]);
       await refreshRagDocuments();
     } catch (error) {
-      setRagError(error.response?.data?.detail || 'OCR 또는 RAG 인덱싱에 실패했습니다.');
+      setRagError(error.response?.data?.detail || error.message || 'OCR 또는 RAG 인덱싱에 실패했습니다.');
       throw error;
     } finally { setIndexingId(null); }
   };

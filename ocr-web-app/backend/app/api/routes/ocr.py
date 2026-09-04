@@ -14,11 +14,9 @@ from app.models.user import User
 from app.schemas.ocr import DocumentHistoryItem, OCRResponse
 from app.services.supabase_service import supabase_service
 from app.services.pii_service import privacy_boxes
+from app.services.file_security_service import MAX_FILE_SIZE, validate_uploaded_file
 
 router = APIRouter()
-MAX_FILE_SIZE = 50 * 1024 * 1024
-
-
 class WorkbookExportRequest(BaseModel):
     title: str = Field(default="추출 문서", max_length=120)
     rows: list[list[str]] = Field(min_length=1, max_length=1000)
@@ -49,8 +47,7 @@ async def archive_extracted_file(
     except (json.JSONDecodeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail="잘못된 추출 결과입니다.") from exc
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 저장할 수 있습니다.")
+    validate_uploaded_file(file.filename or result.filename, file.content_type, content)
     return save_result(user=user, file=file, content=content, result=result)
 
 
@@ -63,11 +60,9 @@ async def upload_file(
     user: User = Depends(require_current_user),
 ) -> OCRResponse:
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 저장할 수 있습니다.")
-
     filename = file.filename or "upload"
     mime_type = file.content_type or "application/octet-stream"
+    validate_uploaded_file(filename, mime_type, content)
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
@@ -92,10 +87,9 @@ async def preview_docx(
     _user: User = Depends(require_current_user),
 ) -> Response:
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 업로드할 수 있습니다.")
     if not (file.filename or "").lower().endswith(".docx"):
         raise HTTPException(status_code=400, detail="DOCX 파일만 미리보기할 수 있습니다.")
+    validate_uploaded_file(file.filename or "document.docx", file.content_type, content)
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -124,10 +118,9 @@ async def preview_spreadsheet(
     _user: User = Depends(require_current_user),
 ) -> OCRResponse:
     content = await file.read()
-    if len(content) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="파일은 최대 50MB까지 업로드할 수 있습니다.")
     if not (file.filename or "").lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="XLSX 또는 XLSM 파일만 미리보기할 수 있습니다.")
+    validate_uploaded_file(file.filename or "spreadsheet.xlsx", file.content_type, content)
 
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:

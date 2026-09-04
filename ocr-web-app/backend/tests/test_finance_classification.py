@@ -114,6 +114,22 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(validation["decision"], "REVIEW")
         self.assertIn("TOTAL_AMOUNT_NOT_IN_OCR", validation["reasons"])
 
+    def test_normalization_limits_payment_method_to_supported_values(self):
+        base = {
+            "merchant": "가맹점", "transaction_date": "2026-02-20", "expense_category": "식품/장보기",
+            "supply_amount": 1000, "tax_amount": 100, "total_amount": 1100, "items": [],
+        }
+        card = _normalize({**base, "payment_method": "신한 체크카드"}, "card.jpg", "가맹점 결제금액 1,100 신한 체크카드")
+        cash = _normalize({**base, "payment_method": "CASH"}, "cash.jpg", "가맹점 결제금액 1,100 현금영수증")
+        unknown = _normalize({**base, "payment_method": "계좌이체"}, "transfer.jpg", "가맹점 결제금액 1,100 계좌이체")
+        missing = _normalize({**base, "payment_method": None}, "missing.jpg", "가맹점 결제금액 1,100")
+
+        self.assertEqual(card["payment_method"], "카드")
+        self.assertEqual(card["structured_data"]["payment_method"], "카드")
+        self.assertEqual(cash["payment_method"], "현금")
+        self.assertEqual(unknown["payment_method"], "기타")
+        self.assertIsNone(missing["payment_method"])
+
     def test_normalization_preserves_unknown_supply_and_tax_as_null(self):
         result = {
             "merchant": "법인택시",

@@ -200,6 +200,7 @@ class DocumentFinanceMixin:
                 "merchant": finance_record.get("merchant"),
                 "transaction_date": finance_record.get("transaction_date"),
                 "total_amount": finance_record.get("total_amount") or 0,
+                "deleted_at": None,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             },
             timeout=20,
@@ -212,6 +213,7 @@ class DocumentFinanceMixin:
         params = {
             "select": "*,finance_records!inner(*),ocr_documents(file_name,file_url)",
             "user_id": f"eq.{user_id}",
+            "deleted_at": "is.null",
             "order": "created_at.desc",
             "limit": str(limit),
         }
@@ -227,6 +229,22 @@ class DocumentFinanceMixin:
         )
         self._raise_for_supabase(response, "영수증 보관함 조회 실패")
         return response.json()
+
+    def soft_delete_receipt_archive(self, user_email: str, archive_id: str | None = None) -> int:
+        user_id = self.get_public_user_id(user_email)
+        params = {"user_id": f"eq.{user_id}", "deleted_at": "is.null"}
+        if archive_id:
+            params["id"] = f"eq.{archive_id}"
+        now = datetime.now(timezone.utc).isoformat()
+        response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/receipt_archive",
+            params=params,
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={"deleted_at": now, "updated_at": now},
+            timeout=20,
+        )
+        self._raise_for_supabase(response, "영수증 보관함 삭제 실패")
+        return len(response.json())
 
     def update_finance_record(self, user_email: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)

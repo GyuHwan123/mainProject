@@ -162,6 +162,7 @@ name, quantity, unit_price, total_amount
 10. 일반적인 상품 행이 없는 택시·승차권·미용·서비스 승인전표는 items=[]를 허용합니다.
 11. 공급가액과 부가세가 할인 전 세금 요약으로 명시된 경우 그 OCR 값을 유지하세요. 공급가액+부가세가 최종 결제액과 다르다는 이유만으로 값을 다시 계산하지 마세요.
 12. expense_category는 아래 목록에서만 고릅니다.
+13. payment_method는 반드시 "카드", "현금", "기타" 중 하나만 사용합니다. 카드사명, 신용카드, 체크카드, 간편결제의 카드 승인은 모두 "카드"로, 현금영수증과 CASH는 "현금"으로, 계좌이체 등 나머지 결제수단은 "기타"로 반환하세요. 근거가 없으면 null입니다.
 {category_lines}
 
 [파일명]
@@ -544,6 +545,17 @@ async def _classify_receipt(
         }
 
 
+def _normalize_payment_method(value: Any) -> str | None:
+    normalized = str(value or "").strip().lower()
+    if not normalized:
+        return None
+    if any(token in normalized for token in ("카드", "card", "credit", "debit", "체크", "신용", "간편결제")):
+        return "카드"
+    if any(token in normalized for token in ("현금", "cash")):
+        return "현금"
+    return "기타"
+
+
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
     """Minimal normalization: format values, validate, and never auto-repair."""
     validation = result.get("automation_validation")
@@ -559,6 +571,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         if total_quantity.is_integer():
             total_quantity = int(total_quantity)
     grounded_card, card_evidence = _ground_masked_card_number(None, text)
+    payment_method = _normalize_payment_method(result.get("payment_method"))
     result.update({
         "doc_type": document_type,
         "document_type": document_type,
@@ -570,13 +583,9 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         "source_filename": filename,
         "needs_review": validation.get("decision") != "PASS",
         "review_reasons": validation.get("reasons") or [],
+        "payment_method": payment_method,
     })
     merchant = " ".join(str(result.get("merchant") or "").split())[:300] or None
-    payment_method = str(result.get("payment_method") or "").strip() or None
-    if payment_method and "카드" in payment_method:
-        payment_method = "카드"
-    elif payment_method and "현금" in payment_method:
-        payment_method = "현금"
     structured = result
     return {
         "document_type": document_type,

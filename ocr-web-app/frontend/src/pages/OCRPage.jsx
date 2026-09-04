@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline } from 'react-icons/io5';
+import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline, IoTrashOutline } from 'react-icons/io5';
 import { RiFileUploadLine } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -9,6 +9,7 @@ import Sidebar from '../components/Sidebar';
 import { getAppUser, saveAppUser } from '../features/appSession';
 import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
 import { queueFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
+import { validateFileBeforeUpload } from '../features/fileSecurity';
 import {
   markReceiptEvaluated,
   clearPendingReceipts,
@@ -24,6 +25,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const EMPTY_FILE_NAME = '영수증을 선택해주세요';
 const EMPTY_ITEMS = [];
 const MIN_PREVIEW_ZOOM = 0.25;
+const DEFAULT_PREVIEW_ZOOM = 0.45;
 const RECEIPT_STRONG_PATTERN = /(영수증|매출\s*전표|승인\s*번호|카드\s*번호|사업자\s*(?:NO|번호|등록번호)|결제\s*금액|승인\s*금액|받을\s*금액|현금\s*영수증|공급\s*가액|부가\s*세(?:액)?|총\s*구매\s*금액)/i;
 const RECEIPT_WEAK_PATTERNS = [
   /(20\d{2})\s*(?:년|[-./])\s*\d{1,2}\s*(?:월|[-./])\s*\d{1,2}\s*일?/,
@@ -52,6 +54,13 @@ const financeMoney = (value) => value === null || value === undefined || value =
 const optionalFinanceNumber = (value) => value === null || value === undefined || value === ''
   ? null
   : Number(value);
+const normalizeFinancePaymentMethod = (value) => {
+  const normalized = String(value || '').toLowerCase();
+  if (normalized.includes('카드') || /card|credit|debit/.test(normalized)) return '카드';
+  if (normalized.includes('현금') || normalized.includes('cash')) return '현금';
+  if (normalized) return '기타';
+  return '카드';
+};
 
 const RECEIPT_SEMANTICS = {
   issuer: { label: '발행처·사업자', color: '#7c3aed', sections: ['issuer', 'business_info'] },
@@ -136,23 +145,103 @@ function FinanceReceiptWorksheet({ records, user }) {
   </div>;
 }
 
+export function isReceiptOperationalPass(record, ocrItems = []) {
+  const data = record?.structured_data || {};
+  const items = Array.isArray(data.items) ? data.items : [];
+  const confidences = ocrItems.map((item) => Number(item.confidence)).filter((value) => Number.isFinite(value) && value >= 0 && value <= 1);
+  const ocrConfidence = confidences.length ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : 0;
+  const compactEvidence = (value) => String(value ?? '').toLowerCase().replace(/[^0-9\p{L}]/gu, '');
+  const ocrText = compactEvidence(ocrItems.map((item) => item.text).join(' '));
+  const evidenceValues = [record?.merchant, record?.transaction_date, record?.total_amount, record?.payment_method];
+  const groundedFields = evidenceValues.filter((value) => {
+    const needle = compactEvidence(typeof value === 'number' ? Math.round(value) : value);
+    return needle && ocrText.includes(needle);
+  }).length;
+  const requiredValues = [record?.merchant, record?.transaction_date, record?.total_amount, record?.expense_category];
+  const requiredCount = requiredValues.filter((value) => value !== null && value !== undefined && value !== '').length;
+  const checks = data.automation_validation?.checks || {};
+  const amountCheckValues = [checks.total_grounded, checks.amount_relation, checks.item_sum].filter((value) => typeof value === 'boolean');
+  const itemTotal = items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
+  const totalMatches = itemTotal > 0 && Math.abs(itemTotal - Number(record?.total_amount || 0)) < .01;
+  const amountConsistency = amountCheckValues.length ? amountCheckValues.filter(Boolean).length / amountCheckValues.length : (items.length ? Number(totalMatches) : 0);
+  const operationalScore = Math.round(100 * (ocrConfidence * .25 + (groundedFields / evidenceValues.length) * .35 + amountConsistency * .25 + (requiredCount / requiredValues.length) * .15));
+  return data.automation_validation?.decision === 'PASS' && operationalScore >= 85;
+}
+
+function ReceiptArchiveDeleteDialog({ request, deleting, error, onCancel, onConfirm }) {
+  if (!request) return null;
+  const isAll = request.mode === 'all';
+  return <div className="delete-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) onCancel(); }}>
+    <section className="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="receipt-delete-confirm-title" aria-describedby="receipt-delete-confirm-description">
+      <span className="delete-confirm-icon"><IoTrashOutline /></span>
+      <div><small>기록보관함 {isAll ? '전체삭제' : '기록 삭제'}</small><h2 id="receipt-delete-confirm-title">{isAll ? '기록보관함을 전체 삭제하시겠습니까?' : '이 기록을 삭제하시겠습니까?'}</h2><p id="receipt-delete-confirm-description">삭제한 기록은 복구할 수 없습니다.</p></div>
+      {error && <p className="delete-confirm-error" role="alert">{error}</p>}
+      <footer><button type="button" className="cancel-delete" disabled={deleting} onClick={onCancel}>취소</button><button type="button" className="confirm-delete" disabled={deleting} onClick={onConfirm}>{deleting ? '삭제 중...' : (isAll ? '전체삭제' : '삭제')}</button></footer>
+    </section>
+  </div>;
+}
+
 function ReceiptExtractionInsights({ record, ocrItems, onSemanticSelect }) {
   const data = record?.structured_data || {};
   const items = Array.isArray(data.items) ? data.items : [];
-  const candidates = data.item_extraction_diagnostics?.candidates || [];
   const confidences = ocrItems.map((item) => Number(item.confidence)).filter((value) => Number.isFinite(value) && value >= 0 && value <= 1);
   const ocrConfidence = confidences.length ? confidences.reduce((sum, value) => sum + value, 0) / confidences.length : null;
-  const reliableCandidates = candidates.filter((candidate) => candidate.rel === 'H').length;
   const arithmeticChecks = items.filter((item) => Number(item.quantity) > 0 && Number(item.unit_price) > 0 && Number(item.total_amount) > 0);
   const arithmeticPassed = arithmeticChecks.filter((item) => Math.abs(Number(item.quantity) * Number(item.unit_price) - Number(item.total_amount)) < .01).length;
   const itemTotal = items.reduce((sum, item) => sum + Number(item.total_amount || 0), 0);
   const totalMatches = itemTotal > 0 && Math.abs(itemTotal - Number(record.total_amount || 0)) < .01;
-  const evidenceRate = candidates.length ? reliableCandidates / candidates.length : null;
-  const validationParts = [arithmeticChecks.length ? arithmeticPassed / arithmeticChecks.length : null, items.length ? Number(totalMatches) : null].filter((value) => value != null);
-  const validationRate = validationParts.length ? validationParts.reduce((sum, value) => sum + value, 0) / validationParts.length : null;
-  const confidenceParts = [ocrConfidence, evidenceRate, validationRate].filter((value) => value != null);
-  const groundedConfidence = confidenceParts.length ? confidenceParts.reduce((sum, value) => sum + value, 0) / confidenceParts.length : null;
-  const confidenceLabel = groundedConfidence == null ? '근거 부족' : groundedConfidence >= .9 ? '높음' : groundedConfidence >= .7 ? '검토 권장' : '확인 필요';
+  const compactEvidence = (value) => String(value ?? '').toLowerCase().replace(/[^0-9a-z가-힣]/g, '');
+  const ocrText = compactEvidence(ocrItems.map((item) => item.text).join(' '));
+  const evidenceFields = [
+    ['가게명', record.merchant, compactEvidence(record.merchant)],
+    ['구매일자', record.transaction_date, compactEvidence(record.transaction_date)],
+    ['총 결제액', record.total_amount, compactEvidence(Math.round(Number(record.total_amount || 0)))],
+    ['결제방법', record.payment_method, compactEvidence(record.payment_method)],
+  ];
+  const evidenceChecks = evidenceFields.map(([label, value, needle]) => ({ label, present: value !== null && value !== undefined && value !== '', grounded: Boolean(needle && ocrText.includes(needle)) }));
+  const groundedFields = evidenceChecks.filter((field) => field.grounded).length;
+  const requiredValues = [record.merchant, record.transaction_date, record.total_amount, record.expense_category];
+  const requiredCount = requiredValues.filter((value) => value !== null && value !== undefined && value !== '').length;
+  const validation = data.automation_validation || {};
+  const checks = validation.checks || {};
+  const amountCheckValues = [checks.total_grounded, checks.amount_relation, checks.item_sum].filter((value) => typeof value === 'boolean');
+  const amountConsistency = amountCheckValues.length ? amountCheckValues.filter(Boolean).length / amountCheckValues.length : (items.length ? Number(totalMatches) : 0);
+  const itemStructureOk = items.length > 0 && items.every((item) => item.name && Number(item.total_amount) >= 0) && arithmeticPassed === arithmeticChecks.length;
+  const operationalScore = Math.round(100 * ((ocrConfidence || 0) * .25 + (groundedFields / evidenceChecks.length) * .35 + amountConsistency * .25 + (requiredCount / requiredValues.length) * .15));
+  const isOperationalPass = validation.decision === 'PASS' && operationalScore >= 85;
+  const confidenceLabel = isOperationalPass ? '자동 처리 가능' : operationalScore >= 70 ? '일부 확인 권장' : '수동 검토 필요';
+  const validationReasons = Array.isArray(data.automation_validation?.reasons) ? data.automation_validation.reasons : [];
+  const reasonDetails = {
+    MISSING_MERCHANT: ['issuer', '주요 정보 · 가게명', '가게명이 추출되지 않았습니다.'],
+    MISSING_TRANSACTION_DATE: ['transaction', '주요 정보 · 구매일자', '구매일자가 추출되지 않았습니다.'],
+    MISSING_TOTAL_AMOUNT: ['settlement', '주요 정보 · 총 결제액', '총 결제액이 추출되지 않았습니다.'],
+    MISSING_EXPENSE_CATEGORY: ['transaction', '주요 정보 · 비용 카테고리', '비용 카테고리를 결정하지 못했습니다.'],
+    INVALID_EXPENSE_CATEGORY: ['transaction', '주요 정보 · 비용 카테고리', '비용 카테고리 근거가 부족합니다.'],
+    INVALID_TRANSACTION_DATE: ['transaction', '주요 정보 · 구매일자', '구매일자 형식을 확인해야 합니다.'],
+    TOTAL_AMOUNT_NOT_IN_OCR: ['settlement', '주요 정보 · 총 결제액', '추출된 총액을 OCR 원문에서 확인하지 못했습니다.'],
+    AMOUNT_RELATION_MISMATCH: ['tax', '금액 검산 · 세액 구성', '공급가액과 부가세, 총액의 관계가 맞지 않습니다.'],
+    ITEM_SUM_MISMATCH: ['settlement', '품목 합계 · 총 결제액', '품목 합계와 총 결제액이 일치하지 않습니다.'],
+    OCR_TEXT_TOO_SHORT: ['settlement', 'OCR 판독 결과', '판독된 글자가 너무 적어 자동 처리할 수 없습니다.'],
+    NO_MONEY_EVIDENCE: ['settlement', 'OCR 판독 결과', '금액 근거를 찾지 못했습니다.'],
+  };
+  const matchingIssues = [
+    ...(!record.merchant ? [{ semantic: 'issuer', location: '주요 정보 · 가게명', reason: '일치하는 상호 근거를 찾지 못했습니다.' }] : []),
+    ...(!record.transaction_date ? [{ semantic: 'transaction', location: '주요 정보 · 구매일자', reason: '일치하는 날짜 근거를 찾지 못했습니다.' }] : []),
+    ...(record.supply_amount == null || record.tax_amount == null ? [{ semantic: 'tax', location: '주요 정보 · 공급가액/부가세', reason: '세액 구성 중 일부가 추출되지 않았습니다.' }] : []),
+    ...items.flatMap((item, index) => {
+      const issues = [];
+      if (!item.name) issues.push({ semantic: 'items', location: `품목 ${index + 1} · 상품명`, reason: '상품명 근거가 매칭되지 않았습니다.' });
+      if (Number(item.quantity) > 0 && Number(item.unit_price) > 0 && Number(item.total_amount) > 0 && Math.abs(Number(item.quantity) * Number(item.unit_price) - Number(item.total_amount)) >= .01) {
+        issues.push({ semantic: 'items', location: `품목 ${index + 1} · 금액`, reason: '수량 × 단가와 품목 금액이 일치하지 않습니다.' });
+      }
+      return issues;
+    }),
+    ...(items.length && !totalMatches ? [{ semantic: 'settlement', location: '품목 합계 · 총 결제액', reason: `${financeMoney(itemTotal)}와 ${financeMoney(record.total_amount)}이 일치하지 않습니다.` }] : []),
+    ...validationReasons.map((reason) => {
+      const detail = reasonDetails[reason] || ['settlement', '자동 검증', '자동 판독 결과를 추가로 확인해야 합니다.'];
+      return { semantic: detail[0], location: detail[1], reason: detail[2] };
+    }),
+  ].filter((issue, index, all) => all.findIndex((value) => value.location === issue.location && value.reason === issue.reason) === index);
   const mainFields = [
     ['issuer', '가게명', record.merchant || '확인 필요'],
     ['transaction', '구매일자', record.transaction_date || '확인 필요'],
@@ -162,6 +251,10 @@ function ReceiptExtractionInsights({ record, ocrItems, onSemanticSelect }) {
     ['payment', '카드번호', data.card_number || '근거 없음'],
   ];
   return <section className="receipt-extraction-insights">
+    <article className={`receipt-confidence-card ${isOperationalPass ? 'is-pass' : 'is-review'}`}>
+      <header><div><strong>운영 검증 결과</strong><small>정답 데이터 없이 OCR 근거와 영수증 내부 일관성으로 계산한 결과입니다.</small></div><span className={isOperationalPass ? 'ok' : 'warning'}>{isOperationalPass ? 'PASS' : 'REVIEW'} · {confidenceLabel}</span></header>
+      <div className="receipt-confidence-content"><div className="confidence-score-summary"><div className="confidence-ring" style={{ '--confidence': `${operationalScore}%` }}><strong>{operationalScore}점</strong><small>자체 검증 점수</small></div><em>{isOperationalPass ? 'PASS' : 'REVIEW'}</em></div><dl><div><dt>핵심 필드 OCR 품질</dt><dd>{ocrConfidence == null ? '측정 불가' : `${Math.round(ocrConfidence * 100)}%`}</dd></div><div><dt>핵심 필드 근거</dt><dd className={groundedFields === evidenceChecks.length ? 'ok' : 'warning'}>{groundedFields}/{evidenceChecks.length} 확인</dd></div><div><dt>필수 필드 충족</dt><dd className={requiredCount === requiredValues.length ? 'ok' : 'warning'}>{requiredCount}/{requiredValues.length} 입력</dd></div><div><dt>품목 구조 검사</dt><dd className={itemStructureOk ? 'ok' : 'warning'}>{items.length ? (itemStructureOk ? '정상' : '확인 필요') : '품목 없음'}</dd></div><div><dt>금액 일관성</dt><dd className={amountConsistency === 1 ? 'ok' : 'warning'}>{amountConsistency === 1 ? '정상' : '확인 필요'}</dd></div><div><dt>자동 판정</dt><dd className={isOperationalPass ? 'ok' : 'warning'}>{isOperationalPass ? 'PASS' : 'REVIEW'}</dd></div></dl></div>
+    </article>
     <div className="receipt-excel-classification"><span>Excel 분류 결과</span><strong>{FINANCE_DOCUMENTS[record.document_type]?.title || record.document_type || '미분류'}</strong><em>{record.expense_category || '카테고리 미분류'}</em></div>
     <article className="receipt-key-information">
       <header><div><strong>추출된 주요 정보</strong><small>색상 항목을 누르면 영수증 근거 영역이 강조됩니다.</small></div><span>{record.status === 'CONFIRMED' ? '사용자 확정' : '검토 전'}</span></header>
@@ -171,9 +264,9 @@ function ReceiptExtractionInsights({ record, ocrItems, onSemanticSelect }) {
       <header><div><strong>구매 항목 상세</strong><small>구조화된 품목명·수량·단가·금액</small></div><span>총 {items.length}건</span></header>
       <div className="receipt-item-table"><table><thead><tr><th>상품명</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>{items.map((item, index) => <tr key={`${item.name}-${index}`}><td>{item.name || '확인 필요'}<small>{item.specification || item.option || ''}</small></td><td>{Number(item.quantity || 0).toLocaleString('ko-KR')}</td><td>{financeMoney(item.unit_price)}</td><td>{financeMoney(item.total_amount)}</td></tr>)}</tbody></table>{!items.length && <p>구조화된 구매 항목이 없습니다.</p>}</div>
     </article>
-    <article className="receipt-confidence-card">
-      <header><div><strong>근거 기반 신뢰도</strong><small>정답 정확도가 아닌 OCR·후보·산술 검증 상태입니다.</small></div><span className={`confidence-${confidenceLabel.replaceAll(' ', '-')}`}>{confidenceLabel}</span></header>
-      <div className="receipt-confidence-content"><div className="confidence-ring" style={{ '--confidence': `${Math.round((groundedConfidence || 0) * 100)}%` }}><strong>{groundedConfidence == null ? '-' : `${Math.round(groundedConfidence * 100)}%`}</strong><small>검증 신뢰도</small></div><dl><div><dt>OCR 인식 신뢰도</dt><dd>{ocrConfidence == null ? '미제공' : `${Math.round(ocrConfidence * 100)}%`}</dd></div><div><dt>고신뢰 품목 후보</dt><dd>{candidates.length ? `${reliableCandidates}/${candidates.length}` : '후보 없음'}</dd></div><div><dt>품목 산술 검산</dt><dd>{arithmeticChecks.length ? `${arithmeticPassed}/${arithmeticChecks.length}` : '검산 대상 없음'}</dd></div><div><dt>품목 합계와 결제액</dt><dd className={totalMatches ? 'ok' : 'warning'}>{items.length ? (totalMatches ? '일치' : '확인 필요') : '검산 대상 없음'}</dd></div></dl></div>
+    <article className="receipt-matching-issues">
+      <header><div><strong>매칭 오류 및 검토 위치</strong><small>문제가 감지된 필드와 품목을 눌러 원본 근거를 확인하세요.</small></div><span className={matchingIssues.length ? 'warning' : 'ok'}>{matchingIssues.length ? `${matchingIssues.length}곳 확인 필요` : '오류 없음'}</span></header>
+      {matchingIssues.length ? <ul>{matchingIssues.map((issue, index) => <li key={`${issue.location}-${index}`}><button type="button" onClick={() => onSemanticSelect?.(issue.semantic)}><b>{issue.location}</b><span>{issue.reason}</span><em>원본 보기</em></button></li>)}</ul> : <p className="receipt-no-issues">현재 자동 검증에서 발견된 매칭 오류가 없습니다.</p>}
     </article>
   </section>;
 }
@@ -553,7 +646,7 @@ export default function OCRPage() {
   const [currentDocumentId, setCurrentDocumentId] = useState(null);
   const [pendingFile, setPendingFile] = useState(null);
   const [processingMode, setProcessingMode] = useState('receipt');
-  const [zoom, setZoom] = useState(1.05);
+  const [zoom, setZoom] = useState(DEFAULT_PREVIEW_ZOOM);
   const [loading, setLoading] = useState(false);
   const [projectTransition, setProjectTransition] = useState(false);
   const [resultTab, setResultTab] = useState('text');
@@ -583,11 +676,19 @@ export default function OCRPage() {
   const [receiptBatchStatus, setReceiptBatchStatus] = useState('');
   const [receiptBatchActive, setReceiptBatchActive] = useState(false);
   const [receiptArchive, setReceiptArchive] = useState([]);
+  const [sessionProcessedReceipts, setSessionProcessedReceipts] = useState([]);
+  const [selectedSessionReceiptIds, setSelectedSessionReceiptIds] = useState([]);
+  const [sessionReceiptCategory, setSessionReceiptCategory] = useState('ALL');
+  const [sessionReceiptDateOrder, setSessionReceiptDateOrder] = useState('desc');
   const [receiptArchiveLoading, setReceiptArchiveLoading] = useState(false);
+  const [receiptArchiveDeleteRequest, setReceiptArchiveDeleteRequest] = useState(null);
+  const [receiptArchiveDeleting, setReceiptArchiveDeleting] = useState(false);
+  const [receiptArchiveDeleteError, setReceiptArchiveDeleteError] = useState('');
   const [receiptArchiveCategory, setReceiptArchiveCategory] = useState('ALL');
   const [receiptArchiveDateOrder, setReceiptArchiveDateOrder] = useState('desc');
   const [receiptInputMenuOpen, setReceiptInputMenuOpen] = useState(false);
   const [receiptProcessingStage, setReceiptProcessingStage] = useState(null);
+  const [receiptRetryAvailable, setReceiptRetryAvailable] = useState(false);
   const [selectedArchiveDocumentId, setSelectedArchiveDocumentId] = useState(null);
   const [activeReceiptSemantic, setActiveReceiptSemantic] = useState(null);
   const inputRef = useRef(null);
@@ -602,6 +703,7 @@ export default function OCRPage() {
   const receiptBatchRef = useRef({ files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] });
   const archivePreviewSnapshotRef = useRef(null);
   const receiptRequestControllerRef = useRef(null);
+  const receiptRetryRef = useRef({ file: null, wasBatch: false });
 
   useEffect(() => {
     saveReceiptRecords(financeRecord, financeRecords);
@@ -696,12 +798,14 @@ export default function OCRPage() {
       resetDocumentView();
       setFileName(EMPTY_FILE_NAME);
       setProcessingMode('receipt');
-      setZoom(1.05);
+      setZoom(DEFAULT_PREVIEW_ZOOM);
       setError('');
       setPendingFile(null);
       setFinanceRecords([]);
       receiptBatchRef.current = { files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] };
+      receiptRetryRef.current = { file: null, wasBatch: false };
       setReceiptBatchActive(false);
+      setReceiptRetryAvailable(false);
       setReceiptBatchStatus('');
       if (inputRef.current) inputRef.current.value = '';
       setProjectTransition(false);
@@ -1056,6 +1160,20 @@ export default function OCRPage() {
   const runExtraction = async (queuedFile = null) => {
     const sourceFile = queuedFile instanceof File ? queuedFile : pendingFile;
     if (!sourceFile || loading) return;
+    try {
+      await validateFileBeforeUpload(sourceFile);
+    } catch (securityError) {
+      setError(securityError.message || '파일 보안 검사에 실패했습니다.');
+      if (receiptBatchRef.current.active) {
+        receiptBatchRef.current.active = false;
+        setReceiptBatchActive(false);
+        setReceiptBatchStatus(`보안 검사로 일괄 처리가 중단되었습니다 · ${sourceFile.name}`);
+      }
+      return;
+    }
+    receiptRetryRef.current = { file: sourceFile, wasBatch: receiptBatchRef.current.active };
+    setReceiptRetryAvailable(false);
+    let nextBatchFile = null;
     const receiptProcessingStartedAt = performance.now();
     const requestController = new AbortController();
     receiptRequestControllerRef.current = requestController;
@@ -1096,8 +1214,19 @@ export default function OCRPage() {
           source_file_name: sourceFile.name,
           save_to_archive: true,
         }, { timeout: 900000, signal: requestController.signal });
+        const ocrItems = (result.pages || []).flatMap((page) => page.items || []);
+        const operationalDecision = isReceiptOperationalPass(financeRecord, ocrItems) ? 'PASS' : 'REVIEW';
         setFinanceRecord(financeRecord);
         setFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current : [...current, financeRecord]);
+        setSessionProcessedReceipts((current) => [...current, {
+          sessionId: `${financeRecord.id}-${Date.now()}-${current.length}`,
+          fileName: sourceFile.name,
+          processedAt: new Date().toISOString(),
+          sequence: current.length + 1,
+          sourceFile,
+          record: financeRecord,
+          operationalDecision,
+        }]);
         if (receiptBatchRef.current.active && !receiptBatchRef.current.recordIds.includes(financeRecord.id)) {
           receiptBatchRef.current.recordIds.push(financeRecord.id);
         }
@@ -1117,7 +1246,20 @@ export default function OCRPage() {
           const latencyMs = performance.now() - receiptProcessingStartedAt;
           setProcessingTimeMs(latencyMs);
           batch.evaluationEntries.push({ file: sourceFile, result, financeRecord, latencyMs });
-          setReceiptBatchStatus(`${batch.index + 1}/${batch.files.length} · 사용자 최종 확인 대기 · ${sourceFile.name}`);
+          if (operationalDecision === 'PASS') {
+            const nextIndex = batch.index + 1;
+            if (nextIndex >= batch.files.length) {
+              batch.active = false;
+              setReceiptBatchActive(false);
+              setReceiptBatchStatus(`일괄 문서화 완료 · ${batch.files.length}/${batch.files.length}`);
+            } else {
+              batch.index = nextIndex;
+              nextBatchFile = batch.files[nextIndex];
+              setReceiptBatchStatus(`${nextIndex + 1}/${batch.files.length} · PASS 자동 진행 · ${nextBatchFile.name}`);
+            }
+          } else {
+            setReceiptBatchStatus(`${batch.index + 1}/${batch.files.length} · REVIEW · 사용자 최종 확인 대기 · ${sourceFile.name}`);
+          }
         } else {
           const latencyMs = performance.now() - receiptProcessingStartedAt;
           setProcessingTimeMs(latencyMs);
@@ -1139,6 +1281,7 @@ export default function OCRPage() {
         setReceiptProcessingStage(null);
         if (receiptRequestControllerRef.current === requestController) receiptRequestControllerRef.current = null;
       }
+      if (nextBatchFile) await runExtraction(nextBatchFile);
     }
 
     if (processingMode !== 'receipt' && isDeveloper && truthForEvaluation && result.documentId) {
@@ -1232,6 +1375,14 @@ export default function OCRPage() {
     const rightDate = Date.parse(right.transaction_date || right.created_at || '') || 0;
     return receiptArchiveDateOrder === 'asc' ? leftDate - rightDate : rightDate - leftDate;
   }), [receiptArchive, receiptArchiveDateOrder]);
+  const filteredSessionReceipts = useMemo(() => sessionProcessedReceipts
+    .filter((entry) => sessionReceiptCategory === 'ALL'
+      || (sessionReceiptCategory === 'UNCLASSIFIED' ? !entry.record.expense_category : entry.record.expense_category === sessionReceiptCategory))
+    .sort((left, right) => {
+      const leftDate = Date.parse(left.processedAt) || 0;
+      const rightDate = Date.parse(right.processedAt) || 0;
+      return sessionReceiptDateOrder === 'asc' ? leftDate - rightDate : rightDate - leftDate;
+    }), [sessionProcessedReceipts, sessionReceiptCategory, sessionReceiptDateOrder]);
   const pageCount = pdf?.numPages || pageTexts.length;
   const hasResult = pageTexts.length > 0;
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user?.role) || user?.email === 'developer@docunex.com';
@@ -1241,6 +1392,7 @@ export default function OCRPage() {
   const displayedImageUrl = previewVariant === 'processed' && preprocessedImageUrl ? preprocessedImageUrl : imagePreviewUrl;
   const handleReceiptFileSelection = (file) => {
     if (!file) return;
+    setReceiptRetryAvailable(false);
     setSelectedArchiveDocumentId(null);
     archivePreviewSnapshotRef.current = null;
     if (!receiptBatchRef.current.active) {
@@ -1252,14 +1404,42 @@ export default function OCRPage() {
 
   const cancelReceiptProcessing = () => {
     receiptRequestControllerRef.current?.abort();
-    receiptRequestControllerRef.current = null;
     receiptBatchRef.current.active = false;
-    receiptBatchRef.current.files = [];
     setReceiptBatchActive(false);
-    setReceiptBatchStatus('영수증 처리가 취소되었습니다.');
+    setReceiptRetryAvailable(Boolean(receiptRetryRef.current.file));
+    setReceiptBatchStatus(receiptRetryRef.current.wasBatch
+      ? `일괄 처리가 취소되었습니다 · ${receiptBatchRef.current.index + 1}/${receiptBatchRef.current.files.length}`
+      : '영수증 처리가 취소되었습니다.');
     setEvaluationStatus('영수증 처리가 취소되었습니다.');
-    setReceiptProcessingStage(null);
-    setLoading(false);
+  };
+
+  const retryCanceledReceiptProcessing = async () => {
+    const { file, wasBatch } = receiptRetryRef.current;
+    if (!(file instanceof File) || loading) return;
+    if (wasBatch && receiptBatchRef.current.files.length) {
+      receiptBatchRef.current.active = true;
+      setReceiptBatchActive(true);
+      setReceiptBatchStatus(`${receiptBatchRef.current.index + 1}/${receiptBatchRef.current.files.length} · ${file.name} 재처리 중`);
+    }
+    setError('');
+    await runExtraction(file);
+  };
+
+  const reprocessSelectedReceipts = async () => {
+    const selectedEntries = sessionProcessedReceipts.filter((entry) => selectedSessionReceiptIds.includes(entry.sessionId) && entry.sourceFile instanceof File);
+    if (!selectedEntries.length) {
+      setError('재시도할 누적 처리 내역을 선택해 주세요.');
+      return;
+    }
+    const count = selectedEntries.length;
+    const confirmed = window.confirm(count === 1
+      ? `선택한 영수증을 재시도할까요?\n${selectedEntries[0].fileName}`
+      : `선택한 영수증 ${count}개를 일괄 재시도할까요?`);
+    if (!confirmed) return;
+    setSelectedSessionReceiptIds([]);
+    setError('');
+    if (count === 1) await runExtraction(selectedEntries[0].sourceFile);
+    else await openReceiptBatchEvaluation(selectedEntries.map((entry) => entry.sourceFile));
   };
 
   const closeArchivePreview = () => {
@@ -1391,6 +1571,34 @@ export default function OCRPage() {
     }
   };
 
+  const requestReceiptArchiveDelete = (mode, item = null) => {
+    setReceiptArchiveDeleteError('');
+    setReceiptArchiveDeleteRequest({ mode, item });
+  };
+
+  const closeReceiptArchiveDelete = () => {
+    if (receiptArchiveDeleting) return;
+    setReceiptArchiveDeleteRequest(null);
+    setReceiptArchiveDeleteError('');
+  };
+
+  const confirmReceiptArchiveDelete = async () => {
+    if (!receiptArchiveDeleteRequest || receiptArchiveDeleting) return;
+    const { mode, item } = receiptArchiveDeleteRequest;
+    setReceiptArchiveDeleting(true);
+    setReceiptArchiveDeleteError('');
+    try {
+      await apiClient.delete(mode === 'all' ? '/finance/receipt-archive' : `/finance/receipt-archive/${item.id}`);
+      if (selectedArchiveDocumentId && (mode === 'all' || selectedArchiveDocumentId === item.document_id)) closeArchivePreview();
+      setReceiptArchive((current) => mode === 'all' ? [] : current.filter((entry) => entry.id !== item.id));
+      setReceiptArchiveDeleteRequest(null);
+    } catch (requestError) {
+      setReceiptArchiveDeleteError(requestError.response?.data?.detail || (mode === 'all' ? '영수증 보관함을 비우지 못했습니다.' : '영수증 보관 기록을 삭제하지 못했습니다.'));
+    } finally {
+      setReceiptArchiveDeleting(false);
+    }
+  };
+
   const runArchivedExtraction = async () => {
     if (!selectedArchiveDocumentId || loading) return;
     const archiveDocumentId = selectedArchiveDocumentId;
@@ -1433,10 +1641,27 @@ export default function OCRPage() {
       supply_amount: financeRecord.supply_amount ?? '',
       tax_amount: financeRecord.tax_amount ?? '',
       total_amount: Number(financeRecord.total_amount || 0),
-      payment_method: financeRecord.payment_method || '',
+      payment_method: normalizeFinancePaymentMethod(financeRecord.payment_method),
       description: financeRecord.description || '',
+      items: (financeRecord.structured_data?.items || []).map((item) => ({
+        ...item,
+        name: item.name || '',
+        quantity: item.quantity ?? '',
+        unit_price: item.unit_price ?? '',
+        total_amount: item.total_amount ?? '',
+      })),
     });
     setFinanceReviewOpen(true);
+  };
+
+  const moveFinanceReviewItem = (fromIndex, toIndex) => {
+    setFinanceReviewDraft((draft) => {
+      if (!draft || toIndex < 0 || toIndex >= draft.items.length) return draft;
+      const items = [...draft.items];
+      const [movedItem] = items.splice(fromIndex, 1);
+      items.splice(toIndex, 0, movedItem);
+      return { ...draft, items };
+    });
   };
 
   const startFinanceReviewDrag = (event) => {
@@ -1478,8 +1703,16 @@ export default function OCRPage() {
     setLoading(true);
     setError('');
     try {
+      const normalizedItems = financeReviewDraft.items.map((item) => ({
+        ...item,
+        name: String(item.name || '').trim() || null,
+        quantity: optionalFinanceNumber(item.quantity),
+        unit_price: optionalFinanceNumber(item.unit_price),
+        total_amount: optionalFinanceNumber(item.total_amount),
+      }));
       const { data } = await apiClient.patch(`/finance/records/${financeRecord.id}`, {
         ...financeReviewDraft,
+        items: normalizedItems,
         supply_amount: optionalFinanceNumber(financeReviewDraft.supply_amount),
         tax_amount: optionalFinanceNumber(financeReviewDraft.tax_amount),
         total_amount: Number(financeReviewDraft.total_amount || 0),
@@ -1491,6 +1724,7 @@ export default function OCRPage() {
       });
       setFinanceRecord(data);
       setFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
+      setSessionProcessedReceipts((current) => current.map((entry) => entry.record.id === data.id ? { ...entry, record: data } : entry));
       setSavedFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
       setFinanceReviewOpen(false);
       setFinanceReviewDraft(null);
@@ -1521,12 +1755,13 @@ export default function OCRPage() {
         supply_amount: optionalFinanceNumber(financeRecord.supply_amount),
         tax_amount: optionalFinanceNumber(financeRecord.tax_amount),
         total_amount: Number(financeRecord.total_amount || 0),
-        payment_method: financeRecord.payment_method || null,
+        payment_method: normalizeFinancePaymentMethod(financeRecord.payment_method) || null,
         description: financeRecord.description || null,
         status: 'CONFIRMED',
       });
       setFinanceRecord(data);
       setFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
+      setSessionProcessedReceipts((current) => current.map((entry) => entry.record.id === data.id ? { ...entry, record: data } : entry));
       setSavedFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
       if (receiptBatchRef.current.active) {
         const batch = receiptBatchRef.current;
@@ -1568,6 +1803,7 @@ export default function OCRPage() {
       const { data } = await apiClient.post(`/finance/records/${financeRecord.id}/submit`);
       setFinanceRecord(data);
       setFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
+      setSessionProcessedReceipts((current) => current.map((entry) => entry.record.id === data.id ? { ...entry, record: data } : entry));
       setSavedFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '재무팀에 문서를 보내지 못했습니다.');
@@ -1645,19 +1881,33 @@ export default function OCRPage() {
           </aside>}
 
           {processingMode === 'receipt' && <aside className="receipt-archive-sidebar" aria-labelledby="receipt-archive-title">
-            <header><div><strong id="receipt-archive-title">기록 보관함</strong><small>저장된 영수증 {filteredReceiptArchive.length}개</small></div></header>
-            <label><span>영수증 기록</span><b>{filteredReceiptArchive.length}</b></label>
-            <div className="receipt-archive-filter"><select aria-label="영수증 카테고리" value={receiptArchiveCategory} onChange={(event) => setReceiptArchiveCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="날짜 정렬" value={receiptArchiveDateOrder} onChange={(event) => setReceiptArchiveDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
-            <div className="receipt-archive-list">
-              {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : filteredReceiptArchive.map((item) => {
-                const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
-                return <button type="button" key={item.id} className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
-                  {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
-                  <span><strong>{item.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={item.source_file_name || ''}>{item.source_file_name || '원본 파일명 없음'}</small><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
-                  <em>{financeMoney(item.total_amount)}</em>
-                </button>;
-              })}
-              {!receiptArchiveLoading && !filteredReceiptArchive.length && <p>선택한 카테고리에 저장된 영수증이 없습니다.</p>}
+            <header><div><strong id="receipt-archive-title">처리 및 기록</strong><small>현재 작업과 저장 기록을 함께 확인합니다.</small></div></header>
+            <div className="receipt-archive-sections">
+              <section className="receipt-session-section">
+                <div className="receipt-section-heading"><span>누적 처리 내역 <b>{filteredSessionReceipts.length}</b></span><button type="button" disabled={loading || !selectedSessionReceiptIds.length} onClick={reprocessSelectedReceipts}>재시도{selectedSessionReceiptIds.length ? ` ${selectedSessionReceiptIds.length}` : ''}</button></div>
+                <div className="receipt-archive-filter"><select aria-label="누적 처리 카테고리" value={sessionReceiptCategory} onChange={(event) => setSessionReceiptCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="누적 처리 날짜 정렬" value={sessionReceiptDateOrder} onChange={(event) => setSessionReceiptDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
+                <div className="receipt-archive-list receipt-session-list">
+                  {filteredSessionReceipts.map((entry) => <div className={`receipt-session-item ${financeRecord?.id === entry.record.id ? 'previewing' : ''} ${selectedSessionReceiptIds.includes(entry.sessionId) ? 'selected' : ''}`} key={entry.sessionId}><label title="재시도 선택"><input type="checkbox" checked={selectedSessionReceiptIds.includes(entry.sessionId)} onChange={(event) => setSelectedSessionReceiptIds((current) => event.target.checked ? [...current, entry.sessionId] : current.filter((id) => id !== entry.sessionId))} /><span /></label><button type="button" onClick={() => { setFinanceRecord(entry.record); setFinanceRecords([entry.record]); setResultTab('text'); }}>
+                    <span className="receipt-archive-file">{entry.fileName.split('.').pop()?.toUpperCase() || 'FILE'}</span><span><strong>{entry.record.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={entry.fileName}>{entry.fileName}</small><small>{entry.record.expense_category || '미분류'} · {new Date(entry.processedAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</small></span><em><b className={`receipt-operation-badge ${entry.operationalDecision === 'PASS' ? 'pass' : 'review'}`}>{entry.operationalDecision || 'REVIEW'}</b><span>{entry.sequence}번 · {financeMoney(entry.record.total_amount)}</span></em>
+                  </button></div>)}
+                  {!filteredSessionReceipts.length && <p>{sessionProcessedReceipts.length ? '선택한 카테고리의 처리 내역이 없습니다.' : '이번 작업에서 처리한 영수증이 없습니다.'}</p>}
+                </div>
+              </section>
+              <section className="receipt-saved-section">
+                <div className="receipt-saved-heading"><span>기록 보관함</span><div><button type="button" disabled={receiptArchiveLoading || receiptArchiveDeleting || !receiptArchive.length} onClick={() => requestReceiptArchiveDelete('all')} title="기록 보관함 전체 삭제" aria-label="기록 보관함 전체 삭제"><IoTrashOutline /></button><b>{filteredReceiptArchive.length}</b></div></div>
+                <div className="receipt-archive-filter"><select aria-label="영수증 카테고리" value={receiptArchiveCategory} onChange={(event) => setReceiptArchiveCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="날짜 정렬" value={receiptArchiveDateOrder} onChange={(event) => setReceiptArchiveDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
+                <div className="receipt-archive-list">
+                  {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : filteredReceiptArchive.map((item) => {
+                    const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
+                    return <div className="receipt-saved-item" key={item.id}><button type="button" className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
+                      {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
+                      <span><strong>{item.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={item.source_file_name || ''}>{item.source_file_name || '원본 파일명 없음'}</small><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
+                      <em>{financeMoney(item.total_amount)}</em>
+                    </button><button type="button" className="receipt-saved-delete" disabled={receiptArchiveLoading || receiptArchiveDeleting} onClick={() => requestReceiptArchiveDelete('single', item)} title="기록 삭제" aria-label={`${item.source_file_name || item.merchant || '영수증'} 기록 삭제`}>×</button></div>;
+                  })}
+                  {!receiptArchiveLoading && !filteredReceiptArchive.length && <p>선택한 카테고리에 저장된 영수증이 없습니다.</p>}
+                </div>
+              </section>
             </div>
           </aside>}
 
@@ -1681,7 +1931,7 @@ export default function OCRPage() {
             </div>
             {processingMode === 'receipt' && <div className="receipt-upload-actions">
               <div><span className="pdf-badge">{fileExtension}</span><span><strong>{fileName}</strong><small>{hasResult ? 'OCR 추출 완료' : pendingFile ? '추출 준비 완료' : (isEnterprise && receiptBatchStatus) || '영수증 이미지 혹은 영수증 내용이 들어간 문서를 선택해주세요'}</small></span></div>
-              <nav>{(pendingFile || selectedArchiveDocumentId) && <button type="button" className="extract" onClick={selectedArchiveDocumentId ? runArchivedExtraction : runExtraction} disabled={loading}>{loading ? '처리 중...' : 'OCR 텍스트 추출'}</button>}</nav>
+              <nav>{!receiptRetryAvailable && (pendingFile || selectedArchiveDocumentId) && <button type="button" className="extract" onClick={selectedArchiveDocumentId ? runArchivedExtraction : runExtraction} disabled={loading}>{receiptProcessingStage === 'ocr' ? 'OCR 처리 중...' : receiptProcessingStage === 'llm' ? 'AI 분석 중...' : 'OCR 텍스트 추출'}</button>}{receiptProcessingStage ? <button type="button" className="cancel-processing" onClick={cancelReceiptProcessing}>처리 취소</button> : receiptRetryAvailable && <button type="button" className="extract" disabled={loading} onClick={retryCanceledReceiptProcessing}>재처리</button>}</nav>
               <nav className="batch-always-nav">{isReceiptEvaluator && <button type="button" onClick={() => evaluationDatasetRef.current?.click()}>{evaluationDatasetFile ? '다른 정답 데이터 입력' : '정답 데이터 입력'}</button>}<div className="receipt-input-menu"><button type="button" className="batch batch-always" disabled={loading || receiptBatchActive} aria-expanded={receiptInputMenuOpen} onClick={() => setReceiptInputMenuOpen((open) => !open)}>영수증 입력</button>{receiptInputMenuOpen && <div role="menu"><button type="button" role="menuitem" onClick={() => { setReceiptInputMenuOpen(false); inputRef.current?.click(); }}><strong>이미지 선택</strong><small>한 장은 단일, 여러 장은 일괄 처리</small></button><button type="button" role="menuitem" onClick={() => { setReceiptInputMenuOpen(false); evaluationFolderRef.current?.click(); }}><strong>폴더 선택</strong><small>폴더 안 이미지를 일괄 처리</small></button></div>}</div></nav>
               <input ref={evaluationFolderRef} hidden type="file" accept=".png,.jpg,.jpeg,.webp,.bmp,.pdf" multiple webkitdirectory="true" directory="true" onChange={(event) => { openReceiptBatchEvaluation(event.target.files); event.target.value = ''; }} />
               {isReceiptEvaluator && <input ref={evaluationDatasetRef} hidden type="file" accept=".json,application/json" onChange={(event) => { const file = event.target.files?.[0] || null; setEvaluationDatasetFile(file); setEvaluationStatus(file ? `${file.name} 정답 데이터를 불러왔습니다.` : ''); setError(''); }} />}
@@ -1689,9 +1939,9 @@ export default function OCRPage() {
             {processingMode === 'receipt' && receiptBatchStatus && <div className="receipt-batch-status"><strong>{receiptBatchActive ? '일괄 문서화 진행 중' : '일괄 문서화'}</strong><span>{receiptBatchStatus}</span></div>}
             {processingMode === 'receipt' && financeDuplicateNotice && <div className="receipt-duplicate-notice"><strong>중복 문서</strong><span>{financeDuplicateNotice}</span></div>}
             <div className="preview-stage">
-              {receiptProcessingStage && <div className="receipt-processing-overlay" role="status" aria-live="polite"><span /><strong>{receiptProcessingStage === 'ocr' ? 'OCR로 영수증을 인식하고 있습니다' : 'AI가 영수증 내용을 분류하고 있습니다'}</strong><p>{receiptProcessingStage === 'ocr' ? '문자와 표의 위치를 추출하는 중입니다.' : '추출된 값을 재무 항목으로 정리하는 중입니다.'}</p><button type="button" onClick={cancelReceiptProcessing}>처리 취소</button></div>}
+              {receiptProcessingStage === 'ocr' && <div className="receipt-processing-overlay" role="status" aria-live="polite"><span /><strong>OCR로 영수증을 인식하고 있습니다</strong><p>문자와 표의 위치를 추출하는 중입니다.</p></div>}
               {selectedArchiveDocumentId && <button type="button" className="archive-preview-close" onClick={closeArchivePreview} aria-label="보관함 이미지 미리보기 닫기"><IoCloseOutline /></button>}
-              {generatedWorkbook ? <GeneratedWorkbookPreview title={generatedWorkbook.title} rows={generatedWorkbook.rows} onBack={() => setGeneratedWorkbook(null)} onDownload={() => { const anchor = document.createElement('a'); anchor.href = generatedWorkbook.url; anchor.download = generatedWorkbook.fileName; anchor.click(); }} /> : projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} activeSemantic={activeReceiptSemantic} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : displayedImageUrl ? <ImagePreview src={displayedImageUrl} fileName={fileName} scale={zoom} items={previewVariant === 'processed' ? [] : semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} loading={loading} activeSemantic={activeReceiptSemantic} /> : hasResult ? (
+              {generatedWorkbook ? <GeneratedWorkbookPreview title={generatedWorkbook.title} rows={generatedWorkbook.rows} onBack={() => setGeneratedWorkbook(null)} onDownload={() => { const anchor = document.createElement('a'); anchor.href = generatedWorkbook.url; anchor.download = generatedWorkbook.fileName; anchor.click(); }} /> : projectTransition ? <div className="loader"><span />새 프로젝트를 준비하고 있습니다...</div> : loading && !imagePreviewUrl ? <div className="loader"><span />파일을 분석하고 있습니다...</div> : pdf ? <PdfCanvas pdf={pdf} pageNumber={pageNumber} scale={zoom} items={semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} activeSemantic={activeReceiptSemantic} /> : currentRows ? <SpreadsheetPreview rows={currentRows} items={currentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} /> : displayedImageUrl ? <ImagePreview src={displayedImageUrl} fileName={fileName} scale={zoom} items={previewVariant === 'processed' ? [] : semanticCurrentItems} selectedItemIndex={selectedItemIndex} onSelectItem={setSelectedItemIndex} loading={receiptProcessingStage === 'ocr'} activeSemantic={activeReceiptSemantic} /> : hasResult ? (
                 <div className="loader">OCR 텍스트 추출이 완료되었습니다.</div>
               ) : pendingFile ? (
                 <div className="pending-document" role="status">
@@ -1739,7 +1989,7 @@ export default function OCRPage() {
             </div>
             {!(processingMode === 'receipt' && financeRecord) && <div className="text-meta"><span>{currentText.length.toLocaleString()}자</span><span>{resultTab === 'text' ? '드래그 행 선택' : '텍스트 레이어'}</span></div>}
             {preprocessingInfo && <div className="receipt-preprocess-status"><strong>영수증 전처리 완료</strong><span>{(preprocessingInfo.applied_steps || []).map((step) => ({ perspective_correction: '원근', deskew: '기울기', crop: '여백', upscale: '확대', illumination_correction: '조명', contrast_enhancement: '대비', closing: '획 연결', sharpen: '선명화' }[step] || step)).join(' · ')}</span></div>}
-            {resultTab === 'text' ? (financeRecord ? <ReceiptExtractionInsights record={financeRecord} ocrItems={semanticOcrItems} onSemanticSelect={(semantic) => { setActiveReceiptSemantic(semantic); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /> : processingMode === 'receipt' ? (loading && !receiptBatchActive ? <div className="receipt-document-loading" role="status" aria-live="polite"><span /><strong>영수증을 분석하고 있습니다</strong><p>AI가 문서 유형과 주요 항목을 선별하는 중입니다.</p></div> : <div className="receipt-document-empty"><span>＋</span><strong>추출 정보가 표시될 영역</strong><p>영수증을 분석하면 주요 정보, 구매 항목과 검증 신뢰도를 표시합니다.</p><div><b>01</b> 영수증 인식 <i>→</i><b>02</b> 값 선별 <i>→</i><b>03</b> 결과 확인</div></div>) : <ExtractionWorksheet rows={validationRows} onChange={setValidationRows} selectedIds={selectedRowIds} onSelectRange={setSelectedRowIds} onEvidence={(itemIndex) => { setSelectedItemIndex(itemIndex); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />) : <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>{hasResult ? (currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : (currentText || '현재 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 OCR 원문이 표시됩니다.'}</div>}
+            {resultTab === 'text' ? (receiptProcessingStage === 'llm' ? <div className="receipt-document-loading" role="status" aria-live="polite"><span /><strong>AI가 영수증 내용을 분석하고 있습니다</strong><p>OCR은 완료되었습니다. 문서 유형과 주요 항목을 선별하는 중입니다.</p></div> : financeRecord ? <ReceiptExtractionInsights record={financeRecord} ocrItems={semanticOcrItems} onSemanticSelect={(semantic) => { setActiveReceiptSemantic(semantic); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} /> : processingMode === 'receipt' ? <div className="receipt-document-empty"><span>＋</span><strong>{receiptProcessingStage === 'ocr' ? 'OCR 완료 대기 중' : '추출 정보가 표시될 영역'}</strong><p>{receiptProcessingStage === 'ocr' ? 'OCR이 완료되면 AI 분석 단계가 이 영역에 표시됩니다.' : '영수증을 분석하면 주요 정보, 구매 항목과 검증 신뢰도를 표시합니다.'}</p><div><b>01</b> 영수증 인식 <i>→</i><b>02</b> 값 선별 <i>→</i><b>03</b> 결과 확인</div></div> : <ExtractionWorksheet rows={validationRows} onChange={setValidationRows} selectedIds={selectedRowIds} onSelectRange={setSelectedRowIds} onEvidence={(itemIndex) => { setSelectedItemIndex(itemIndex); document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }} />) : <div className={`extracted-copy ${!hasResult ? 'placeholder' : ''}`}>{hasResult ? (currentItems.length ? currentItems.map((item, index) => <button key={`${index}-${item.text}`} type="button" className={`extracted-line ${selectedItemIndex === index ? 'selected' : ''}`} onClick={() => setSelectedItemIndex(index)}>{item.text}</button>) : (currentText || '현재 페이지에는 추출 가능한 텍스트가 없습니다.')) : '파일을 업로드하면 페이지별 OCR 원문이 표시됩니다.'}</div>}
             {!(processingMode === 'receipt' && financeRecord) && <div className="text-note"><b>i</b><p>{resultTab === 'text' ? '행 번호를 누른 채 위아래로 드래그해 범위를 선택하고, 새 Excel 문서 만들기를 누르세요.' : 'OCR 원문을 선택하면 오른쪽 원본의 해당 근거 영역이 강조됩니다.'}</p></div>}
           </aside>
           {processingMode === 'receipt' && <aside className="receipt-result-placeholder" aria-label="AI 재무 에이전트 결과 영역">
@@ -1795,9 +2045,13 @@ export default function OCRPage() {
                 <label><span>공급가액</span><input type="number" min="0" value={financeReviewDraft.supply_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, supply_amount: event.target.value }))} /></label>
                 <label><span>부가세</span><input type="number" min="0" value={financeReviewDraft.tax_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, tax_amount: event.target.value }))} /></label>
                 <label><span>합계금액</span><input type="number" min="0" value={financeReviewDraft.total_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, total_amount: event.target.value }))} /></label>
-                <label><span>결제수단</span><input maxLength="100" value={financeReviewDraft.payment_method} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, payment_method: event.target.value }))} /></label>
+                <label><span>결제수단</span><select value={financeReviewDraft.payment_method || '카드'} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, payment_method: event.target.value }))}><option value="카드">카드</option><option value="현금">현금</option><option value="기타">기타</option></select></label>
                 <label className="wide"><span>사용 내역</span><textarea maxLength="1000" value={financeReviewDraft.description} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, description: event.target.value }))} /></label>
               </div>
+              <section className="finance-review-items">
+                <div className="finance-review-items-title"><div><strong>세부 품목</strong><span>상품명, 수량, 단가와 금액을 품목별로 수정할 수 있습니다.</span></div><button type="button" onClick={() => setFinanceReviewDraft((draft) => ({ ...draft, items: [...draft.items, { name: '', quantity: 1, unit_price: '', total_amount: '' }] }))}>+ 품목 추가</button></div>
+                <div className="finance-review-items-table"><table><thead><tr><th>순서</th><th>상품명</th><th>수량</th><th>단가</th><th>금액</th><th><span className="sr-only">삭제</span></th></tr></thead><tbody>{financeReviewDraft.items.map((item, index) => <tr key={index}><td><div className="item-order-controls"><button type="button" disabled={index === 0} aria-label={`품목 ${index + 1} 위로 이동`} title="위로 이동" onClick={() => moveFinanceReviewItem(index, index - 1)}>↑</button><button type="button" disabled={index === financeReviewDraft.items.length - 1} aria-label={`품목 ${index + 1} 아래로 이동`} title="아래로 이동" onClick={() => moveFinanceReviewItem(index, index + 1)}>↓</button></div></td><td><input aria-label={`품목 ${index + 1} 상품명`} value={item.name} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, items: draft.items.map((value, itemIndex) => itemIndex === index ? { ...value, name: event.target.value } : value) }))} /></td><td><input aria-label={`품목 ${index + 1} 수량`} type="number" min="0" step="any" value={item.quantity} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, items: draft.items.map((value, itemIndex) => itemIndex === index ? { ...value, quantity: event.target.value } : value) }))} /></td><td><input aria-label={`품목 ${index + 1} 단가`} type="number" min="0" step="any" value={item.unit_price} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, items: draft.items.map((value, itemIndex) => itemIndex === index ? { ...value, unit_price: event.target.value } : value) }))} /></td><td><input aria-label={`품목 ${index + 1} 금액`} type="number" min="0" step="any" value={item.total_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, items: draft.items.map((value, itemIndex) => itemIndex === index ? { ...value, total_amount: event.target.value } : value) }))} /></td><td><button type="button" aria-label={`품목 ${index + 1} 삭제`} onClick={() => setFinanceReviewDraft((draft) => ({ ...draft, items: draft.items.filter((_, itemIndex) => itemIndex !== index) }))}>삭제</button></td></tr>)}</tbody></table>{!financeReviewDraft.items.length && <p>등록된 세부 품목이 없습니다. ‘품목 추가’를 눌러 입력하세요.</p>}</div>
+              </section>
               <div className="finance-review-check"><strong>금액 검산</strong>{optionalFinanceNumber(financeReviewDraft.supply_amount) === null || optionalFinanceNumber(financeReviewDraft.tax_amount) === null ? <><span>공급가액 또는 부가세 정보 없음</span><em>검산 불가</em></> : <><span>{financeMoney(financeReviewDraft.supply_amount)} + {financeMoney(financeReviewDraft.tax_amount)} = {financeMoney(Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount))}</span><em className={Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount) ? 'valid' : ''}>{Number(financeReviewDraft.total_amount || 0) === Number(financeReviewDraft.supply_amount) + Number(financeReviewDraft.tax_amount) ? '일치' : '합계 확인 필요'}</em></>}</div>
               <footer><button type="button" disabled={loading} onClick={() => setFinanceReviewOpen(false)}>취소</button><button type="submit" className="save" disabled={loading}>{loading ? '저장 중...' : '수정 내용 저장'}</button></footer>
             </form>
@@ -1814,6 +2068,7 @@ export default function OCRPage() {
           </div>
           <footer><span className={evaluationStatus.includes('저장되었습니다') ? 'success' : ''}>{evaluationStatus || (hasResult ? '정답 데이터를 입력하면 평가 결과가 개발자 리포트에 저장됩니다.' : '먼저 문서를 업로드해 주세요.')}</span><div><button className="open-report-button" type="button" onClick={() => navigate('/reports')}>리포트 열기</button><button disabled={!hasResult || !groundTruth.trim() || !currentDocumentId || evaluationStatus === '저장 중...'} onClick={saveDeveloperEvaluation}>정답 저장 및 성능 평가</button></div></footer>
         </section>}
+        <ReceiptArchiveDeleteDialog request={receiptArchiveDeleteRequest} deleting={receiptArchiveDeleting} error={receiptArchiveDeleteError} onCancel={closeReceiptArchiveDelete} onConfirm={confirmReceiptArchiveDelete} />
       </main>
     </div>
   );

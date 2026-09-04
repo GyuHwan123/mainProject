@@ -200,6 +200,19 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
     return unique_archive
 
 
+@router.delete("/receipt-archive/{archive_id}")
+def delete_receipt_archive_item(archive_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    deleted_count = supabase_service.soft_delete_receipt_archive(user.email, archive_id)
+    if not deleted_count:
+        raise HTTPException(status_code=404, detail="삭제할 영수증 보관 기록을 찾을 수 없습니다.")
+    return {"deleted": deleted_count}
+
+
+@router.delete("/receipt-archive")
+def delete_all_receipt_archive(user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return {"deleted": supabase_service.soft_delete_receipt_archive(user.email)}
+
+
 @router.get("/history")
 def finance_history(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     history = []
@@ -224,6 +237,7 @@ def finance_history(user: User = Depends(require_current_user)) -> list[dict[str
 @router.patch("/records/{record_id}", response_model=FinanceRecord)
 def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
     values = payload.model_dump(mode="json")
+    items = values.pop("items", None)
     document_type, expense_category, needs_review, reason = validate_classification(
         values["document_type"], values["expense_category"],
         allow_explicit_document_type=True,
@@ -247,6 +261,8 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
         previous_decision = dict(structured_data.get("classification_decision") or {})
         structured_data["expense_category"] = expense_category
         structured_data["doc_type"] = document_type
+        if items is not None:
+            structured_data["items"] = items
         structured_data["needs_review"] = False
         structured_data.pop("classification_review_reason", None)
         structured_data["classification_decision"] = {

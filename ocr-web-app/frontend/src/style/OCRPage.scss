@@ -179,9 +179,9 @@
   }
 
   .receipt-item-table {
-    max-height: 240px;
-    overflow: auto;
-    scrollbar-gutter: stable;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: visible;
     table { min-width: 540px; width: 100%; border-collapse: collapse; }
     th, td { padding: 9px 11px; border-right: 1px solid #e4ebf2; border-bottom: 1px solid #e4ebf2; font-size: 9px; }
     th { position: sticky; top: 0; z-index: 1; color: #4e6379; background: #f4f8fb; text-align: center; }
@@ -194,7 +194,7 @@
   .receipt-confidence-content {
     padding: 15px;
     display: grid;
-    grid-template-columns: 100px minmax(0, 1fr);
+    grid-template-columns: 165px minmax(0, 1fr);
     align-items: center;
     gap: 18px;
     .confidence-ring {
@@ -208,6 +208,8 @@
       strong { color: #17624d; font-size: 20px; }
       small { color: #73867f; font-size: 7px; }
     }
+    .confidence-score-summary { display: flex; align-items: center; gap: 10px; }
+    .confidence-score-summary > em { padding: 7px 9px; border-radius: 7px; font-size: 11px; font-style: normal; font-weight: 900; letter-spacing: .04em; }
     dl { margin: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
     dl div { padding: 9px 10px; display: flex; justify-content: space-between; gap: 8px; background: #f6f9fc; border-radius: 6px; }
     dt { color: #68798c; font-size: 8px; }
@@ -216,10 +218,61 @@
     dd.warning { color: #b56a18; }
   }
 
-  // 신뢰도 계산 기능은 유지하되 현재 영수증 결과 화면에서는 임시로 숨깁니다.
-  .receipt-confidence-card {
-    display: none;
+  .receipt-confidence-card > header > span.ok { color: #14835b; }
+  .receipt-confidence-card > header > span.warning { color: #ad6518; }
+  .receipt-confidence-card.is-pass { border-top: 4px solid #15966f; }
+  .receipt-confidence-card.is-review { border-top: 4px solid #d98220; }
+  .receipt-confidence-card.is-pass .confidence-score-summary > em { color: #087453; background: #dff4eb; }
+  .receipt-confidence-card.is-review .confidence-score-summary > em { color: #a65a09; background: #fff0d8; }
+
+  .receipt-matching-issues {
+    > header > span.warning { color: #ad6518; }
+    > header > span.ok { color: #14835b; }
+    ul { margin: 0; padding: 0; list-style: none; }
+    li + li { border-top: 1px solid #edf1f5; }
+    button { width: 100%; padding: 10px 13px; display: grid; grid-template-columns: 130px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 0; color: #53677c; background: #fff; text-align: left; cursor: pointer; }
+    button:hover { background: #fffaf3; }
+    b { color: #9b5a15; font-size: 9px; }
+    span { min-width: 0; font-size: 9px; }
+    em { color: #2870a5; font-size: 8px; font-style: normal; font-weight: 800; }
+    .receipt-no-issues { margin: 0; padding: 16px; color: #26805f; font-size: 9px; }
   }
+}
+
+.delete-confirm-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  background: rgba(#111827, 0.46);
+  backdrop-filter: blur(2px);
+}
+
+.delete-confirm-dialog {
+  width: min(400px, 100%);
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr);
+  gap: 12px;
+  color: #1f3549;
+  background: #fff;
+  border: 1px solid rgba(#ccd7e1, 0.5);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(#111827, 0.2);
+
+  .delete-confirm-icon { width: 38px; height: 38px; display: grid; place-items: center; color: #a74652; background: rgba(#c54d5b, 0.12); border-radius: 50%; font-size: 19px; }
+  small { color: #a74652; font-size: 12px; font-weight: 800; }
+  h2 { margin: 5px 0 7px; font-size: 17px; line-height: 1.4; }
+  p { margin: 0; color: #718096; font-size: 13px; line-height: 1.55; }
+  .delete-confirm-error { grid-column: 1 / -1; padding: 9px 10px; color: #8f2f3c; background: rgba(#c54d5b, 0.09); border-radius: 6px; }
+  footer { grid-column: 1 / -1; margin-top: 7px; display: flex; justify-content: flex-end; gap: 8px; }
+  footer button { min-width: 72px; min-height: 36px; padding: 7px 13px; border-radius: 7px; font-size: 13px; font-weight: 750; cursor: pointer; }
+  footer button:disabled { opacity: .55; cursor: wait; }
+  .cancel-delete { color: #718096; background: #fff; border: 1px solid rgba(#ccd7e1, 0.7); }
+  .confirm-delete { color: #fff; background: #b5414f; border: 1px solid #b5414f; }
+  .confirm-delete:hover:not(:disabled) { background: #963440; border-color: #963440; }
 }
 
 @media (max-width: 760px) {
@@ -3067,6 +3120,15 @@
       color: #fff;
       background: #174f7d;
     }
+    nav button.cancel-processing {
+      border-color: #dfadb3;
+      color: #a52b37;
+      background: #fff7f8;
+    }
+    nav button.cancel-processing:hover {
+      border-color: #c97c86;
+      background: #ffedef;
+    }
     nav button:disabled {
       opacity: 0.5;
       cursor: default;
@@ -3256,6 +3318,20 @@
 // Receipt workspace cards and responsive layout.
 // Kept after the generic OCR breakpoints so receipt mode has an explicit,
 // isolated cascade without changing the standard document OCR workspace.
+@media (min-width: 1301px) {
+  .ocr-app-shell.finance-page-shell {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+
+    .ocr-workspace {
+      height: 100vh;
+      min-height: 0;
+      overflow: hidden;
+    }
+  }
+}
+
 .ocr-app-shell.finance-page-shell .ocr-workspace {
   .ocr-editor.receipt-workspace {
     height: calc(100vh - 150px);
@@ -3299,8 +3375,19 @@
       > header strong, > header small { display: block; }
       > header strong { color: #29445d; font-size: 14px; }
       > header small { margin-top: 4px; color: #8a97a5; font-size: 10px; }
-      > label { min-height: 38px; padding: 8px 11px; display: flex; align-items: center; justify-content: space-between; color: #67788a; background: #f8fafc; border-bottom: 1px solid #e8edf2; font-size: 10px; font-weight: 800; }
-      > label b { min-width: 22px; padding: 3px 5px; border-radius: 10px; color: #2b70a3; background: #e5f1fa; text-align: center; }
+      .receipt-archive-sections { min-height: 0; flex: 1; display: grid; grid-template-rows: repeat(2, minmax(0, 1fr)); }
+      .receipt-archive-sections > section { min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+      .receipt-archive-sections > section + section { border-top: 2px solid #ccd9e4; }
+      .receipt-archive-sections > section > label, .receipt-section-heading, .receipt-saved-heading { min-height: 36px; padding: 7px 11px; display: flex; flex: none; align-items: center; justify-content: space-between; color: #4c657b; background: #f8fafc; border-bottom: 1px solid #e8edf2; font-size: 10px; font-weight: 850; }
+      .receipt-archive-sections > section > label b, .receipt-section-heading b, .receipt-saved-heading b { min-width: 22px; padding: 3px 5px; border-radius: 10px; color: #2b70a3; background: #e5f1fa; text-align: center; }
+      .receipt-saved-heading > div { display: flex; align-items: center; gap: 6px; }
+      .receipt-saved-heading button { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #b64a4a; background: #fdecec; font-size: 14px; cursor: pointer; }
+      .receipt-saved-heading button:hover { color: #fff; background: #c84c4c; }
+      .receipt-saved-heading button:disabled { opacity: .4; cursor: default; }
+      .receipt-session-section .receipt-section-heading { color: #176b53; background: #f1faf6; }
+      .receipt-session-section .receipt-section-heading b { color: #fff; background: #21805c; }
+      .receipt-section-heading > button { padding: 5px 8px; border: 1px solid #21805c; border-radius: 6px; color: #fff; background: #21805c; font-size: 9px; font-weight: 850; cursor: pointer; }
+      .receipt-section-heading > button:disabled { opacity: .4; cursor: default; }
       .receipt-archive-filter { padding: 9px 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; border-bottom: 1px solid #edf1f5; }
       .receipt-archive-filter select { min-width: 0; width: 100%; padding: 7px 5px; border: 1px solid #d7e1ea; border-radius: 7px; color: #344d64; background: #f9fbfd; font-size: 9px; outline: 0; }
       .receipt-archive-list { min-height: 0; max-height: none; padding: 7px; display: flex; flex: 1; flex-direction: column; gap: 4px; overflow-y: auto; }
@@ -3308,6 +3395,16 @@
       .receipt-archive-list > button:hover { background: #f3f8fc; }
       .receipt-archive-list > button.previewing { color: #1f5f8f; background: #eaf4fb; box-shadow: inset 3px 0 #2b70a3; }
       .receipt-archive-list > button:disabled { opacity: .6; cursor: default; }
+      .receipt-saved-item { position: relative; display: flex; border-radius: 6px; background: #fff; }
+      .receipt-saved-item > button:first-child { min-width: 0; width: 100%; padding: 7px 28px 7px 5px; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; border: 0; border-radius: 6px; color: #52667a; background: transparent; text-align: left; cursor: pointer; }
+      .receipt-saved-item > button:first-child:hover { background: #f3f8fc; }
+      .receipt-saved-item > button:first-child.previewing { color: #1f5f8f; background: #eaf4fb; box-shadow: inset 3px 0 #2b70a3; }
+      .receipt-saved-item > button:first-child:disabled { opacity: .6; cursor: default; }
+      .receipt-saved-item > button:first-child > span:nth-child(2) { min-width: 0; }
+      .receipt-saved-item > button:first-child em { grid-column: 2; color: #1f5f8f; font-size: 8px; font-style: normal; font-weight: 800; }
+      .receipt-saved-delete { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; color: #a65353; background: #fbeaea; font-size: 15px; line-height: 1; cursor: pointer; }
+      .receipt-saved-delete:hover { color: #fff; background: #c84c4c; }
+      .receipt-saved-delete:disabled { opacity: .4; cursor: default; }
       .receipt-archive-thumb { width: 28px; height: 34px; display: block; border: 1px solid #d6e2eb; border-radius: 3px; object-fit: cover; background: #f3f6f9; }
       .receipt-archive-file { padding: 8px 2px; border-radius: 4px; color: #2b70a3; background: #e7f2fa; font-size: 7px; font-weight: 850; text-align: center; }
       .receipt-archive-list > button > span:nth-child(2) { min-width: 0; }
@@ -3317,6 +3414,21 @@
       .receipt-archive-list .receipt-archive-original-name { color: #557086; font-size: 8px; font-weight: 700; }
       .receipt-archive-list em { grid-column: 2; color: #1f5f8f; font-size: 8px; font-style: normal; font-weight: 800; }
       .receipt-archive-list > p { margin: 28px 8px; color: #8c99a7; font-size: 10px; text-align: center; }
+      .receipt-session-item { display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: center; border-radius: 6px; background: #fbfefd; }
+      .receipt-session-item.previewing { background: #eaf7f1; box-shadow: inset 3px 0 #21805c; }
+      .receipt-session-item.selected { box-shadow: inset 0 0 0 1px #21805c; }
+      .receipt-session-item > label { width: 22px; height: 100%; display: grid; place-items: center; cursor: pointer; }
+      .receipt-session-item > label input { width: 14px; height: 14px; accent-color: #21805c; cursor: pointer; }
+      .receipt-session-item > label span { display: none; }
+      .receipt-session-item > button { min-width: 0; padding: 7px 5px 7px 0; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; border: 0; color: #52667a; background: transparent; text-align: left; cursor: pointer; }
+      .receipt-session-item > button > span:nth-child(2) { min-width: 0; }
+      .receipt-session-item > button strong, .receipt-session-item > button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .receipt-session-item > button strong { color: #30485f; font-size: 10px; }
+      .receipt-session-item > button small { margin-top: 2px; color: #8b98a6; font-size: 8px; }
+      .receipt-session-item > button em { grid-column: 2; display: flex; align-items: center; gap: 5px; color: #19734a; font-size: 8px; font-style: normal; font-weight: 800; }
+      .receipt-operation-badge { padding: 2px 5px; border-radius: 999px; font-size: 7px; font-weight: 900; line-height: 1.2; letter-spacing: .02em; }
+      .receipt-operation-badge.pass { color: #087443; background: #dff7eb; }
+      .receipt-operation-badge.review { color: #a45b00; background: #fff0d8; }
     }
 
     > .preview-panel {
@@ -3330,14 +3442,44 @@
 
     > .text-panel {
       grid-area: sheet;
+      height: 100%;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       border: 1px solid $border-color;
 
+      > .text-tabs,
+      > .text-header,
+      > .receipt-preprocess-status,
+      > .saved-finance-panel {
+        flex: 0 0 auto;
+      }
+
       > .receipt-extraction-insights {
+        width: 100%;
+        height: auto;
         min-height: 0;
         padding-top: 14px;
-        flex: 1 1 auto;
-        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        flex: 1 1 0;
+        overflow-x: hidden;
+        overflow-y: scroll;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+        scrollbar-color: #9fb2c3 #edf2f6;
       }
+
+      > .receipt-extraction-insights > * {
+        width: 100%;
+        flex: 0 0 auto;
+      }
+
+      > .receipt-extraction-insights::-webkit-scrollbar { width: 12px; }
+      > .receipt-extraction-insights::-webkit-scrollbar-track { background: #edf2f6; }
+      > .receipt-extraction-insights::-webkit-scrollbar-thumb { min-height: 48px; border: 2px solid #edf2f6; border-radius: 8px; background: #7f919f; }
 
       .receipt-raw-result {
         min-height: 170px;
@@ -3745,26 +3887,29 @@
   padding: 24px;
   display: grid;
   place-items: center;
-  background: rgba(16, 34, 51, 0.48);
-  backdrop-filter: blur(2px);
+  overflow-y: auto;
+  background: rgba(16, 34, 51, 0.1);
+  backdrop-filter: none;
 }
 
 .finance-review-modal {
   width: min(720px, 100%);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   border: 1px solid #d8e1e9;
   border-radius: 16px;
   background: #fff;
   box-shadow: 0 24px 70px rgba(17, 42, 64, 0.24);
 
-  > header { padding: 21px 24px 18px; display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #e3e9ef; cursor: grab; touch-action: none; user-select: none; }
+  > header { padding: 21px 24px 18px; display: flex; flex: none; align-items: flex-start; justify-content: space-between; border-bottom: 1px solid #e3e9ef; cursor: grab; touch-action: none; user-select: none; }
   > header:active { cursor: grabbing; }
   > header span { color: #2c6eab; font-size: 12px; font-weight: 850; letter-spacing: 0.13em; }
   > header h2 { margin: 5px 0; color: #173b5c; font-size: 19px; }
   > header p { margin: 0; color: #7a8798; font-size: 11px; }
   > header button { width: 32px; height: 32px; display: grid; flex: none; place-items: center; border: 1px solid #dce4eb; border-radius: 8px; color: #52677b; background: #fff; font-size: 20px; cursor: pointer; touch-action: auto; }
-  > form { padding: 20px 24px 22px; }
+  > form { min-height: 0; padding: 20px 24px 22px; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .finance-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   label { min-width: 0; display: grid; gap: 6px; }
   label.wide { grid-column: 1 / -1; }
@@ -3772,12 +3917,32 @@
   input, select, textarea { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid #d7e0e8; border-radius: 8px; outline: 0; color: #20384d; background: #fbfcfe; font: inherit; font-size: 12px; }
   input:focus, select:focus, textarea:focus { border-color: #3b7ca9; box-shadow: 0 0 0 3px rgba(59, 124, 169, 0.11); }
   textarea { min-height: 78px; resize: vertical; }
+  .finance-review-items { margin-top: 18px; }
+  .finance-review-items-title { margin-bottom: 8px; display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+  .finance-review-items-title strong, .finance-review-items-title span { display: block; }
+  .finance-review-items-title strong { color: #284a67; font-size: 13px; }
+  .finance-review-items-title span { margin-top: 3px; color: #7a8798; font-size: 10px; }
+  .finance-review-items-title button { padding: 7px 10px; border: 1px solid #b9cddd; border-radius: 7px; color: #22628f; background: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
+  .finance-review-items-table { overflow-x: auto; border: 1px solid #dce4eb; border-radius: 9px; }
+  .finance-review-items-table table { min-width: 680px; width: 100%; border-collapse: collapse; }
+  .finance-review-items-table th { padding: 8px; color: #52677b; background: #f4f7fa; font-size: 10px; text-align: left; }
+  .finance-review-items-table th:nth-child(n+2) { text-align: center; }
+  .finance-review-items-table td { padding: 5px; border-top: 1px solid #e6ebf0; }
+  .finance-review-items-table th:first-child, .finance-review-items-table td:first-child { width: 58px; text-align: center; }
+  .finance-review-items-table td:nth-child(2) { width: 34%; }
+  .finance-review-items-table input { padding: 8px; }
+  .finance-review-items-table td > button { padding: 7px; border: 0; color: #b34c4c; background: transparent; font-size: 10px; cursor: pointer; }
+  .item-order-controls { display: inline-flex; gap: 3px; }
+  .item-order-controls button { width: 24px; height: 28px; padding: 0; border: 1px solid #cbd9e5; border-radius: 6px; color: #276795; background: #fff; font-size: 13px; font-weight: 800; cursor: pointer; }
+  .item-order-controls button:hover:not(:disabled) { border-color: #70a0c3; background: #eef6fc; }
+  .item-order-controls button:disabled { opacity: .3; cursor: default; }
+  .finance-review-items-table > p { margin: 0; padding: 18px; color: #7a8798; font-size: 10px; text-align: center; }
   .finance-review-check { margin-top: 16px; padding: 11px 13px; display: flex; align-items: center; gap: 10px; border-radius: 9px; color: #55677a; background: #f4f7fa; font-size: 13px; }
   .finance-review-check strong { color: #284a67; }
   .finance-review-check span { flex: 1; }
   .finance-review-check em { padding: 4px 7px; border-radius: 12px; color: #9a6100; background: #fff0cb; font-style: normal; font-weight: 800; }
   .finance-review-check em.valid { color: #19734a; background: #dff3e9; }
-  footer { margin-top: 19px; display: flex; justify-content: flex-end; gap: 8px; }
+  footer { position: sticky; bottom: -22px; z-index: 2; margin: 19px -24px -22px; padding: 13px 24px 22px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e6ebf0; background: rgba(255, 255, 255, .96); box-shadow: 0 -8px 18px rgba(28, 55, 78, .05); backdrop-filter: blur(5px); }
   footer button { padding: 10px 16px; border: 1px solid #d2dce5; border-radius: 8px; color: #476074; background: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
   footer button.save { border-color: #1f659a; color: #fff; background: #1f659a; }
   button:disabled { opacity: 0.55; cursor: default; }
@@ -3785,6 +3950,7 @@
 
 @media (max-width: 620px) {
   .finance-review-backdrop { padding: 10px; }
+  .finance-review-modal { max-height: calc(100dvh - 20px); }
   .finance-review-modal .finance-review-grid { grid-template-columns: 1fr; }
   .finance-review-modal label.wide { grid-column: auto; }
 }

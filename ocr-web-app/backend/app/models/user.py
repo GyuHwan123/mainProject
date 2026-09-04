@@ -13,7 +13,7 @@ class User:
     provider: str = "local"
     provider_id: str | None = None
     role: str = "USER"
-    subscription_tier: str = "PERSONAL"
+    subscription_tier: str = "FREE"
     is_active: bool = True
 
     @classmethod
@@ -26,6 +26,6 @@ class User:
             provider=record.get("social_provider") or "local",
             provider_id=record.get("social_id"),
             role=record.get("role") or "USER",
-            subscription_tier=record.get("subscription_tier") or "PERSONAL",
+            subscription_tier=record.get("subscription_tier") or "FREE",
             is_active=record.get("is_active", True),
         )

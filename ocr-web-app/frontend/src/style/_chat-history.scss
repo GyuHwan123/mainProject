@@ -67,14 +67,14 @@
   }
 }
 .rag-document-history {
-  flex: 0 0 39%;
+  flex: 1 1 0;
 
   > div {
-    padding: 8px;
+    padding: 6px 8px;
   }
 }
 .chat-history-section {
-  flex: 1;
+  flex: 1 1 0;
 }
 .chat-workspace .history-list-rag {
   overflow: hidden;
@@ -87,6 +87,7 @@
   justify-content: center;
   flex: none;
   gap: 3px;
+  white-space: nowrap;
   overflow: hidden;
   border-top: 1px solid rgba($line, 0.24);
   background: $surface-color;
@@ -125,8 +126,9 @@
 }
 .rag-history-row {
   width: 100%;
-  min-height: 35px;
-  padding: 5px;
+  height: 42px;
+  min-height: 42px;
+  padding: 4px 5px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -178,7 +180,8 @@
   > button:first-child {
     min-width: 0;
     flex: 1;
-    padding: 5px;
+    height: 42px;
+    padding: 4px 5px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -205,8 +208,8 @@
     font-size: 11px;
   }
   .delete-session {
-    width: 25px;
-    height: 25px;
+    width: 22px;
+    height: 22px;
     margin-right: 5px;
     color: #b75a64;
     background: transparent;
@@ -215,11 +218,11 @@
   }
 }
 .chat-session-row + .chat-session-row {
-  margin-top: 10px;
+  margin-top: 4px;
 }
 .delete-session {
-  width: 25px;
-  height: 25px;
+  width: 22px;
+  height: 22px;
   display: grid;
   place-items: center;
   flex: none;
@@ -227,6 +230,7 @@
   background: transparent;
   border: 0;
   border-radius: 5px;
+  font-size: 15px;
   cursor: pointer;
 
   &:hover:not(:disabled) {
@@ -237,6 +241,12 @@
   &:disabled {
     opacity: $disabled-opacity;
     cursor: default;
+  }
+}
+
+@media (min-width: 1281px) and (min-height: 800px) {
+  .chat-workspace .history-panel .history-section {
+    min-height: 310px;
   }
 }
 .delete-confirm-backdrop {

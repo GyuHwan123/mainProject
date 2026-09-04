@@ -85,7 +85,10 @@ class CollaborationMixin:
         user_id = self.get_public_user_id(user_email)
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/chat_sessions",
-            params={"select": "*", "id": f"eq.{session_id}", "user_id": f"eq.{user_id}", "limit": "1"},
+            params={
+                "select": "*", "id": f"eq.{session_id}", "user_id": f"eq.{user_id}",
+                "deleted_at": "is.null", "limit": "1",
+            },
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "채팅 세션 조회 실패")
@@ -183,7 +186,10 @@ class CollaborationMixin:
     def list_rag_documents(self, user_email: str) -> list[dict[str, Any]]:
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/rag_documents",
-            params={"select": "*,rag_chunks(count)", "owner": f"eq.{user_email}", "order": "created_at.desc"},
+            params={
+                "select": "*,rag_chunks(count)", "owner": f"eq.{user_email}",
+                "deleted_at": "is.null", "order": "created_at.desc",
+            },
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "RAG 문서 조회 실패")
@@ -204,6 +210,7 @@ class CollaborationMixin:
                 "select": "id",
                 "id": f"eq.{rag_document_id}",
                 "owner": f"eq.{user_email}",
+                "deleted_at": "is.null",
                 "limit": "1",
             },
             headers=self._service_headers(), timeout=15,
@@ -212,10 +219,14 @@ class CollaborationMixin:
         if not owned_document.json():
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
 
-        response = _legacy_httpx().delete(
+        response = _legacy_httpx().patch(
             f"{self.url}/rest/v1/rag_documents",
-            params={"id": f"eq.{rag_document_id}", "owner": f"eq.{user_email}"},
+            params={
+                "id": f"eq.{rag_document_id}", "owner": f"eq.{user_email}",
+                "deleted_at": "is.null",
+            },
             headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={"deleted_at": datetime.now(timezone.utc).isoformat()},
             timeout=15,
         )
         self._raise_for_supabase(response, "RAG 문서 삭제 실패")
@@ -240,6 +251,7 @@ class CollaborationMixin:
                 "effective_date": datetime.now(timezone.utc).date().isoformat(),
                 "filename": filename,
                 "tags": ["RAG", embedding_model],
+                "deleted_at": None,
             },
             timeout=15,
         )
@@ -289,6 +301,7 @@ class CollaborationMixin:
                 params={
                     "select": "id,doc_id,title,owner,filename",
                     "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
+                    "deleted_at": "is.null",
                 },
                 headers=self._service_headers(), timeout=15,
             )
@@ -342,6 +355,7 @@ class CollaborationMixin:
                 params={
                     "select": "id,doc_id,title,owner,filename",
                     "doc_id": f"in.({','.join(COMPANY_RAG_DOCUMENT_IDS)})",
+                    "deleted_at": "is.null",
                 },
                 headers=self._service_headers(), timeout=15,
             )
@@ -396,7 +410,10 @@ class CollaborationMixin:
     def list_rag_document_catalog(self) -> list[dict[str, Any]]:
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/rag_documents",
-            params={"select": "doc_id,title,filename", "order": "created_at.asc"},
+            params={
+                "select": "doc_id,title,filename", "deleted_at": "is.null",
+                "order": "created_at.asc",
+            },
             headers=self._service_headers(), timeout=15,
         )
         self._raise_for_supabase(response, "RAG 문서 카탈로그 조회 실패")
@@ -410,6 +427,7 @@ class CollaborationMixin:
             params={
                 "select": "id,doc_id,title,owner,filename,summary",
                 "id": f"eq.{rag_document_id}",
+                "deleted_at": "is.null",
                 "limit": "1",
             },
             headers=self._service_headers(), timeout=15,

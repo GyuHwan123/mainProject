@@ -8,7 +8,7 @@ def _legacy_httpx():
     return sys.modules["app.services.supabase_service"].httpx
 
 class CollaborationMixin:
-    def list_business_activity(self, user_email: str) -> dict[str, list[dict[str, Any]]]:
+    def list_business_activity(self, user_email: str) -> dict[str, Any]:
         """Return user-owned RAG questions and Agent executions for reporting."""
         user_id = self.get_public_user_id(user_email)
         sessions_response = _legacy_httpx().get(
@@ -33,7 +33,27 @@ class CollaborationMixin:
             headers=self._service_headers(), timeout=20,
         )
         self._raise_for_supabase(agent_response, "Agent 실행 활동 조회 실패")
-        return {"rag_questions": messages, "agent_logs": agent_response.json()}
+        enterprise_users_response = _legacy_httpx().get(
+            f"{self.url}/rest/v1/{self.users_table}",
+            params={"select": "id", "subscription_tier": "eq.ENTERPRISE", "limit": "5000"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(enterprise_users_response, "기업 사용자 조회 실패")
+        enterprise_user_ids = [str(row["id"]) for row in enterprise_users_response.json()]
+        enterprise_tasks: list[dict[str, Any]] = []
+        if enterprise_user_ids:
+            user_filter = f"in.({','.join(enterprise_user_ids)})"
+            page_size = 1000
+            while True:
+                tasks_response = _legacy_httpx().get(
+                    f"{self.url}/rest/v1/tasks",
+                    params={"select": "id,title,status,owner_id,assignee_id,created_at,completed_at", "or": f"(owner_id.{user_filter},assignee_id.{user_filter})", "order": "created_at.desc", "limit": str(page_size), "offset": str(len(enterprise_tasks))},
+                    headers=self._service_headers(), timeout=20,
+                )
+                self._raise_for_supabase(tasks_response, "기업 업무 조회 실패")
+                page = tasks_response.json(); enterprise_tasks.extend(page)
+                if len(page) < page_size: break
+        return {"rag_questions": messages, "agent_logs": agent_response.json(), "enterprise_user_count": len(enterprise_user_ids), "enterprise_tasks": enterprise_tasks}
 
     def list_chat_sessions(self, user_email: str) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)

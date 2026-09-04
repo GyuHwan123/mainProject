@@ -60,17 +60,21 @@ class DocumentFinanceMixin:
 
     def list_ocr_documents(self, user_email: str, upload_origin: str | None = None) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
-        params = {"select": "id,file_name,file_url,status,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "100"}
+        params = {"select": "id,file_name,file_url,status,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc"}
         if upload_origin:
             params["upload_origin"] = f"eq.{upload_origin}"
-        response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/{self.ocr_documents_table}",
-            params=params,
-            headers=self._service_headers(),
-            timeout=15,
-        )
-        self._raise_for_supabase(response, "문서 히스토리 조회 실패")
-        return response.json()
+        rows: list[dict[str, Any]] = []
+        page_size = 1000
+        while True:
+            response = _legacy_httpx().get(
+                f"{self.url}/rest/v1/{self.ocr_documents_table}",
+                params={**params, "limit": str(page_size), "offset": str(len(rows))},
+                headers=self._service_headers(), timeout=20,
+            )
+            self._raise_for_supabase(response, "문서 히스토리 조회 실패")
+            page = response.json(); rows.extend(page)
+            if len(page) < page_size: break
+        return rows
 
     def get_ocr_document(self, user_email: str, document_id: str) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)
@@ -152,16 +156,21 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "재무 문서 저장 실패")
         return response.json()[0]
 
-    def list_finance_records(self, user_email: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    def list_finance_records(self, user_email: str, *, limit: int | None = 200) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
-        response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/finance_records",
-            params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(limit)},
-            headers=self._service_headers(),
-            timeout=20,
-        )
-        self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
-        return response.json()
+        rows: list[dict[str, Any]] = []
+        page_size = 1000
+        while limit is None or len(rows) < limit:
+            request_size = page_size if limit is None else min(page_size, limit - len(rows))
+            response = _legacy_httpx().get(
+                f"{self.url}/rest/v1/finance_records",
+                params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(request_size), "offset": str(len(rows))},
+                headers=self._service_headers(), timeout=20,
+            )
+            self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
+            page = response.json(); rows.extend(page)
+            if len(page) < request_size: break
+        return rows
 
     def save_receipt_archive(
         self,

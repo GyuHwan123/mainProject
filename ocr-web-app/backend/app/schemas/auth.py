@@ -27,3 +27,16 @@ class OAuthExchangeRequest(BaseModel):
     provider: str
     token: str
     provider_access_token: str | None = None
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str
+    new_password: str
+
+
+class MessageResponse(BaseModel):
+    message: str

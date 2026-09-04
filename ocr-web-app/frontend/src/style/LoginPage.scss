@@ -199,6 +199,15 @@
 
       strong { color: $main-color; font-size: 1.25rem; }
       p { margin: 7px 0 0; color: rgba($bgd, 0.58); font-size: 0.9rem; }
+      .social-password-notice {
+        padding: 10px 12px;
+        color: #68511c;
+        background: #fff9e8;
+        border: 1px solid #ead9a5;
+        border-radius: 9px;
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
     }
 
     > .auth-message {

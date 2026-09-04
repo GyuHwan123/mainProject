@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IoCalendarOutline, IoChatbubbleEllipsesOutline, IoCheckmarkCircleOutline, IoDocumentTextOutline, IoDownloadOutline, IoPeopleOutline, IoReceiptOutline, IoRefreshOutline, IoSearchOutline, IoSparklesOutline, IoTrendingUpOutline } from 'react-icons/io5';
+import { IoCalendarOutline, IoChatbubbleEllipsesOutline, IoCheckmarkCircleOutline, IoDocumentTextOutline, IoDownloadOutline, IoPeopleOutline, IoReceiptOutline, IoRefreshOutline, IoSearchOutline, IoSparklesOutline } from 'react-icons/io5';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import LoginLoading from '../components/LoginLoading';
@@ -439,20 +439,25 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
     const scraps = filterByDate(sourceStats.scraps);
     const financeRecords = filterByDate(sourceStats.financeRecords);
     const schedules = filterByDate(sourceStats.schedules);
-    const tasks = filterByDate(sourceStats.tasks);
+    const tasks = filterByDate(sourceStats.enterpriseTasks);
+    const completedTasks = (sourceStats.enterpriseTasks || []).filter((item) => {
+      if (item.status !== 'DONE' || !item.completed_at || !dateRange.startDate || !dateRange.endDate) return false;
+      const completedAt = new Date(item.completed_at);
+      return completedAt >= new Date(`${dateRange.startDate}T00:00:00`) && completedAt <= new Date(`${dateRange.endDate}T23:59:59.999`);
+    });
     const meetings = filterByDate(sourceStats.meetings);
     const ragQuestions = filterByDate(sourceStats.ragQuestions);
     const agentLogs = filterByDate(sourceStats.agentLogs);
-    return { ...sourceStats, documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), financeRecords, schedules, tasks, meetings, ragQuestions, agentLogs };
+    return { ...sourceStats, documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, completedTasks, meetings, ragQuestions, agentLogs };
   }, [filterByDate, sourceStats]);
-  const data = { documents: stats.documentCount, receipts: stats.financeRecords?.length || 0, rag: stats.ragQuestions?.length || 0, agent: stats.agentLogs?.length || 0, completed: stats.tasks?.filter((item) => item.status === 'DONE').length || 0, users: [...(stats.ragQuestions || []), ...(stats.agentLogs || []), ...(stats.financeRecords || [])].length ? 1 : 0 };
+  const data = { documents: (stats.financeRecords?.length || 0) + (stats.ragDocuments?.length || 0), receipts: stats.financeRecords?.length || 0, rag: stats.ragQuestions?.length || 0, agent: stats.agentLogs?.length || 0, completed: stats.completedTasks?.length || 0, users: stats.enterpriseUserCount || 0 };
   const total = data.receipts + data.rag + data.agent + data.completed;
   const maxUsage = Math.max(data.rag, data.receipts, data.agent, data.completed, stats.ragCount, 1);
   const readyRate = stats.ragCount ? Math.round(stats.readyRagCount / stats.ragCount * 100) : 0;
   const kpis = [
-    ['전체 처리 문서', data.documents, '건', IoDocumentTextOutline, 'blue'], ['영수증 처리', data.receipts, '건', IoReceiptOutline, 'orange'],
-    ['RAG 질문·검색', data.rag, '건', IoSearchOutline, 'green'], ['AI Agent 실행', data.agent, '건', IoSparklesOutline, 'purple'],
-    ['업무 완료', data.completed, '건', IoCheckmarkCircleOutline, 'red'], ['활성 사용자', data.users, '명', IoPeopleOutline, 'blue'],
+    ['전체 처리 문서', data.documents, '건', IoDocumentTextOutline, 'blue', '선택 기간 기준'], ['영수증 처리', data.receipts, '건', IoReceiptOutline, 'orange', '선택 기간 기준'],
+    ['RAG 질문·검색', data.rag, '건', IoSearchOutline, 'green', '선택 기간 기준'], ['AI Agent 실행', data.agent, '건', IoSparklesOutline, 'purple', '선택 기간 기준'],
+    ['업무 완료', data.completed, '건', IoCheckmarkCircleOutline, 'red', '완료일 기준'], ['기업 사용자', data.users, '명', IoPeopleOutline, 'blue', 'Enterprise 전체'],
   ];
   const series = [['영수증', '#1767df', data.receipts], ['RAG', '#12a87d', data.rag], ['AI Agent', '#8b4ee8', data.agent], ['업무 관리', '#f18a24', data.completed]];
   const dailyCounts = useMemo(() => {
@@ -484,7 +489,7 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
   ];
   return <section className="business-dashboard">
     <div className="business-report-heading"><div><p>WORKSPACE ANALYTICS</p><h2>기업 AI 업무 활용 현황</h2><span>RAG, 영수증, AI Agent의 활용도와 구성원의 주요 관심사를 확인하세요.</span></div><div className="receipt-monitoring-filters business-report-filters"><div className="receipt-date-range"><input type="date" aria-label="기업 리포트 조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => setDateRange((current) => ({ ...current, startDate: event.target.value }))} /><span>~</span><input type="date" aria-label="기업 리포트 조회 종료일" value={dateRange.endDate} min={dateRange.startDate} onChange={(event) => setDateRange((current) => ({ ...current, endDate: event.target.value }))} /></div><button type="button" className="receipt-pdf-download" disabled={pdfExporting} onClick={onExportPdf}><IoDownloadOutline /> {pdfExporting ? 'PDF 준비 중' : 'PDF 다운로드'}</button></div></div>
-    <section className="business-kpi-grid business-kpi-six">{kpis.map(([label, value, unit, Icon, tone]) => <article key={label}><div className={`business-kpi-icon ${tone}`}><Icon /></div><div><small>{label}</small><strong>{loading ? '—' : value.toLocaleString()}<em>{unit}</em></strong><p><IoTrendingUpOutline /> 현재 워크스페이스 기준</p></div></article>)}</section>
+    <section className="business-kpi-grid business-kpi-six">{kpis.map(([label, value, unit, Icon, tone, basis]) => <article key={label}><div className={`business-kpi-icon ${tone}`}><Icon /></div><div><small>{label}</small><strong>{loading ? '—' : value.toLocaleString()}<em>{unit}</em></strong><p>{basis}</p></div></article>)}</section>
     <section className="business-overview-grid">
       <article className="report-card business-trend-card"><header><div><h2>기간별 AI 및 업무 활용 추이</h2><p>선택 기간의 실제 일별 활동</p></div><span>일별</span></header><div className="business-trend-chart"><svg viewBox="0 0 420 150" preserveAspectRatio="none">{[34, 64, 94, 124].map((y) => <line key={y} x1="22" x2="408" y1={y} y2={y} />)}{series.map(([name, color], index) => <polyline key={name} points={points(index)} style={{ stroke: color }} />)}</svg><div>{series.map(([name, color]) => <span key={name}><i style={{ background: color }} />{name}</span>)}</div></div></article>
       <article className="report-card business-share-card"><header><div><h2>기능별 활용 비율</h2><p>선택 기간</p></div></header><div className="business-share-body"><div className="business-share-donut"><span>총 활용 건수<strong>{total.toLocaleString()}건</strong></span></div><div className="business-share-legend">{series.map(([name, color, value]) => <div key={name}><i style={{ background: color }} /><span>{name}</span><strong>{value}건 ({total ? Math.round(value / total * 100) : 0}%)</strong></div>)}</div></div></article>
@@ -498,7 +503,7 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
     </section>
     <section className="business-summary-grid">
       <article className="report-card business-month-summary"><header><div><h2>이번 달 업무 요약</h2><p>현재 워크스페이스 기준</p></div></header><div>{[['영수증 처리', data.receipts, 'blue'], ['RAG 질문', data.rag, 'green'], ['AI Agent 실행', data.agent, 'purple'], ['업무 완료', data.completed, 'orange']].map(([label, value, tone]) => <div key={label}><i className={tone} /><span>{label}<strong>{value}건</strong></span></div>)}</div><footer><strong>월간 주요 인사이트</strong><span>{data.rag >= data.receipts ? '사내 지식 검색 활용이 가장 활발합니다.' : '영수증·문서 처리 활용이 가장 활발합니다.'}</span><span>AI 업무 자동화 활용 범위를 더 넓혀보세요.</span></footer></article>
-      <article className="report-card business-insight-card"><header><h2>주요 활용 인사이트</h2></header><div><p><IoSearchOutline /><span>가장 많이 활용된 업무<strong>{data.rag >= data.receipts ? 'RAG 지식 검색' : '영수증 문서 처리'} ({Math.max(data.rag, data.receipts)}건)</strong></span></p><p><IoDocumentTextOutline /><span>가장 높은 관심 주제<strong>{ragTopics[0]?.[0] || '질문 데이터 없음'}{ragTopics[0] ? ` (${ragTopics[0][1]}건)` : ''}</strong></span></p><p><IoPeopleOutline /><span>활성 사용자 현황<strong>{data.users ? '현재 계정의 활동 감지' : '활동 데이터 없음'}</strong></span></p></div></article>
+      <article className="report-card business-insight-card"><header><h2>주요 활용 인사이트</h2></header><div><p><IoSearchOutline /><span>가장 많이 활용된 업무<strong>{data.rag >= data.receipts ? 'RAG 지식 검색' : '영수증 문서 처리'} ({Math.max(data.rag, data.receipts)}건)</strong></span></p><p><IoDocumentTextOutline /><span>가장 높은 관심 주제<strong>{ragTopics[0]?.[0] || '질문 데이터 없음'}{ragTopics[0] ? ` (${ragTopics[0][1]}건)` : ''}</strong></span></p><p><IoPeopleOutline /><span>기업 사용자 현황<strong>Enterprise 사용자 {data.users.toLocaleString()}명</strong></span></p></div></article>
       <article className="report-card business-notice-card"><header><h2>공지 및 시스템 알림</h2></header><ul>{notices.slice(0, 3).map((notice) => <li key={notice.title}>{notice.title}<time>현재</time></li>)}</ul><footer><button type="button" onClick={() => setNoticeModalOpen(true)}>전체 공지 보기 ›</button></footer></article>
     </section>
     {noticeModalOpen && <div className="business-notice-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNoticeModalOpen(false); }}><section className="business-notice-modal" role="dialog" aria-modal="true" aria-labelledby="business-notice-modal-title"><header><div><span>SYSTEM NOTICE</span><h2 id="business-notice-modal-title">공지 및 시스템 알림</h2><p>선택 기간의 워크스페이스 상태를 간단히 정리했습니다.</p></div><button type="button" aria-label="공지 모달 닫기" onClick={() => setNoticeModalOpen(false)}>×</button></header><div className="business-notice-modal-list">{notices.map((notice) => <article key={notice.title}><i className={notice.tone} /><div><strong>{notice.title}</strong><p>{notice.detail}</p><time>현재 데이터 기준</time></div></article>)}</div><footer><button type="button" onClick={() => setNoticeModalOpen(false)}>확인</button></footer></section></div>}
@@ -687,7 +692,7 @@ export default function ReportPage() {
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
   const [ragReportTab, setRagReportTab] = useState(() => localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
-  const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], meetings: [], ragQuestions: [], agentLogs: [] });
+  const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], enterpriseTasks: [], meetings: [], ragQuestions: [], agentLogs: [], enterpriseUserCount: 0 });
   const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
   const [initialLoading, setInitialLoading] = useState(true);
   const [initialMonitoring, setInitialMonitoring] = useState(null);
@@ -745,7 +750,7 @@ export default function ReportPage() {
     const values = results.map((result) => result.status === 'fulfilled' && Array.isArray(result.value.data) ? result.value.data : []);
     const [documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, meetings] = values;
     const activity = results[8].status === 'fulfilled' && results[8].value.data ? results[8].value.data : {};
-    setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, meetings, ragQuestions: activity.rag_questions || [], agentLogs: activity.agent_logs || [] });
+    setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, enterpriseTasks: activity.enterprise_tasks || [], meetings, ragQuestions: activity.rag_questions || [], agentLogs: activity.agent_logs || [], enterpriseUserCount: Number(activity.enterprise_user_count || 0) });
   }, []);
 
   const loadRagReport = useCallback(async () => {

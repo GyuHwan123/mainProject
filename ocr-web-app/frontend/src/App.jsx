@@ -4,6 +4,7 @@ import { getAppUser, hasAppSession } from './features/appSession';
 import AuthCallbackPage from './pages/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import MyPage from './pages/MyPage';
 import OCRPage from './pages/OCRPage';
 import ReportPage from './pages/ReportPage';
@@ -52,6 +53,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/auth/callback" element={<AuthCallbackPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/ocr" element={hasSession ? null : <Navigate to="/login" replace />} />

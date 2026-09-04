@@ -215,7 +215,7 @@ ocr-web-app/
 ### 핵심 값
 
 ```env
-SECRET_KEY=change-this-secret-key
+SECRET_KEY=
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -295,6 +295,13 @@ POST /api/v1/auth/oauth/exchange
 ### 서버에서만 보관
 - `service_role key`
 - `SECRET_KEY`
+- `SMTP_PASSWORD`
+
+### 운영 배포 필수 보안 설정
+- 운영 프런트엔드와 API는 반드시 HTTPS로만 공개합니다. HTTP 접속은 ALB, CloudFront 또는 리버스 프록시에서 HTTPS로 리다이렉트합니다.
+- `SECRET_KEY`는 최소 48자의 난수로 설정하고 브라우저 번들 또는 `VITE_` 변수에 넣지 않습니다.
+- `CORS_ORIGINS`에는 실제 HTTPS 프런트엔드 Origin만 JSON 배열로 지정하며 `*`를 사용하지 않습니다.
+- 예: `CORS_ORIGINS=["https://app.example.com"]`
 
 ## 10. 지금 상태 요약
 

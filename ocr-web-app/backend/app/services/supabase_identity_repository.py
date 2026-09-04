@@ -8,6 +8,45 @@ def _legacy_httpx():
     return sys.modules["app.services.supabase_service"].httpx
 
 class IdentityMixin:
+    def invalidate_password_reset_tokens(self, user_id: str, used_at: str) -> None:
+        response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/password_reset_tokens",
+            params={"user_id": f"eq.{user_id}", "used_at": "is.null"},
+            headers=self._service_headers(),
+            json={"used_at": used_at},
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "비밀번호 재설정 토큰 무효화 실패")
+
+    def create_password_reset_token(self, user_id: str, token_hash: str, expires_at: str) -> None:
+        response = _legacy_httpx().post(
+            f"{self.url}/rest/v1/password_reset_tokens",
+            headers=self._service_headers(),
+            json={"user_id": user_id, "token_hash": token_hash, "expires_at": expires_at},
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "비밀번호 재설정 토큰 생성 실패")
+
+    def confirm_password_reset(self, token_hash: str, password_hash: str) -> bool:
+        response = _legacy_httpx().post(
+            f"{self.url}/rest/v1/rpc/confirm_password_reset",
+            headers=self._service_headers(),
+            json={"p_token_hash": token_hash, "p_password_hash": password_hash},
+            timeout=15,
+        )
+        self._raise_for_supabase(response, "비밀번호 재설정 처리 실패")
+        return response.json() is True
+
+    def update_user_account(self, email: str, values: dict[str, Any]) -> dict[str, Any]:
+        response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/{self.users_table}", params={"email": f"eq.{email.lower()}"},
+            headers={**self._service_headers(), "Prefer": "return=representation"}, json=values, timeout=15,
+        )
+        self._raise_for_supabase(response, "사용자 정보 수정 실패")
+        rows = response.json()
+        if not rows: raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+        return rows[0]
+
     def get_user_by_email(self, email: str) -> dict[str, Any] | None:
         response = _legacy_httpx().get(
             f"{self.url}/rest/v1/{self.users_table}",

@@ -24,6 +24,7 @@ class ScheduleUpdate(BaseModel):
 class Schedule(ScheduleCreate):
     id:str
     tone:str="blue"
+    createdAt:str|None=None
 
 class TaskCreate(BaseModel):
     title:str=Field(min_length=1,max_length=200)
@@ -47,6 +48,7 @@ class Task(TaskCreate):
     id:str
     progress:int=Field(default=0,ge=0,le=100)
     urgent:bool=False
+    createdAt:str|None=None
 
 class MeetingCreate(BaseModel):
     title:str=Field(min_length=1,max_length=160)
@@ -77,6 +79,7 @@ class Meeting(BaseModel):
     canEdit:bool=False
     canDelete:bool=False
     accessLevel:Literal["OWNER","EDITOR","VIEWER"]="VIEWER"
+    createdAt:str|None=None
 
 class ParticipantSuggestion(BaseModel):
     id:str

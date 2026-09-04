@@ -45,6 +45,8 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+  const [recovering, setRecovering] = useState(false);
   const [now, setNow] = useState(Date.now());
   const failureState = readFailureState(email);
   const lockedSeconds = Math.max(0, Math.ceil((failureState.lockedUntil - now) / 1000));
@@ -57,7 +59,12 @@ export default function LoginPage() {
 
   const changeMode = (nextMode) => {
     if (loading) return;
-    setMode(nextMode); setFormError(''); setPassword(''); setConfirmPassword('');
+    setMode(nextMode); setRecovering(false); setFormError(''); setFormSuccess(''); setPassword(''); setConfirmPassword('');
+  };
+
+  const showPasswordRecovery = () => {
+    if (loading) return;
+    setRecovering(true); setFormError(''); setFormSuccess(''); setPassword('');
   };
 
   const handleSocialLogin = async (provider) => {
@@ -85,8 +92,18 @@ export default function LoginPage() {
     setFormError('');
     const normalizedEmail = email.trim().toLowerCase();
     const normalizedName = name.trim();
-    if (mode === 'signup' && !normalizedName) return setFormError('이름을 입력해 주세요.');
     if (!normalizedEmail) return setFormError('이메일을 입력해 주세요.');
+    if (recovering) {
+      setLoading(true);
+      try {
+        const { data } = await apiClient.post('/auth/password-reset/request', { email: normalizedEmail });
+        setFormSuccess(data.message);
+      } catch (error) {
+        setFormError(authErrorMessage(error));
+      } finally { setLoading(false); }
+      return;
+    }
+    if (mode === 'signup' && !normalizedName) return setFormError('이름을 입력해 주세요.');
 
     if (!password) return setFormError('비밀번호를 입력해 주세요.');
     if (password.length < 8) return setFormError('비밀번호는 8자 이상이어야 합니다.');
@@ -126,20 +143,29 @@ export default function LoginPage() {
   return <div className="login-shell"><div className="login-window">
     <div className="login-visual" aria-hidden="true"><div className="login-illustration"><div className="cloud" /><div className="desktop-card" /><div className="person" /><div className="plant" /></div></div>
     <div className="login-panel">{loading && <LoginLoading overlay />}<h1><img src="/DocAI.png" alt="DocAI" />환영합니다.</h1>
-      <div className="auth-toggle" role="group" aria-label="인증 방식 선택"><button type="button" className={mode === 'login' ? 'active' : ''} aria-pressed={mode === 'login'} disabled={loading} onClick={() => changeMode('login')}>로그인</button><button type="button" className={mode === 'signup' ? 'active' : ''} aria-pressed={mode === 'signup'} disabled={loading} onClick={() => changeMode('signup')}>회원가입</button></div>
+      {!recovering && <div className="auth-toggle" role="group" aria-label="인증 방식 선택"><button type="button" className={mode === 'login' ? 'active' : ''} aria-pressed={mode === 'login'} disabled={loading} onClick={() => changeMode('login')}>로그인</button><button type="button" className={mode === 'signup' ? 'active' : ''} aria-pressed={mode === 'signup'} disabled={loading} onClick={() => changeMode('signup')}>회원가입</button></div>}
+      {recovering && <div className="recover-heading">
+        <strong>비밀번호 찾기</strong>
+        <p>이메일과 비밀번호로 가입한 계정에 재설정 링크를 보내드립니다.</p>
+        <p className="social-password-notice">Google, Naver, Kakao 계정은 해당 서비스에서 비밀번호를 변경해 주세요.</p>
+      </div>}
       <form className="login-form" onSubmit={handleSubmit} noValidate>
         {formError && <p className="auth-message error" role="alert">{formError}</p>}
-        {mode === 'signup' && <label><span>이름</span><input type="text" value={name} onChange={update(setName)} placeholder="이름을 입력하세요" autoComplete="name" disabled={loading} maxLength={80} /></label>}
+        {formSuccess && <p className="auth-message success" role="status">{formSuccess}</p>}
+        {!recovering && mode === 'signup' && <label><span>이름</span><input type="text" value={name} onChange={update(setName)} placeholder="이름을 입력하세요" autoComplete="name" disabled={loading} maxLength={80} /></label>}
         <label><span>이메일</span><input type="email" value={email} onChange={update(setEmail)} placeholder="name@company.com" autoComplete="email" disabled={loading} autoFocus /></label>
-        <label><span>비밀번호</span><input type="password" value={password} onChange={update(setPassword)} placeholder="8자 이상 입력하세요" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} disabled={loading} minLength={8} /></label>
-        {mode === 'signup' && <label><span>비밀번호 확인</span><input type="password" value={confirmPassword} onChange={update(setConfirmPassword)} placeholder="비밀번호를 다시 입력하세요" autoComplete="new-password" disabled={loading} minLength={8} /></label>}
-        <button className="primary-button" type="submit" disabled={loading || (mode === 'login' && Boolean(lockedSeconds))}>{loading ? '처리 중...' : submitLabel}</button>
+        {!recovering && <label><span>비밀번호</span><input type="password" value={password} onChange={update(setPassword)} placeholder="8자 이상 입력하세요" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} disabled={loading} minLength={8} /></label>}
+        {!recovering && mode === 'login' && <button className="auth-text-button" type="button" disabled={loading} onClick={showPasswordRecovery}>비밀번호를 잊으셨나요?</button>}
+        {!recovering && mode === 'signup' && <label><span>비밀번호 확인</span><input type="password" value={confirmPassword} onChange={update(setConfirmPassword)} placeholder="비밀번호를 다시 입력하세요" autoComplete="new-password" disabled={loading} minLength={8} /></label>}
+        <button className="primary-button" type="submit" disabled={loading || (!recovering && mode === 'login' && Boolean(lockedSeconds))}>{loading ? '처리 중...' : recovering ? '재설정 메일 보내기' : submitLabel}</button>
+        {recovering && <button className="auth-text-button" type="button" disabled={loading} onClick={() => { setRecovering(false); setFormError(''); setFormSuccess(''); }}>로그인으로 돌아가기</button>}
       </form>
-      <p className="hint-text">{mode === 'login' ? '가입한 이메일과 비밀번호로 로그인해 주세요.' : '이메일과 비밀번호로 계정을 만들고 바로 로그인합니다.'}</p>
+      {!recovering && <><p className="hint-text">{mode === 'login' ? '가입한 이메일과 비밀번호로 로그인해 주세요.' : '이메일과 비밀번호로 계정을 만들고 바로 로그인합니다.'}</p>
       <div className="auth-divider"><span>또는</span></div>
       <button className="social-button google" type="button" disabled={loading} onClick={() => handleSocialLogin('google')}><RiGoogleFill className="googleIcon" />Google 계정으로 계속하기</button>
       <button className="social-button naver" type="button" disabled={loading} onClick={() => handleSocialLogin('custom:naver')}><SiNaver className="naverIcon" />Naver 계정으로 계속하기</button>
       <button className="social-button kakao" type="button" disabled={loading} onClick={() => handleSocialLogin('kakao')}><RiKakaoTalkFill className="kakaoIcon" />Kakao 계정으로 계속하기</button>
+      </>}
       <div className="legal-block"><p>계속 진행하면 서비스 이용약관 및 개인정보 처리방침에 동의한 것으로 간주됩니다.</p></div>
     </div>
   </div></div>;

@@ -91,7 +91,7 @@ class RagLlmEvaluationRequest(BaseModel):
 
 
 def require_developer(user: User = Depends(require_current_user)) -> User:
-    if user.role not in {"DEVELOPER", "ADMIN"} and user.email != "developer@docunex.com":
+    if user.role not in {"DEVELOPER", "ADMIN"}:
         raise HTTPException(status_code=403, detail="개발자 권한이 필요합니다.")
     return user
 

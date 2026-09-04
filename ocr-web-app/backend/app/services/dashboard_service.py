@@ -23,13 +23,13 @@ class DashboardService:
     def _schedule(self,row:dict)->Schedule:
         start=datetime.fromisoformat(row["start_at"].replace("Z","+00:00")).astimezone(KST)
         end=datetime.fromisoformat(row["end_at"].replace("Z","+00:00")).astimezone(KST)
-        return Schedule(id=str(row["id"]),title=row["title"],description=row.get("description"),date=start.date().isoformat(),time=start.strftime("%H:%M"),end_time=end.strftime("%H:%M"),meetingId=row.get("meeting_id"),tone="blue")
+        return Schedule(id=str(row["id"]),title=row["title"],description=row.get("description"),date=start.date().isoformat(),time=start.strftime("%H:%M"),end_time=end.strftime("%H:%M"),meetingId=row.get("meeting_id"),tone="blue",createdAt=row.get("created_at"))
     def _task(self,row:dict)->Task:
         due=row.get("due_at");due_text=None;urgent=False
         if due:
             value=datetime.fromisoformat(due.replace("Z","+00:00")).astimezone(KST)
             due_text=value.strftime("%m.%d");urgent=row.get("status")!="DONE" and value<=datetime.now(KST)+timedelta(days=2)
-        return Task(id=str(row["id"]),title=row["title"],assignee=row["assignee_name"],assigneeId=row.get("assignee_id"),due=due_text,status=row["status"],priority=row["priority"],description=row.get("description"),meetingId=row.get("meeting_id"),progress=row["progress"],urgent=urgent)
+        return Task(id=str(row["id"]),title=row["title"],assignee=row["assignee_name"],assigneeId=row.get("assignee_id"),due=due_text,status=row["status"],priority=row["priority"],description=row.get("description"),meetingId=row.get("meeting_id"),progress=row["progress"],urgent=urgent,createdAt=row.get("created_at"))
     def _meeting(self,row:dict,participants:list[dict],tasks:list[dict],uid:str)->Meeting:
         when=datetime.fromisoformat(row["meeting_at"].replace("Z","+00:00")).astimezone(KST)
         names=[item["display_name"] for item in participants if item["meeting_id"]==row["id"] and item.get("invitation_status","ACCEPTED")!="DECLINED"]
@@ -38,7 +38,7 @@ class DashboardService:
         owned=str(row["created_by"])==str(uid)
         membership=next((item for item in participants if item["meeting_id"]==row["id"] and str(item.get("user_id"))==str(uid) and item.get("invitation_status","ACCEPTED")=="ACCEPTED"),None)
         permission="OWNER" if owned else (membership or {}).get("permission","VIEWER")
-        return Meeting(id=str(row["id"]),date=when.strftime("%Y.%m.%d"),meetingAt=when.isoformat(),title=row["title"],participants=", ".join(names) or "참석자 없음",summary=row.get("summary") or "요약이 없습니다.",tag=tag,taskIds=ids,content=row.get("content"),status=row["status"],canEdit=owned or permission=="EDITOR",canDelete=owned,accessLevel=permission)
+        return Meeting(id=str(row["id"]),date=when.strftime("%Y.%m.%d"),meetingAt=when.isoformat(),title=row["title"],participants=", ".join(names) or "참석자 없음",summary=row.get("summary") or "요약이 없습니다.",tag=tag,taskIds=ids,content=row.get("content"),status=row["status"],canEdit=owned or permission=="EDITOR",canDelete=owned,accessLevel=permission,createdAt=row.get("created_at"))
 
     def _share(self,row:dict)->dict:
         user_id=str(row["user_id"]) if row.get("user_id") else None

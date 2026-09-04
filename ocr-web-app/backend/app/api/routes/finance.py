@@ -142,7 +142,7 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
 def list_records(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     unique_records = []
     seen = set()
-    for record in supabase_service.list_finance_records(user.email):
+    for record in supabase_service.list_finance_records(user.email, limit=None):
         data = record.get("structured_data") or {}
         duplicate_key = data.get("receipt_identity_key") or data.get("receipt_fingerprint") or _legacy_receipt_key(record)
         if duplicate_key and duplicate_key in seen:

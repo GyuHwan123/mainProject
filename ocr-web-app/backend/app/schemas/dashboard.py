@@ -1,8 +1,11 @@
 from typing import Literal
+from uuid import UUID
 from pydantic import BaseModel, Field
 
 TaskStatus=Literal["TODO","IN_PROGRESS","DONE"]
 MeetingStatus=Literal["DRAFT","CONFIRMED","ARCHIVED"]
+MeetingPermission=Literal["VIEWER","EDITOR"]
+InvitationStatus=Literal["PENDING","ACCEPTED","DECLINED"]
 
 class ScheduleCreate(BaseModel):
     title:str=Field(min_length=1,max_length=160)
@@ -21,6 +24,7 @@ class ScheduleUpdate(BaseModel):
 class Schedule(ScheduleCreate):
     id:str
     tone:str="blue"
+    createdAt:str|None=None
 
 class TaskCreate(BaseModel):
     title:str=Field(min_length=1,max_length=200)
@@ -44,6 +48,7 @@ class Task(TaskCreate):
     id:str
     progress:int=Field(default=0,ge=0,le=100)
     urgent:bool=False
+    createdAt:str|None=None
 
 class MeetingCreate(BaseModel):
     title:str=Field(min_length=1,max_length=160)
@@ -51,6 +56,7 @@ class MeetingCreate(BaseModel):
     content:str|None=None
     summary:str|None=None
     participants:list[str]=Field(default_factory=list)
+    participantUserIds:list[UUID]=Field(default_factory=list,max_length=100)
     status:MeetingStatus="DRAFT"
 class MeetingUpdate(BaseModel):
     title:str|None=Field(default=None,min_length=1,max_length=160)
@@ -70,6 +76,32 @@ class Meeting(BaseModel):
     content:str|None=None
     status:MeetingStatus="DRAFT"
     meetingAt:str
+    canEdit:bool=False
+    canDelete:bool=False
+    accessLevel:Literal["OWNER","EDITOR","VIEWER"]="VIEWER"
+    createdAt:str|None=None
+
+class ParticipantSuggestion(BaseModel):
+    id:str
+    email:str
+    name:str
+
+class MeetingShareInvite(BaseModel):
+    email:str=Field(min_length=3,max_length=320)
+    permission:MeetingPermission="VIEWER"
+
+class MeetingShare(BaseModel):
+    id:str
+    meetingId:str
+    userId:str|None=None
+    email:str
+    displayName:str
+    permission:MeetingPermission
+    status:InvitationStatus
+    invitedAt:str|None=None
+
+class MeetingInvitationResponse(BaseModel):
+    status:Literal["ACCEPTED","DECLINED"]
 
 class Briefing(BaseModel):
     date:str
@@ -91,3 +123,6 @@ class MeetingExtractionRequest(BaseModel):
 class MeetingExtractionResponse(BaseModel):
     tasks:list[dict]=Field(default_factory=list)
     schedules:list[dict]=Field(default_factory=list)
+
+class GoogleCalendarImportRequest(BaseModel):
+    provider_access_token:str=Field(min_length=1)

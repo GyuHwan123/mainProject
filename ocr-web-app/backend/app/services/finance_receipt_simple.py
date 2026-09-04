@@ -351,6 +351,7 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
 
 def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
     reasons: list[str] = []
+    warnings: list[dict[str, Any]] = []
     required = ("merchant", "transaction_date", "total_amount", "expense_category")
     missing = [field for field in required if result.get(field) in (None, "", [])]
     if len(missing) >= 2:
@@ -421,19 +422,30 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
             and abs(item_sum - float(total)) > AMOUNT_ROUNDING_TOLERANCE
         ):
             reasons.append("ITEM_SUM_MISMATCH")
-    for item in result["items"]:
+    for item_index, item in enumerate(result["items"]):
         quantity = _as_number(item.get("quantity"))
         unit_price = _as_number(item.get("unit_price"))
         item_total = _as_number(item.get("total_amount"))
         if quantity is not None and unit_price is not None and item_total is not None:
-            if abs(float(quantity) * float(unit_price) - float(item_total)) > 1:
-                reasons.append("ITEM_ARITHMETIC_MISMATCH")
-                break
+            calculated = float(quantity) * float(unit_price)
+            if abs(calculated - float(item_total)) > 1:
+                # Coupons and bundle/member discounts commonly make the displayed
+                # unit price differ from the charged line amount. Preserve every
+                # extracted value and expose only a non-blocking diagnostic.
+                warnings.append({
+                    "code": "ITEM_AMOUNT_RELATION_WARNING",
+                    "item_index": item_index,
+                    "quantity": quantity,
+                    "unit_price": unit_price,
+                    "item_total_amount": item_total,
+                    "calculated_amount": int(calculated) if calculated.is_integer() else calculated,
+                })
 
     reasons = list(dict.fromkeys(reasons))
     return {
         "decision": "REVIEW" if reasons else "PASS",
         "reasons": reasons,
+        "warnings": warnings,
         "missing_fields": missing,
         "checks": {
             "json_schema": "PASS",
@@ -441,7 +453,8 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
             "amount_relation": "AMOUNT_RELATION_MISMATCH" not in reasons,
             "amount_relation_basis": amount_relation_basis,
             "item_sum": "ITEM_SUM_MISMATCH" not in reasons,
-            "item_arithmetic": "ITEM_ARITHMETIC_MISMATCH" not in reasons,
+            "item_arithmetic": True,
+            "item_amount_relation_warning": bool(warnings),
         },
     }
 

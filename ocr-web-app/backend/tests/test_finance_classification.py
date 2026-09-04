@@ -324,6 +324,29 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
         self.assertEqual(validation["checks"]["amount_relation_basis"], "explicit_ocr_mismatch")
 
+    def test_item_amount_relation_mismatch_is_non_blocking_warning(self):
+        item = {"name": "행사상품", "quantity": 2, "unit_price": 1000, "total_amount": 1500}
+        result = {
+            "merchant": "할인마트",
+            "transaction_date": "2025-10-01",
+            "expense_category": "식품/장보기",
+            "supply_amount": 1364,
+            "tax_amount": 136,
+            "discount_amount": None,
+            "total_amount": 1500,
+            "payment_method": "카드",
+            "items": [item.copy()],
+        }
+        text = "할인마트 2025-10-01\n행사상품 2 1,000 1,500\n공급가액 1,364\n부가세 136\n결제금액 1,500"
+
+        validation = _simple_validation(result, text)
+
+        self.assertEqual(validation["decision"], "PASS")
+        self.assertNotIn("ITEM_ARITHMETIC_MISMATCH", validation["reasons"])
+        self.assertTrue(validation["checks"]["item_amount_relation_warning"])
+        self.assertEqual(validation["warnings"][0]["code"], "ITEM_AMOUNT_RELATION_WARNING")
+        self.assertEqual(result["items"][0], item)
+
 
 if __name__ == "__main__":
     unittest.main()

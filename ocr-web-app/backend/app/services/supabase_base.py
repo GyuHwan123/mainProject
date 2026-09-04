@@ -102,4 +102,26 @@ class SupabaseBase:
         self._raise_for_supabase(response, "구독 취소 예약 실패")
         return response.json()[0]
 
+    def revoke_subscription_cancellation(self, user_email: str) -> dict[str, Any]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.patch(
+            f"{self.url}/rest/v1/subscriptions", params={"user_id": f"eq.{user_id}"},
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={"status": "ACTIVE", "cancel_at_period_end": False, "cancellation_reason": None, "cancellation_requested_at": None, "updated_at": datetime.now(timezone.utc).isoformat()}, timeout=15,
+        )
+        self._raise_for_supabase(response, "구독 취소 철회 실패")
+        rows = response.json()
+        if not rows: raise HTTPException(status_code=404, detail="구독 정보를 찾을 수 없습니다.")
+        return rows[0]
+
+    def list_billing_history(self, user_email: str) -> list[dict[str, Any]]:
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/billing_history",
+            params={"select": "*", "user_id": f"eq.{user_id}", "order": "paid_at.desc", "limit": "100"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(response, "결제 이력 조회 실패")
+        return response.json()
+
 __all__ = [name for name in globals() if not name.startswith("__")]

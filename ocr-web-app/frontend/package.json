@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "sass": "^1.102.0",
-    "vite": "latest"
+    "vite": "latest",
+    "vitest": "^5.0.0"
   }
 }

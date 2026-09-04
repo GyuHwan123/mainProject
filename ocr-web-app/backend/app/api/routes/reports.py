@@ -11,6 +11,17 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 
 
+def require_enterprise(user: User = Depends(require_current_user)) -> User:
+    if user.subscription_tier != "ENTERPRISE" and user.role not in {"DEVELOPER", "ADMIN"}:
+        raise HTTPException(status_code=403, detail="Enterprise 권한이 필요합니다.")
+    return user
+
+
+@router.get("/business-activity")
+def business_activity(user: User = Depends(require_enterprise)) -> dict:
+    return supabase_service.list_business_activity(user.email)
+
+
 class EvaluationCreate(BaseModel):
     document_id: str
     document_name: str

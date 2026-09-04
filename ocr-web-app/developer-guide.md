@@ -209,7 +209,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
 - 서버 전용: `SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, DB 비밀번호
 - 서버 연결: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_USERS_TABLE`
 
-운영 환경에서는 기본 `SECRET_KEY=change-me`와 기본 PostgreSQL 비밀번호를 절대 사용하지 않습니다.
+운영 환경에서는 최소 48자의 난수 `SECRET_KEY`를 사용하고 기본 PostgreSQL 비밀번호를 절대 사용하지 않습니다. 프런트엔드와 API는 HTTPS로만 공개하고 HTTP 요청은 배포 프록시에서 HTTPS로 리다이렉트합니다. `CORS_ORIGINS`에는 실제 HTTPS 프런트엔드 Origin을 명시하며 `*`를 사용하지 않습니다.
 
 ## 9. 새 팀원이 기능을 찾는 순서
 

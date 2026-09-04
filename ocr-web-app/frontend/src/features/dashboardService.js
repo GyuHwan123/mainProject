@@ -12,6 +12,18 @@ export const deleteDashboardTask = async (id) => apiClient.delete(`/dashboard/ta
 export const createDashboardMeeting = async (meeting) => (await apiClient.post('/dashboard/meetings',meeting)).data;
 export const updateDashboardMeeting = async (id,meeting) => (await apiClient.put(`/dashboard/meetings/${id}`,meeting)).data;
 export const deleteDashboardMeeting = async (id) => apiClient.delete(`/dashboard/meetings/${id}`);
+const participantSuggestionCache=new Map();
+export const getParticipantSuggestions = async (query='') => {
+  const key=query.trim().toLowerCase();
+  if(participantSuggestionCache.has(key))return participantSuggestionCache.get(key);
+  const data=(await apiClient.get('/dashboard/participant-suggestions',{params:{q:key}})).data;
+  participantSuggestionCache.set(key,data);return data;
+};
+export const getMeetingShares = async (id) => (await apiClient.get(`/dashboard/meetings/${id}/shares`)).data;
+export const inviteMeetingShare = async (id,payload) => (await apiClient.post(`/dashboard/meetings/${id}/shares`,payload)).data;
+export const deleteMeetingShare = async (meetingId,shareId) => apiClient.delete(`/dashboard/meetings/${meetingId}/shares/${shareId}`);
+export const getMeetingInvitations = async () => (await apiClient.get('/dashboard/meeting-invitations')).data;
+export const respondMeetingInvitation = async (meetingId,status) => (await apiClient.post(`/dashboard/meetings/${meetingId}/shares/respond`,{status})).data;
 export const getDashboardBriefing = async () => (await apiClient.get('/dashboard/briefing')).data;
 export const sendAgentMessage = async (message,history=[]) => (await apiClient.post('/agent/chat',{message,history},{timeout:120000})).data;
 export const extractMeetingActions = async (meetingId) => (await apiClient.post('/agent/extract-actions',{meeting_id:meetingId},{timeout:120000})).data;

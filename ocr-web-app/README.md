@@ -201,6 +201,13 @@ ocr-web-app/
 - Backend `/auth/oauth/exchange`가 소셜 토큰을 검증하고 앱 JWT 발급
 - 이후 모든 업무 API는 Backend JWT만 사용
 
+### Google Calendar 가져오기
+- Google 로그인에서는 `calendar.readonly` 범위만 요청합니다.
+- 로그인 콜백 또는 대시보드의 `Google Calendar 가져오기` 버튼에서 일정을 Backend로 전달합니다.
+- Backend는 최근 30일부터 향후 1년까지의 기본 캘린더 일정을 `schedules`에 저장하고 동일 제목·시간 일정은 중복 저장하지 않습니다.
+- Google Cloud Console에서 Calendar API를 활성화하고 OAuth 동의 화면의 Data Access에 `https://www.googleapis.com/auth/calendar.readonly` 범위를 추가해야 합니다.
+- OAuth 앱이 Testing 상태라면 사용할 Google 계정을 Test users에 등록해야 합니다.
+
 ## 5. 환경 변수
 
 프로젝트 루트의 `.env.example` 을 참고하세요.
@@ -208,7 +215,7 @@ ocr-web-app/
 ### 핵심 값
 
 ```env
-SECRET_KEY=change-this-secret-key
+SECRET_KEY=
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_ANON_KEY=your-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -288,6 +295,13 @@ POST /api/v1/auth/oauth/exchange
 ### 서버에서만 보관
 - `service_role key`
 - `SECRET_KEY`
+- `SMTP_PASSWORD`
+
+### 운영 배포 필수 보안 설정
+- 운영 프런트엔드와 API는 반드시 HTTPS로만 공개합니다. HTTP 접속은 ALB, CloudFront 또는 리버스 프록시에서 HTTPS로 리다이렉트합니다.
+- `SECRET_KEY`는 최소 48자의 난수로 설정하고 브라우저 번들 또는 `VITE_` 변수에 넣지 않습니다.
+- `CORS_ORIGINS`에는 실제 HTTPS 프런트엔드 Origin만 JSON 배열로 지정하며 `*`를 사용하지 않습니다.
+- 예: `CORS_ORIGINS=["https://app.example.com"]`
 
 ## 10. 지금 상태 요약
 

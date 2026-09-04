@@ -234,6 +234,53 @@ $blue: #1f5f94;
     }
   }
 }
+.single-evaluation-layout {
+  margin: 16px 0;
+  display: grid;
+  grid-template-columns: 230px minmax(0, 1fr);
+  align-items: start;
+  gap: 14px;
+
+  > .latest-pipeline-results { min-width: 0; margin: 0; }
+}
+.single-result-sidebar {
+  position: sticky;
+  top: 16px;
+  height: calc(100vh - 32px);
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dfe7f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(39, 54, 77, 0.04);
+
+  > header { padding: 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5ebf1; }
+  > header h2 { margin: 0; color: #28445e; font-size: 14px; }
+  > header p { margin: 4px 0 0; color: #8795a5; font-size: 9px; }
+  > header span { min-width: 23px; padding: 4px 6px; border-radius: 12px; color: #1f5f94; background: #e7f2fa; font-size: 10px; font-weight: 800; text-align: center; }
+  > div { min-height: 0; padding: 7px; display: flex; flex: 1; flex-direction: column; gap: 6px; overflow-y: auto; }
+  > div > button { width: 100%; padding: 10px; border: 1px solid #e1e8ef; border-radius: 8px; color: #40566c; background: #fff; text-align: left; cursor: pointer; }
+  > div > button:hover { border-color: #aac7dd; background: #f7fbfe; }
+  > div > button.active { border-color: #6fa4ca; background: #eef6fc; box-shadow: inset 3px 0 #2b70a3; }
+  > div > button > strong, > div > button > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  > div > button > strong { color: #263f57; font-size: 10px; }
+  > div > button > small { margin-top: 3px; color: #8a98a8; font-size: 8px; }
+  dl { margin: 8px 0 0; display: grid; gap: 4px; }
+  dl div { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 6px; font-size: 8px; }
+  dt { color: #8794a2; }
+  dd { min-width: 0; margin: 0; overflow: hidden; color: #334b62; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  dd.ok { color: #168158; }
+  dd.bad { color: #d14b55; }
+}
+@media (max-width: 1050px) {
+  .single-evaluation-layout { grid-template-columns: 190px minmax(0, 1fr); }
+}
+@media (max-width: 760px) {
+  .single-evaluation-layout { grid-template-columns: minmax(0, 1fr); }
+  .single-result-sidebar { position: static; height: 360px; min-height: 0; }
+}
 .pipeline-empty-result {
   .pipeline-boxes > section,
   .match-status-board > section {
@@ -634,6 +681,23 @@ $blue: #1f5f94;
   gap: 6px;
   overflow: auto;
 }
+.single-error-distribution {
+  padding: 9px;
+  border: 1px solid #dce5ed;
+  border-radius: 7px;
+  background: #f8fafc;
+
+  > header { display: flex; align-items: center; justify-content: space-between; }
+  > header strong { color: #314b64; font-size: 10px; }
+  > header span { color: #7c8b9d; font-size: 8px; }
+  .single-error-bar { height: 7px; margin: 7px 0; display: flex; overflow: hidden; border-radius: 99px; background: #e8edf2; }
+  .single-error-bar i { display: block; height: 100%; }
+  ul { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 8px; list-style: none; }
+  li { min-width: 0; display: grid; grid-template-columns: 7px minmax(0, 1fr) auto; align-items: center; gap: 5px; color: #66788b; font-size: 8px; }
+  li > i { width: 7px; height: 7px; border-radius: 2px; }
+  li > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  li > b { color: #3c536a; font-size: 8px; }
+}
 .pipeline-issue-card {
   width: 100%;
   padding: 7px 8px;
@@ -946,6 +1010,7 @@ $blue: #1f5f94;
   background: #effbfc;
 }
 .error-analysis-summary {
+  display: none;
   margin-top: 12px;
   overflow: hidden;
   border: 1px solid #dbe4ee;
@@ -1109,6 +1174,11 @@ $blue: #1f5f94;
     height: 100%;
     box-sizing: border-box;
   }
+}
+.batch-insight-grid.single-batch-insights {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+
+  > .batch-history-card { display: none; }
 }
 .batch-insight-grid .batch-selection-metrics article {
   overflow: visible;
@@ -1509,6 +1579,37 @@ $blue: #1f5f94;
     }
   }
 }
+.evaluation-db-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  align-items: stretch;
+
+  > .eval-results { min-width: 0; }
+}
+.batch-db-history-list {
+  max-height: 620px;
+  padding: 8px;
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  overflow-y: auto;
+
+  > button { width: 100%; padding: 11px 12px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .9fr); align-items: center; gap: 14px; border: 1px solid #e3e9ef; border-radius: 8px; color: #42586e; background: #fff; text-align: left; cursor: pointer; }
+  > button:hover { border-color: #a8c7de; background: #f7fbfe; }
+  > button.active { border-color: #6fa4ca; background: #eef6fc; box-shadow: inset 3px 0 #2b70a3; }
+  > button > div { min-width: 0; }
+  > button strong, > button small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  > button strong { color: #293f55; font-size: 11px; }
+  > button small { margin-top: 4px; color: #8997a7; font-size: 9px; }
+  dl { margin: 0; display: grid; gap: 4px; }
+  dl div { display: grid; grid-template-columns: 55px minmax(0, 1fr); gap: 6px; font-size: 9px; }
+  dt { color: #8895a4; }
+  dd { min-width: 0; margin: 0; overflow: hidden; color: #344e66; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 1050px) {
+  .evaluation-db-history-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .eval-table {
   max-height: 620px;
   overflow: auto;
@@ -1607,11 +1708,13 @@ $blue: #1f5f94;
   .batch-insight-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+  .batch-insight-grid.single-batch-insights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 850px) {
   .batch-insight-grid {
     grid-template-columns: 1fr;
   }
+  .batch-insight-grid.single-batch-insights { grid-template-columns: minmax(0, 1fr); }
   .finance-eval-title-row {
     align-items: flex-start;
     flex-direction: column;

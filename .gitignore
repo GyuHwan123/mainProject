@@ -219,3 +219,10 @@ __marimo__/
 .streamlit/secrets.toml
 node_modules/
 **/node_modules/
+
+# Fine-tuned embedding models
+ocr-web-app/models/bge-m3/finetuned/
+
+# Generated embedding variants
+ocr-web-app/models/bge-m3/data/company_documents/embedding_variants/*.pkl
+ocr-web-app/models/bge-m3/data/company_documents/embedding_variants/*_metadata.json

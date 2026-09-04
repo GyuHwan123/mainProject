@@ -17,7 +17,7 @@ services:
       - ./models/bge-m3/data/company_documents/processed/company_chunks.pkl:/input/company_chunks.pkl:ro
       - ./models/bge-m3/data/company_documents/processed/company_ingest_manifest.json:/input/company_ingest_manifest.json:ro
       - ./models/bge-m3/data/company_documents/embedding_variants:/output
-      - ./models/bge-m3/model_checkpoints:/models:ro
+      - ./models/bge-m3:/models:ro
       - company_rag_huggingface_cache:/cache/huggingface
     restart: unless-stopped
 

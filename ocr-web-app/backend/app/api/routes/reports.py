@@ -11,6 +11,11 @@ from app.services.supabase_service import supabase_service
 router = APIRouter()
 
 
+@router.get("/business-activity")
+def business_activity(user: User = Depends(require_current_user)) -> dict:
+    return supabase_service.list_business_activity(user.email)
+
+
 class EvaluationCreate(BaseModel):
     document_id: str
     document_name: str

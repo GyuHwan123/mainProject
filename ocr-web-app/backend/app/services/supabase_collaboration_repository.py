@@ -8,6 +8,33 @@ def _legacy_httpx():
     return sys.modules["app.services.supabase_service"].httpx
 
 class CollaborationMixin:
+    def list_business_activity(self, user_email: str) -> dict[str, list[dict[str, Any]]]:
+        """Return user-owned RAG questions and Agent executions for reporting."""
+        user_id = self.get_public_user_id(user_email)
+        sessions_response = _legacy_httpx().get(
+            f"{self.url}/rest/v1/chat_sessions",
+            params={"select": "id", "user_id": f"eq.{user_id}", "deleted_at": "is.null"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(sessions_response, "채팅 세션 활동 조회 실패")
+        session_ids = [str(row["id"]) for row in sessions_response.json()]
+        messages: list[dict[str, Any]] = []
+        if session_ids:
+            messages_response = _legacy_httpx().get(
+                f"{self.url}/rest/v1/chat_messages",
+                params={"select": "id,session_id,sender,message,top_k_chunks,created_at", "session_id": f"in.({','.join(session_ids)})", "sender": "eq.USER", "order": "created_at.desc", "limit": "2000"},
+                headers=self._service_headers(), timeout=20,
+            )
+            self._raise_for_supabase(messages_response, "RAG 질문 활동 조회 실패")
+            messages = messages_response.json()
+        agent_response = _legacy_httpx().get(
+            f"{self.url}/rest/v1/agent_logs",
+            params={"select": "id,question,used_tools,status,latency_ms,created_at", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": "2000"},
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(agent_response, "Agent 실행 활동 조회 실패")
+        return {"rag_questions": messages, "agent_logs": agent_response.json()}
+
     def list_chat_sessions(self, user_email: str) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
         response = _legacy_httpx().get(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IoDownloadOutline, IoRefreshOutline } from 'react-icons/io5';
+import { IoCalendarOutline, IoChatbubbleEllipsesOutline, IoCheckmarkCircleOutline, IoDocumentTextOutline, IoDownloadOutline, IoPeopleOutline, IoReceiptOutline, IoRefreshOutline, IoSearchOutline, IoSparklesOutline, IoTrendingUpOutline } from 'react-icons/io5';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import LoginLoading from '../components/LoginLoading';
@@ -412,6 +412,99 @@ function BusinessReport({ stats, loading }) {
   </>;
 }
 
+function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdfExporting }) {
+  const [dateRange, setDateRange] = useState(createInitialMonitoringDateRange);
+  const [noticeModalOpen, setNoticeModalOpen] = useState(false);
+  useEffect(() => {
+    if (!noticeModalOpen) return undefined;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setNoticeModalOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [noticeModalOpen]);
+  const filterByDate = useCallback((items) => (items || []).filter((item) => {
+    if (!dateRange.startDate || !dateRange.endDate) return true;
+    const rawDate = item.created_at || item.createdAt || item.updated_at || item.date || item.meetingAt;
+    if (!rawDate) return true;
+    const date = new Date(rawDate);
+    if (Number.isNaN(date.getTime())) return true;
+    const start = new Date(`${dateRange.startDate}T00:00:00`);
+    const end = new Date(`${dateRange.endDate}T23:59:59.999`);
+    return date >= start && date <= end;
+  }), [dateRange]);
+  const stats = useMemo(() => {
+    if (!sourceStats.documents) return sourceStats;
+    const documents = filterByDate(sourceStats.documents);
+    const ragDocuments = filterByDate(sourceStats.ragDocuments);
+    const sessions = filterByDate(sourceStats.sessions);
+    const scraps = filterByDate(sourceStats.scraps);
+    const financeRecords = filterByDate(sourceStats.financeRecords);
+    const schedules = filterByDate(sourceStats.schedules);
+    const tasks = filterByDate(sourceStats.tasks);
+    const meetings = filterByDate(sourceStats.meetings);
+    const ragQuestions = filterByDate(sourceStats.ragQuestions);
+    const agentLogs = filterByDate(sourceStats.agentLogs);
+    return { ...sourceStats, documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), financeRecords, schedules, tasks, meetings, ragQuestions, agentLogs };
+  }, [filterByDate, sourceStats]);
+  const data = { documents: stats.documentCount, receipts: stats.financeRecords?.length || 0, rag: stats.ragQuestions?.length || 0, agent: stats.agentLogs?.length || 0, completed: stats.tasks?.filter((item) => item.status === 'DONE').length || 0, users: [...(stats.ragQuestions || []), ...(stats.agentLogs || []), ...(stats.financeRecords || [])].length ? 1 : 0 };
+  const total = data.receipts + data.rag + data.agent + data.completed;
+  const maxUsage = Math.max(data.rag, data.receipts, data.agent, data.completed, stats.ragCount, 1);
+  const readyRate = stats.ragCount ? Math.round(stats.readyRagCount / stats.ragCount * 100) : 0;
+  const kpis = [
+    ['전체 처리 문서', data.documents, '건', IoDocumentTextOutline, 'blue'], ['영수증 처리', data.receipts, '건', IoReceiptOutline, 'orange'],
+    ['RAG 질문·검색', data.rag, '건', IoSearchOutline, 'green'], ['AI Agent 실행', data.agent, '건', IoSparklesOutline, 'purple'],
+    ['업무 완료', data.completed, '건', IoCheckmarkCircleOutline, 'red'], ['활성 사용자', data.users, '명', IoPeopleOutline, 'blue'],
+  ];
+  const series = [['영수증', '#1767df', data.receipts], ['RAG', '#12a87d', data.rag], ['AI Agent', '#8b4ee8', data.agent], ['업무 관리', '#f18a24', data.completed]];
+  const dailyCounts = useMemo(() => {
+    const days = []; const cursor = new Date(`${dateRange.startDate}T00:00:00`); const end = new Date(`${dateRange.endDate}T00:00:00`);
+    while (cursor <= end && days.length < 62) { days.push(cursor.toISOString().slice(0, 10)); cursor.setDate(cursor.getDate() + 1); }
+    const count = (items, day) => (items || []).filter((item) => String(item.created_at || item.createdAt || item.updated_at || item.date || item.meetingAt || '').slice(0, 10) === day).length;
+    return days.map((day) => ({ day, receipt: count(stats.financeRecords, day), rag: count(stats.ragQuestions, day), agent: count(stats.agentLogs, day), task: count(stats.tasks, day) }));
+  }, [dateRange, stats]);
+  const chartMax = Math.max(1, ...dailyCounts.flatMap((day) => [day.receipt, day.rag, day.agent, day.task]));
+  const seriesKeys = ['receipt', 'rag', 'agent', 'task'];
+  const points = (index) => dailyCounts.map((day, point) => `${22 + point * 386 / Math.max(1, dailyCounts.length - 1)},${126 - day[seriesKeys[index]] / chartMax * 92}`).join(' ');
+  const usageRows = [['RAG 지식 검색', data.rag, IoSearchOutline, 'green'], ['영수증 문서 처리', data.receipts, IoDocumentTextOutline, 'blue'], ['AI Agent 실행', data.agent, IoSparklesOutline, 'purple'], ['등록된 일정', stats.schedules?.length || 0, IoCalendarOutline, 'green'], ['완료된 업무', data.completed, IoCheckmarkCircleOutline, 'orange'], ['회의록 작성', stats.meetings?.length || 0, IoChatbubbleEllipsesOutline, 'red']];
+  const topItems = (items, getter) => Object.entries((items || []).reduce((result, item) => { const key = getter(item); if (key) result[key] = (result[key] || 0) + 1; return result; }, {})).sort((left, right) => right[1] - left[1]);
+  const financeTypes = topItems(stats.financeRecords, (item) => item.document_type || item.expense_category || '미분류');
+  const agentTools = topItems((stats.agentLogs || []).flatMap((item) => item.used_tools || []), (item) => item);
+  const ragTopics = topItems(stats.ragQuestions, (item) => {
+    const text = String(item.message || '');
+    if (/휴가|근태|급여|인사/.test(text)) return '인사·근태 규정';
+    if (/출장|법인카드|구매|비용/.test(text)) return '재무·출장 규정';
+    if (/보안|개인정보/.test(text)) return '정보보안 규정';
+    if (/안전|재해|화재/.test(text)) return '안전·대응 매뉴얼';
+    return '기타 사내 지식';
+  });
+  const notices = [
+    { title: `RAG 지식 문서 ${stats.readyRagCount}건이 검색 준비되었습니다.`, detail: `전체 ${stats.ragCount}건 중 ${readyRate}%가 검색 가능한 상태입니다.`, tone: 'success' },
+    { title: '선택 기간의 기업 업무 리포트가 업데이트되었습니다.', detail: `${dateRange.startDate} ~ ${dateRange.endDate} 활동을 기준으로 집계했습니다.`, tone: 'info' },
+    { title: `처리 대기 RAG 문서가 ${Math.max(0, stats.ragCount - stats.readyRagCount)}건 있습니다.`, detail: '검색 준비가 완료되지 않은 문서를 확인해 주세요.', tone: stats.ragCount - stats.readyRagCount > 0 ? 'warning' : 'success' },
+    { title: `AI Agent 실행 ${data.agent}건을 확인했습니다.`, detail: `성공 ${stats.agentLogs?.filter((item) => item.status === 'SUCCESS').length || 0}건 · 실패 ${stats.agentLogs?.filter((item) => item.status === 'FAILED').length || 0}건`, tone: 'info' },
+  ];
+  return <section className="business-dashboard">
+    <div className="business-report-heading"><div><p>WORKSPACE ANALYTICS</p><h2>기업 AI 업무 활용 현황</h2><span>RAG, 영수증, AI Agent의 활용도와 구성원의 주요 관심사를 확인하세요.</span></div><div className="receipt-monitoring-filters business-report-filters"><div className="receipt-date-range"><input type="date" aria-label="기업 리포트 조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => setDateRange((current) => ({ ...current, startDate: event.target.value }))} /><span>~</span><input type="date" aria-label="기업 리포트 조회 종료일" value={dateRange.endDate} min={dateRange.startDate} onChange={(event) => setDateRange((current) => ({ ...current, endDate: event.target.value }))} /></div><button type="button" className="receipt-pdf-download" disabled={pdfExporting} onClick={onExportPdf}><IoDownloadOutline /> {pdfExporting ? 'PDF 준비 중' : 'PDF 다운로드'}</button></div></div>
+    <section className="business-kpi-grid business-kpi-six">{kpis.map(([label, value, unit, Icon, tone]) => <article key={label}><div className={`business-kpi-icon ${tone}`}><Icon /></div><div><small>{label}</small><strong>{loading ? '—' : value.toLocaleString()}<em>{unit}</em></strong><p><IoTrendingUpOutline /> 현재 워크스페이스 기준</p></div></article>)}</section>
+    <section className="business-overview-grid">
+      <article className="report-card business-trend-card"><header><div><h2>기간별 AI 및 업무 활용 추이</h2><p>선택 기간의 실제 일별 활동</p></div><span>일별</span></header><div className="business-trend-chart"><svg viewBox="0 0 420 150" preserveAspectRatio="none">{[34, 64, 94, 124].map((y) => <line key={y} x1="22" x2="408" y1={y} y2={y} />)}{series.map(([name, color], index) => <polyline key={name} points={points(index)} style={{ stroke: color }} />)}</svg><div>{series.map(([name, color]) => <span key={name}><i style={{ background: color }} />{name}</span>)}</div></div></article>
+      <article className="report-card business-share-card"><header><div><h2>기능별 활용 비율</h2><p>선택 기간</p></div></header><div className="business-share-body"><div className="business-share-donut"><span>총 활용 건수<strong>{total.toLocaleString()}건</strong></span></div><div className="business-share-legend">{series.map(([name, color, value]) => <div key={name}><i style={{ background: color }} /><span>{name}</span><strong>{value}건 ({total ? Math.round(value / total * 100) : 0}%)</strong></div>)}</div></div></article>
+      <article className="report-card business-top-card"><header><div><h2>업무 유형별 활용 TOP 6</h2><p>선택 기간</p></div></header><div>{usageRows.map(([label, value, Icon, tone]) => <div key={label}><span className={`business-mini-icon ${tone}`}><Icon /></span><span>{label}</span><i><b style={{ width: `${value / maxUsage * 100}%` }} /></i><strong>{value}건</strong></div>)}</div></article>
+    </section>
+    <section className="business-detail-grid">
+      <article className="report-card business-feature-card"><header><h2><IoReceiptOutline /> Finance (영수증·재무) 현황</h2></header><div className="business-feature-stats"><div><span>선택 기간 처리 건수</span><strong>{data.receipts}건</strong></div><div><span>문서 유형 수</span><strong>{financeTypes.length}개</strong></div></div><h3>문서 유형별 분포</h3><ul>{financeTypes.slice(0, 3).map(([type, count]) => <li key={type}>{type}<span>{count}건</span></li>)}{!financeTypes.length && <li className="muted">처리된 재무 문서가 없습니다.</li>}</ul></article>
+      <article className="report-card business-feature-card"><header><h2><IoSearchOutline /> RAG (지식 검색) 현황</h2></header><div className="business-feature-stats three"><div><span>등록된 사내 문서</span><strong>{stats.ragCount}건</strong></div><div><span>선택 기간 질문</span><strong>{data.rag}건</strong></div><div><span>준비 완료</span><strong>{readyRate}%</strong></div></div><h3>질문 내용 기반 관심 지표</h3><ul>{ragTopics.slice(0, 2).map(([topic, count]) => <li key={topic}>{topic}<span>{count}건</span></li>)}{!ragTopics.length && <li className="muted">질문 데이터가 없습니다.</li>}</ul></article>
+      <article className="report-card business-feature-card"><header><h2><IoSparklesOutline /> AI Agent (업무 자동화) 현황</h2></header><div className="business-feature-stats"><div><span>선택 기간 실행 횟수</span><strong>{data.agent}건</strong></div><div><span>성공한 실행</span><strong>{stats.agentLogs?.filter((item) => item.status === 'SUCCESS').length || 0}건</strong></div></div><h3>실제 사용 도구 TOP 3</h3><ol>{agentTools.slice(0, 3).map(([tool, count]) => <li key={tool}>{tool} <span>{count}건</span></li>)}{!agentTools.length && <li className="muted">Agent 도구 실행 기록이 없습니다.</li>}</ol></article>
+      <article className="report-card business-feature-card business-task-card"><header><h2><IoCalendarOutline /> 업무 관리 현황</h2></header><div className="business-task-grid"><div><IoCalendarOutline /><span>등록된 일정<strong>{stats.schedules?.length || 0}건</strong></span></div><div><IoChatbubbleEllipsesOutline /><span>회의록 작성<strong>{stats.meetings?.length || 0}건</strong></span></div><div><IoCheckmarkCircleOutline /><span>완료된 업무<strong>{data.completed}건</strong></span></div><div><IoDocumentTextOutline /><span>전체 할 일<strong>{stats.tasks?.length || 0}건</strong></span></div></div></article>
+    </section>
+    <section className="business-summary-grid">
+      <article className="report-card business-month-summary"><header><div><h2>이번 달 업무 요약</h2><p>현재 워크스페이스 기준</p></div></header><div>{[['영수증 처리', data.receipts, 'blue'], ['RAG 질문', data.rag, 'green'], ['AI Agent 실행', data.agent, 'purple'], ['업무 완료', data.completed, 'orange']].map(([label, value, tone]) => <div key={label}><i className={tone} /><span>{label}<strong>{value}건</strong></span></div>)}</div><footer><strong>월간 주요 인사이트</strong><span>{data.rag >= data.receipts ? '사내 지식 검색 활용이 가장 활발합니다.' : '영수증·문서 처리 활용이 가장 활발합니다.'}</span><span>AI 업무 자동화 활용 범위를 더 넓혀보세요.</span></footer></article>
+      <article className="report-card business-insight-card"><header><h2>주요 활용 인사이트</h2></header><div><p><IoSearchOutline /><span>가장 많이 활용된 업무<strong>{data.rag >= data.receipts ? 'RAG 지식 검색' : '영수증 문서 처리'} ({Math.max(data.rag, data.receipts)}건)</strong></span></p><p><IoDocumentTextOutline /><span>가장 높은 관심 주제<strong>{ragTopics[0]?.[0] || '질문 데이터 없음'}{ragTopics[0] ? ` (${ragTopics[0][1]}건)` : ''}</strong></span></p><p><IoPeopleOutline /><span>활성 사용자 현황<strong>{data.users ? '현재 계정의 활동 감지' : '활동 데이터 없음'}</strong></span></p></div></article>
+      <article className="report-card business-notice-card"><header><h2>공지 및 시스템 알림</h2></header><ul>{notices.slice(0, 3).map((notice) => <li key={notice.title}>{notice.title}<time>현재</time></li>)}</ul><footer><button type="button" onClick={() => setNoticeModalOpen(true)}>전체 공지 보기 ›</button></footer></article>
+    </section>
+    {noticeModalOpen && <div className="business-notice-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setNoticeModalOpen(false); }}><section className="business-notice-modal" role="dialog" aria-modal="true" aria-labelledby="business-notice-modal-title"><header><div><span>SYSTEM NOTICE</span><h2 id="business-notice-modal-title">공지 및 시스템 알림</h2><p>선택 기간의 워크스페이스 상태를 간단히 정리했습니다.</p></div><button type="button" aria-label="공지 모달 닫기" onClick={() => setNoticeModalOpen(false)}>×</button></header><div className="business-notice-modal-list">{notices.map((notice) => <article key={notice.title}><i className={notice.tone} /><div><strong>{notice.title}</strong><p>{notice.detail}</p><time>현재 데이터 기준</time></div></article>)}</div><footer><button type="button" onClick={() => setNoticeModalOpen(false)}>확인</button></footer></section></div>}
+  </section>;
+}
+
 const MONITORING_METRICS = [
   { key: 'field_accuracy', label: '필드 정확도 (Field Accuracy)', color: '#1767df', type: 'percent', description: '평가한 전체 필드 중 정답과 일치한 필드의 비율입니다. 높을수록 좋습니다.' },
   { key: 'amount_accuracy', label: '금액 정확도 (Amount Accuracy)', color: '#079b62', type: 'percent', description: '영수증의 최종 총금액이 정답 데이터와 정확히 일치한 비율입니다. 높을수록 좋습니다.' },
@@ -594,7 +687,7 @@ export default function ReportPage() {
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
   const [ragReportTab, setRagReportTab] = useState(() => localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
-  const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [] });
+  const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], meetings: [], ragQuestions: [], agentLogs: [] });
   const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
   const [initialLoading, setInitialLoading] = useState(true);
   const [initialMonitoring, setInitialMonitoring] = useState(null);
@@ -647,10 +740,12 @@ export default function ReportPage() {
   const loadBusinessStats = useCallback(async () => {
     const results = await Promise.allSettled([
       apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'),
+      apiClient.get('/finance/records'), apiClient.get('/dashboard/schedules'), apiClient.get('/dashboard/tasks'), apiClient.get('/dashboard/meetings'), apiClient.get('/reports/business-activity'),
     ]);
     const values = results.map((result) => result.status === 'fulfilled' && Array.isArray(result.value.data) ? result.value.data : []);
-    const [documents, ragDocuments, sessions, scraps] = values;
-    setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5) });
+    const [documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, meetings] = values;
+    const activity = results[8].status === 'fulfilled' && results[8].value.data ? results[8].value.data : {};
+    setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, meetings, ragQuestions: activity.rag_questions || [], agentLogs: activity.agent_logs || [] });
   }, []);
 
   const loadRagReport = useCallback(async () => {
@@ -859,7 +954,7 @@ export default function ReportPage() {
       </header>
       {error && <div className="report-access-error">{error}</div>}
       {pdfExportError && <div className="report-access-error">{pdfExportError}</div>}
-      {reportView === 'business' ? <BusinessReport stats={businessStats} loading={loading} /> : developerReport === 'receipt' ? <>
+      {reportView === 'business' ? <BusinessReportDashboard stats={businessStats} loading={loading} onExportPdf={exportDashboardPdf} pdfExporting={pdfExporting} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
           <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
           <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>

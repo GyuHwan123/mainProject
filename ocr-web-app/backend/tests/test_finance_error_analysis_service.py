@@ -39,19 +39,16 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="2017년11월09일 품질검사 거래일시: 18/01/10 주유소 유종:경유 단가:1410원 48.936L",
             ground_truth=truth,
             prediction=prediction,
-            pipeline_trace={
-                "item_candidates": [{"name_candidate": "NS-OIL", "quantity_candidate": 2, "unit_price_candidate": 10, "amount_candidate": 20}],
-                "model_items": prediction["items"],
-                "validator": {"input": prediction, "output": prediction},
-            },
+            pipeline_trace={"llm": {"raw_output": prediction}},
         )
 
         tags = result["error_tags"]
         self.assertNotIn("UNKNOWN", {tag["category"] for tag in tags})
         self.assertIn("CATEGORY_INFERENCE_ERROR", {tag["code"] for tag in tags})
         self.assertIn("TRANSACTION_DATE_SELECTION_ERROR", {tag["code"] for tag in tags})
-        self.assertIn("VALUE_CANDIDATE_MISSING", {tag["code"] for tag in tags})
-        self.assertIn("ITEM_CANDIDATE_SELECTION_ERROR", {tag["code"] for tag in tags})
+        self.assertIn("VALUE_MISSING", {tag["code"] for tag in tags})
+        self.assertIn("LLM_ERROR", {tag["category"] for tag in tags})
+        self.assertNotIn("CANDIDATE_ERROR", {tag["category"] for tag in tags})
 
     def test_returns_no_tags_for_success(self):
         result = analyze_finance_evaluation_failure(
@@ -64,20 +61,16 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["error_tags"], [])
 
-    def test_tags_llm_item_error_when_correct_candidate_was_changed(self):
+    def test_tags_llm_item_value_error(self):
         result = analyze_finance_evaluation_failure(
             ocr_text="노트 2 1,000 2,000 결제금액 2,000",
             ground_truth={"total_amount": 2000, "items": [{"name": "노트", "quantity": 2, "unit_price": 1000, "total_amount": 2000}]},
             prediction={"total_amount": 2000, "items": [{"name": "노트", "quantity": 1, "unit_price": 1000, "total_amount": 1000}]},
-            pipeline_trace={
-                "item_candidates": [{"name_candidate": "노트", "quantity_candidate": 2, "unit_price_candidate": 1000, "amount_candidate": 2000}],
-                "model_items": [{"name": "노트", "quantity": 1, "unit_price": 1000, "total_amount": 1000}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"items": [{"name": "노트", "quantity": 1, "unit_price": 1000, "total_amount": 1000}]}}},
         )
 
         codes = {(tag["category"], tag["code"]) for tag in result["error_tags"]}
         self.assertIn(("LLM_ERROR", "QUANTITY_ERROR"), codes)
-        self.assertIn(("LLM_ERROR", "LLM_CHANGED_CORRECT_CANDIDATE"), codes)
         self.assertIn(("VALIDATION_ERROR", "ITEM_SUM_MISMATCH"), codes)
 
     def test_supports_multiple_tags_and_review_state(self):
@@ -85,21 +78,21 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="노트 결제금액 4,000",
             ground_truth={"total_amount": 5000, "items": [{"name": "노트", "quantity": 2, "unit_price": 2500, "total_amount": 5000}]},
             prediction={"total_amount": 4000, "supply_amount": 3500, "tax_amount": 400, "items": []},
-            pipeline_trace={"item_candidates": []},
+            pipeline_trace={"llm": {"raw_output": {"total_amount": 4000, "items": []}}},
         )
 
         codes = {tag["code"] for tag in result["error_tags"]}
         self.assertIn("OCR_NUMBER_ERROR", codes)
-        self.assertIn("ITEM_TEXT_MISSING", codes)
+        self.assertIn("ITEM_MISSING", codes)
         self.assertIn("SUPPLY_TAX_MISMATCH", codes)
-        self.assertTrue(result["needs_review"])
+        self.assertFalse(result["needs_review"])
 
     def test_leaves_uncertain_attribution_for_review(self):
         result = analyze_finance_evaluation_failure(
             ocr_text="식별할 수 없는 영수증",
             ground_truth={"items": [{"name": "노트", "quantity": 1, "total_amount": 5000}]},
             prediction={"items": []},
-            pipeline_trace={"item_candidates": []},
+            pipeline_trace={"llm": {"raw_output": {"items": []}}},
         )
 
         self.assertTrue(result["needs_review"])
@@ -110,11 +103,7 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="샤프 8,300\n최종 결제금액 56,300",
             ground_truth={"total_amount": 56300, "items": [{"name": "샤프", "total_amount": 8300}]},
             prediction={"total_amount": 8300, "items": [{"name": "샤프", "total_amount": 8300}]},
-            pipeline_trace={
-                "llm": {"summary_raw": {"total_amount": 8300}},
-                "deterministic_hints": {"total_amount": 56300, "total_amount_source": "labeled_final"},
-                "model_items": [{"name": "샤프", "total_amount": 8300}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"total_amount": 8300, "items": [{"name": "샤프", "total_amount": 8300}]}}},
         )
 
         self.assertIn("SUMMARY_AMOUNT_SELECTION_ERROR", {tag["code"] for tag in result["error_tags"]})
@@ -124,10 +113,7 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="[샌디스크] Z71/16G 1 10,000",
             ground_truth={"items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}]},
             prediction={"items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}]},
-            pipeline_trace={
-                "item_candidates": [{"name_candidate": "[샌디스크] Z71/16G", "quantity_candidate": 1, "amount_candidate": 10000}],
-                "model_items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}]}}},
         )
 
         tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
@@ -138,10 +124,7 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="[샌디스크] 271/16G 1 10,000",
             ground_truth={"items": [{"name": "[샌디스크] Z71/16G", "quantity": 1, "total_amount": 10000}]},
             prediction={"items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}]},
-            pipeline_trace={
-                "item_candidates": [{"name_candidate": "[샌디스크] 271/16G", "quantity_candidate": 1, "amount_candidate": 10000}],
-                "model_items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"items": [{"name": "[샌디스크] 271/16G", "quantity": 1, "total_amount": 10000}]}}},
         )
 
         tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
@@ -152,10 +135,7 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="보통 휘발유 1,429 X 20.994 30,000",
             ground_truth={"items": [{"name": "보통 휘발유", "quantity": 20.994, "unit_price": 1429, "total_amount": 30000}]},
             prediction={"items": [{"name": "보통 휘발유", "quantity": 20994, "unit_price": 1429, "total_amount": 30000}]},
-            pipeline_trace={
-                "item_candidates": [{"name_candidate": "보통 휘발유", "quantity_candidate": 20994, "unit_price_candidate": 1429, "amount_candidate": 30000}],
-                "model_items": [{"name": "보통 휘발유", "quantity": 20994, "unit_price": 1429, "total_amount": 30000}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"items": [{"name": "보통 휘발유", "quantity": 20994, "unit_price": 1429, "total_amount": 30000}]}}},
         )
 
         tags = {(tag["category"], tag["code"], tag["field"]) for tag in result["error_tags"]}
@@ -178,17 +158,13 @@ class FinanceErrorAnalysisServiceTests(unittest.TestCase):
             ocr_text="노트 1 5,000\n결제금액 5,000",
             ground_truth={"total_amount": 5000, "items": [{"name": "노트", "quantity": 1, "total_amount": 5000}]},
             prediction={"total_amount": 3000, "items": [{"name": "가짜품목", "quantity": 1, "total_amount": 3000}]},
-            pipeline_trace={
-                "llm": {"summary_raw": {"total_amount": 5000}},
-                "validator": {"input": {"total_amount": 5000}, "output": {"total_amount": 3000}},
-                "model_items": [{"name": "노트", "quantity": 1, "total_amount": 5000}],
-            },
+            pipeline_trace={"llm": {"raw_output": {"total_amount": 5000, "items": [{"name": "노트", "quantity": 1, "total_amount": 5000}]}}},
         )
 
         codes = {tag["code"] for tag in result["error_tags"]}
-        self.assertIn("VALIDATOR_CHANGED_CORRECT_VALUE", codes)
-        self.assertIn("VALIDATOR_DROPPED_CORRECT_ITEM", codes)
-        self.assertIn("VALIDATOR_ADDED_UNSUPPORTED_ITEM", codes)
+        self.assertIn("POSTPROCESSING_CHANGED_CORRECT_VALUE", codes)
+        self.assertIn("POSTPROCESSING_DROPPED_CORRECT_ITEM", codes)
+        self.assertIn("POSTPROCESSING_ADDED_UNSUPPORTED_ITEM", codes)
 
 
 if __name__ == "__main__":

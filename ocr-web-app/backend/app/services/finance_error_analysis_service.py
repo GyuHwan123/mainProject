@@ -8,7 +8,7 @@ from typing import Any
 from app.services.finance_normalization import normalization_equivalent, semantic_normalized_value
 
 
-ANALYSIS_VERSION = "receipt-error-analysis-v2"
+ANALYSIS_VERSION = "receipt-error-analysis-v3"
 NUMBER_FIELDS = {"quantity", "unit_price", "total_amount", "supply_amount", "tax_amount", "total_quantity", "discount_amount"}
 SUMMARY_ITEM_PATTERN = re.compile(
     r"합계|소계|결제|승인|공급가액|부가세|세액|할인|쿠폰|적립금|거스름돈|총\s*구매",
@@ -158,15 +158,6 @@ def _category_evidence_found(text: str, expected: Any) -> bool:
     )
 
 
-def _candidate_as_item(candidate: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "name": candidate.get("name_candidate"),
-        "quantity": candidate.get("quantity_candidate"),
-        "unit_price": candidate.get("unit_price_candidate"),
-        "total_amount": candidate.get("amount_candidate"),
-    }
-
-
 def _best_match(item: dict[str, Any], rows: list[dict[str, Any]]) -> tuple[int | None, float]:
     best_index, best_score = None, 0.0
     for index, row in enumerate(rows):
@@ -244,9 +235,10 @@ def analyze_finance_evaluation_failure(
 ) -> dict[str, Any]:
     """Attribute extraction failures using preserved evidence without changing scores."""
     trace = pipeline_trace or {}
-    candidates = [_candidate_as_item(row) for row in trace.get("item_candidates") or [] if isinstance(row, dict)]
-    candidate_raw = [row for row in trace.get("item_candidates") or [] if isinstance(row, dict)]
-    model_items = [row for row in trace.get("model_items") or [] if isinstance(row, dict)]
+    llm_summary = (trace.get("llm") or {}).get("raw_output") or {}
+    if not isinstance(llm_summary, dict):
+        llm_summary = {}
+    model_items = [row for row in llm_summary.get("items") or [] if isinstance(row, dict)]
     final_items = [row for row in prediction.get("items") or [] if isinstance(row, dict)]
     truth_items = [row for row in ground_truth.get("items") or [] if isinstance(row, dict)]
     tags: list[dict[str, Any]] = []
@@ -317,16 +309,6 @@ def analyze_finance_evaluation_failure(
             "category_counts": dict(category_counts),
         }
 
-    llm_summary = (
-        (trace.get("llm") or {}).get("raw_output")
-        or (trace.get("llm") or {}).get("summary_raw")
-        or {}
-    )
-    validator = trace.get("validator") or {}
-    validator_input = validator.get("input") or {}
-    validator_output = validator.get("output") or {}
-    hints = trace.get("deterministic_hints") or {}
-
     # Summary OCR evidence: absence alone is uncertain because OCR can split tokens.
     for field, expected in ground_truth.items():
         if field == "items" or expected in (None, "", []):
@@ -349,8 +331,8 @@ def analyze_finance_evaluation_failure(
             continue
         if field == "transaction_date" and _date_in_text(ocr_text, expected) and _date_in_text(ocr_text, actual):
             tags.append(_tag(
-                "CANDIDATE_ERROR", "TRANSACTION_DATE_SELECTION_ERROR", field=field, confidence=0.98,
-                message="OCR에 여러 날짜가 있으며 거래일이 아닌 다른 날짜 후보를 선택했습니다.",
+                "LLM_ERROR", "TRANSACTION_DATE_SELECTION_ERROR", field=field, confidence=0.98,
+                message="OCR에 여러 날짜가 있으며 LLM이 거래일이 아닌 날짜를 선택했습니다.",
                 evidence={"expected": expected, "actual": actual},
             ))
             continue
@@ -364,34 +346,31 @@ def analyze_finance_evaluation_failure(
             ))
         elif field in NUMBER_FIELDS:
             llm_value = llm_summary.get(field)
-            validator_before = validator_input.get(field)
-            validator_after = validator_output.get(field, actual)
-            correct_before_validation = _value_equal(field, expected, validator_before) or _value_equal(field, expected, llm_value)
-            if _empty(actual) and _empty(llm_value) and _empty(validator_before):
+            if _empty(actual) and _empty(llm_value):
                 tags.append(_tag(
-                    "CANDIDATE_ERROR", "VALUE_CANDIDATE_MISSING", field=field, confidence=0.94,
-                    message="정답 숫자는 OCR에 있지만 구조화 후보로 전달되지 않았습니다.",
+                    "LLM_ERROR", "VALUE_MISSING", field=field, confidence=0.94,
+                    message="정답 숫자는 OCR에 있지만 LLM 구조화 결과에서 누락됐습니다.",
                     evidence={"expected": expected, "actual": actual},
                 ))
-            elif correct_before_validation and not _value_equal(field, expected, validator_after):
+            elif _value_equal(field, expected, llm_value) and not _value_equal(field, expected, actual):
                 tags.append(_tag(
-                    "VALIDATION_ERROR", "VALIDATOR_CHANGED_CORRECT_VALUE", field=field, confidence=0.99,
-                    message="LLM/validator 입력의 정확한 값을 validator가 잘못 변경했습니다.",
-                    evidence={"expected": expected, "llm_raw": llm_value, "validator_input": validator_before, "validator_output": validator_after},
+                    "VALIDATION_ERROR", "POSTPROCESSING_CHANGED_CORRECT_VALUE", field=field, confidence=0.99,
+                    message="LLM 원본의 정확한 값이 후처리 과정에서 변경됐습니다.",
+                    evidence={"expected": expected, "llm_raw": llm_value, "final": actual},
                 ))
             elif field == "total_amount" and any(
                 _value_equal("total_amount", actual, item.get("total_amount"))
-                for item in [*model_items, *candidates]
+                for item in model_items
             ):
                 tags.append(_tag(
                     "LLM_ERROR", "SUMMARY_AMOUNT_SELECTION_ERROR", field=field, confidence=0.98,
                     message="총 결제액 대신 개별 품목 금액을 summary 합계로 선택했습니다.",
-                    evidence={"expected": expected, "actual": actual, "llm_raw": llm_value, "deterministic_hint": hints.get("total_amount")},
+                    evidence={"expected": expected, "actual": actual, "llm_raw": llm_value},
                 ))
             else:
                 tags.append(_tag(
-                    "LLM_ERROR", "LLM_CHANGED_CORRECT_CANDIDATE", field=field, confidence=0.91,
-                    message="정답 숫자는 OCR에 있지만 최종 예측값이 다릅니다.",
+                    "LLM_ERROR", "NUMERIC_VALUE_ERROR", field=field, confidence=0.91,
+                    message="정답 숫자는 OCR에 있지만 LLM이 다른 숫자를 구조화했습니다.",
                     evidence={"expected": expected, "actual": actual},
                 ))
         elif field == "merchant":
@@ -405,10 +384,8 @@ def analyze_finance_evaluation_failure(
     matched_final_indexes: set[int] = set()
     for truth_index, truth_item in enumerate(truth_items):
         scope = f"items[{truth_index}]"
-        candidate_index, candidate_score = _best_match(truth_item, candidates)
         model_index, model_score = _best_match(truth_item, model_items)
         final_index, final_score = _best_match(truth_item, final_items)
-        candidate = candidates[candidate_index] if candidate_index is not None and candidate_score >= 2.4 else None
         model_item = model_items[model_index] if model_index is not None and model_score >= 2.4 else None
         final_item = final_items[final_index] if final_index is not None and final_score >= 2.4 else None
         if model_item is not None:
@@ -424,24 +401,17 @@ def analyze_finance_evaluation_failure(
                     message="품목명은 OCR에 있지만 정답 숫자가 OCR 원문에 없습니다.",
                     evidence={"truth_item": truth_item},
                 ))
-        if candidate is None:
-            if candidates or model_items or final_items:
-                tags.append(_tag(
-                    "CANDIDATE_ERROR", "ITEM_CANDIDATE_SELECTION_ERROR", scope=scope, confidence=0.94,
-                    message="비품목 행이 선택되었거나 실제 품목 행이 구조화 후보에서 누락됐습니다.",
-                    evidence={"truth_item": truth_item, "name_found_in_ocr": name_in_ocr},
-                ))
-            else:
-                tags.append(_tag(
-                    "OCR_ERROR", "ITEM_TEXT_MISSING", scope=scope, confidence=0.72,
-                    message="OCR 결과와 구조화 후보에서 정답 품목을 확인하지 못했습니다.",
-                    evidence={"truth_item": truth_item, "name_found_in_ocr": name_in_ocr},
-                ))
-        elif model_item is None:
+        if model_item is None and name_in_ocr:
             tags.append(_tag(
                 "LLM_ERROR", "ITEM_MISSING", scope=scope, confidence=0.96,
-                message="정답과 일치하는 코드 후보가 있지만 LLM 품목 결과에서 누락됐습니다.",
-                evidence={"truth_item": truth_item, "candidate_index": candidate_index, "candidate": candidate},
+                message="OCR에 정답 품목이 있지만 LLM 구조화 결과에서 누락됐습니다.",
+                evidence={"truth_item": truth_item},
+            ))
+        elif model_item is None:
+            tags.append(_tag(
+                "OCR_ERROR", "ITEM_TEXT_MISSING", scope=scope, confidence=0.72,
+                message="OCR 결과에서 정답 품목을 확인하지 못했습니다.",
+                evidence={"truth_item": truth_item, "name_found_in_ocr": name_in_ocr},
             ))
 
         comparison_source = model_item or final_item
@@ -471,25 +441,10 @@ def analyze_finance_evaluation_failure(
                     and _text_contains(ocr_text, field, truth_item.get(field))
                 ):
                     continue
-                category = "LLM_ERROR"
-                confidence = 0.94 if candidate and _value_equal(field, truth_item.get(field), candidate.get(field)) else 0.7
                 tags.append(_tag(
-                    category, code, scope=scope, field=field, confidence=confidence,
+                    "LLM_ERROR", code, scope=scope, field=field, confidence=0.9,
                     message=f"품목의 {field} 값이 정답과 다릅니다.",
-                    evidence={"expected": truth_item.get(field), "actual": comparison_source.get(field), "candidate": candidate},
-                ))
-
-        if candidate and model_item:
-            changed = [
-                field for field in ("name", "quantity", "unit_price", "total_amount")
-                if _value_equal(field, truth_item.get(field), candidate.get(field))
-                and not _value_equal(field, candidate.get(field), model_item.get(field))
-            ]
-            if changed:
-                tags.append(_tag(
-                    "LLM_ERROR", "LLM_CHANGED_CORRECT_CANDIDATE", scope=scope, confidence=0.97,
-                    message="LLM이 정답과 일치하던 코드 후보 값을 변경했습니다.",
-                    evidence={"changed_fields": changed, "candidate": candidate, "model_item": model_item},
+                    evidence={"expected": truth_item.get(field), "actual": comparison_source.get(field)},
                 ))
 
     for index, item in enumerate(model_items):
@@ -509,15 +464,14 @@ def analyze_finance_evaluation_failure(
             message="정답 품목과 매칭되지 않는 LLM 품목이 있습니다.", evidence={"model_item": item},
         ))
 
-    # Compare raw model items with final validator output. These tags identify
-    # validator responsibility separately from ordinary LLM omissions/extras.
+    # Compare the one-call LLM output with the final normalized record.
     for truth_index, truth_item in enumerate(truth_items):
         raw_index, raw_score = _best_match(truth_item, model_items)
         final_index, final_score = _best_match(truth_item, final_items)
         if raw_index is not None and raw_score >= 2.4 and (final_index is None or final_score < 2.4):
             tags.append(_tag(
-                "VALIDATION_ERROR", "VALIDATOR_DROPPED_CORRECT_ITEM", scope=f"items[{truth_index}]", confidence=0.98,
-                message="LLM 원본에 있던 정답 품목이 validator 결과에서 제거됐습니다.",
+                "VALIDATION_ERROR", "POSTPROCESSING_DROPPED_CORRECT_ITEM", scope=f"items[{truth_index}]", confidence=0.98,
+                message="LLM 원본에 있던 정답 품목이 후처리 결과에서 제거됐습니다.",
                 evidence={"truth_item": truth_item, "model_item": model_items[raw_index]},
             ))
     for final_index, final_item in enumerate(final_items):
@@ -525,8 +479,8 @@ def analyze_finance_evaluation_failure(
         truth_index, truth_score = _best_match(final_item, truth_items)
         if (raw_index is None or raw_score < 2.4) and (truth_index is None or truth_score < 2.4):
             tags.append(_tag(
-                "VALIDATION_ERROR", "VALIDATOR_ADDED_UNSUPPORTED_ITEM", scope=f"final_items[{final_index}]", confidence=0.96,
-                message="validator가 LLM 원본과 정답에 없던 품목을 최종 결과에 추가했습니다.",
+                "VALIDATION_ERROR", "POSTPROCESSING_ADDED_UNSUPPORTED_ITEM", scope=f"final_items[{final_index}]", confidence=0.96,
+                message="후처리가 LLM 원본과 정답에 없던 품목을 최종 결과에 추가했습니다.",
                 evidence={"final_item": final_item},
             ))
 
@@ -537,21 +491,6 @@ def analyze_finance_evaluation_failure(
                 "LLM_ERROR", "DUPLICATE_ITEM", scope="items", confidence=0.91,
                 message="동일한 품목명이 LLM 결과에 중복됐습니다.", evidence={"normalized_name": name, "count": count},
             ))
-
-    for index, raw_candidate in enumerate(candidate_raw):
-        uncertainties = set(raw_candidate.get("uncertainty") or [])
-        if raw_candidate.get("source") == "unresolved_title" or "row_split" in uncertainties:
-            tags.append(_tag(
-                "CANDIDATE_ERROR", "ITEM_ROW_SPLIT_ERROR", scope=f"candidates[{index}]", confidence=0.68,
-                message="품목 행이 여러 OCR 행으로 분리됐을 가능성이 있습니다.", evidence={"candidate": raw_candidate},
-            ))
-        if raw_candidate.get("column_resolution") in (None, "ambiguous") or any("column" in value for value in uncertainties):
-            numeric_count = sum(raw_candidate.get(key) is not None for key in ("quantity_candidate", "unit_price_candidate", "amount_candidate"))
-            if numeric_count >= 2:
-                tags.append(_tag(
-                    "CANDIDATE_ERROR", "COLUMN_RESOLUTION_ERROR", scope=f"candidates[{index}]", confidence=0.63,
-                    message="후보 숫자 열의 역할 판별이 불확실합니다.", evidence={"candidate": raw_candidate},
-                ))
 
     item_sum = sum(_number(item.get("total_amount")) or 0 for item in final_items)
     total = _number(prediction.get("total_amount"))
@@ -569,21 +508,6 @@ def analyze_finance_evaluation_failure(
             "VALIDATION_ERROR", "SUPPLY_TAX_MISMATCH", confidence=1.0,
             message="공급가액과 부가세의 합이 최종 결제액과 일치하지 않습니다.",
             evidence={"supply_amount": supply, "tax_amount": tax, "total_amount": total},
-        ))
-
-    stated_count = _number(hints.get("stated_item_count"))
-    stated_quantity = _number(hints.get("stated_total_quantity"))
-    final_quantity = sum(_number(item.get("quantity")) or 0 for item in final_items)
-    inconsistent = (
-        stated_count is not None and int(stated_count) != len(final_items)
-    ) or (
-        stated_quantity is not None and abs(stated_quantity - final_quantity) >= 0.01
-    )
-    if inconsistent:
-        tags.append(_tag(
-            "VALIDATION_ERROR", "SUMMARY_ITEM_INCONSISTENCY", confidence=1.0,
-            message="영수증 summary의 품목 수 또는 총수량이 최종 items와 일치하지 않습니다.",
-            evidence={"stated_item_count": stated_count, "actual_item_count": len(final_items), "stated_total_quantity": stated_quantity, "actual_total_quantity": final_quantity},
         ))
 
     # Every mismatched field must have at least one pipeline-responsibility tag.
@@ -607,8 +531,8 @@ def analyze_finance_evaluation_failure(
                 continue
             if not any(tag.get("scope") == scope and (not tag.get("field") or tag.get("field") == field) for tag in tags):
                 tags.append(_tag(
-                    "CANDIDATE_ERROR", "ITEM_FIELD_CANDIDATE_ERROR", scope=scope, field=field, confidence=0.9,
-                    message="품목 필드가 정답과 다르며 올바른 구조화 후보가 확인되지 않았습니다.",
+                    "LLM_ERROR", "ITEM_FIELD_MISMATCH", scope=scope, field=field, confidence=0.9,
+                    message="LLM이 구조화한 품목 필드가 정답과 다릅니다.",
                     evidence={"expected": expected, "actual": actual_item.get(field)},
                 ))
 

@@ -989,10 +989,6 @@ $blue: #1f5f94;
   border-color: #f0cf9f;
   background: #fff8eb;
 }
-.error-tag-candidate_error {
-  border-color: #d7c9f1;
-  background: #f8f4ff;
-}
 .error-tag-llm_error {
   border-color: #efc4c8;
   background: #fff3f4;
@@ -1414,7 +1410,7 @@ $blue: #1f5f94;
   border-radius: 12px;
   box-shadow: 0 5px 18px rgba(39, 54, 77, 0.04);
   > header {
-    padding: 14px 17px;
+    padding: 10px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1424,7 +1420,7 @@ $blue: #1f5f94;
       font-size: 14px;
     }
     p {
-      margin: 4px 0 0;
+      margin: 2px 0 0;
       color: #8190a3;
       font-size: 12px;
     }
@@ -1436,15 +1432,15 @@ $blue: #1f5f94;
   }
 }
 .batch-mismatch-table {
-  max-height: 460px;
+  max-height: 280px;
   overflow: auto;
 }
 .batch-mismatch-row {
   min-width: 1230px;
-  min-height: 58px;
-  padding: 7px 14px;
+  min-height: 44px;
+  padding: 4px 14px;
   display: grid;
-  grid-template-columns: 58px 155px minmax(170px, 1.2fr) 125px minmax(
+  grid-template-columns: 46px 155px minmax(170px, 1.2fr) 125px minmax(
       110px,
       0.8fr
     ) minmax(110px, 0.8fr) minmax(300px, 1.6fr);
@@ -1500,8 +1496,8 @@ $blue: #1f5f94;
   }
 }
 .batch-mismatch-thumbnail {
-  width: 48px;
-  height: 48px;
+  width: 36px;
+  height: 36px;
   padding: 2px;
   display: grid;
   place-items: center;

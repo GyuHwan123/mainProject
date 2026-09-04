@@ -461,7 +461,7 @@ function DailyPerformanceChart({ daily }) {
 }
 
 const ERROR_META = {
-  OCR_ERROR: ['OCR 오류', '#2f75dd'], CANDIDATE_ERROR: ['품목 누락', '#f4aa00'],
+  OCR_ERROR: ['OCR 오류', '#2f75dd'],
   LLM_ERROR: ['환각 / JSON 오류', '#7652d6'], VALIDATION_ERROR: ['검증 오류', '#11a167'],
   PIPELINE_ERROR: ['파이프라인 오류', '#ef5b2a'], UNKNOWN: ['기타 오류', '#8a98aa'],
 };

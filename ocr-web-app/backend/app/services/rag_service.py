@@ -1045,7 +1045,7 @@ async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
 
 async def search(
     user_email: str, query: str, rag_document_id: str | None, limit: int, *,
-    user_role: str = "USER", subscription_tier: str = "PERSONAL",
+    user_role: str = "USER", subscription_tier: str = "FREE",
 ) -> list[dict[str, Any]]:
     retrieval_started = time.perf_counter()
     stage_latency_ms = {

@@ -14,6 +14,13 @@ from app.core.security import get_password_hash, verify_password
 
 router = APIRouter()
 
+PLAN_MONTHLY_AMOUNTS = {"FREE": 0, "ENTERPRISE": 99_000}
+
+
+def _with_plan_amount(subscription: dict[str, Any]) -> dict[str, Any]:
+    tier = str(subscription.get("subscription_tier") or "FREE").upper()
+    return {**subscription, "monthly_amount": PLAN_MONTHLY_AMOUNTS.get(tier, 0)}
+
 
 class CancellationRequest(BaseModel):
     reason: str | None = Field(default=None, max_length=500)
@@ -28,6 +35,7 @@ class PasswordChange(BaseModel):
 class AccountDeletion(BaseModel):
     password: str | None = Field(default=None, max_length=200)
     confirmation: str
+
 
 
 @router.get("/me")
@@ -45,14 +53,14 @@ def get_current_user(user: User = Depends(require_current_user)) -> dict[str, An
 def get_subscription(user: User = Depends(require_current_user)) -> dict[str, Any]:
     subscription = supabase_service.get_subscription(user.email)
     if subscription:
-        return subscription
-    return {
+        return _with_plan_amount(subscription)
+    return _with_plan_amount({
         "subscription_tier": user.subscription_tier,
         "status": "ACTIVE",
         "billing_provider": "MANUAL",
         "current_period_end": None,
         "cancel_at_period_end": False,
-    }
+    })
 
 
 @router.post("/subscription/cancel")
@@ -62,7 +70,7 @@ def cancel_subscription(
 ) -> dict[str, Any]:
     if user.subscription_tier != "ENTERPRISE":
         raise HTTPException(status_code=409, detail="Enterprise 구독만 취소할 수 있습니다.")
-    return supabase_service.request_subscription_cancellation(user.email, payload.reason)
+    return _with_plan_amount(supabase_service.request_subscription_cancellation(user.email, payload.reason))
 
 @router.patch("/me")
 def update_profile(payload: ProfileUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
@@ -98,7 +106,7 @@ def export_user_data(user: User = Depends(require_current_user)) -> Response:
 
 @router.post("/subscription/cancel/revoke")
 def revoke_cancellation(user: User = Depends(require_current_user)) -> dict[str, Any]:
-    return supabase_service.revoke_subscription_cancellation(user.email)
+    return _with_plan_amount(supabase_service.revoke_subscription_cancellation(user.email))
 
 @router.get("/billing-history")
 def billing_history(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:

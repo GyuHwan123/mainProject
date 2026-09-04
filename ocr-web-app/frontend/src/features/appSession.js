@@ -20,7 +20,7 @@ export function saveAppSession(session) {
   localStorage.setItem(EMAIL_KEY, session.user_email);
   if (session.user_name) localStorage.setItem(NAME_KEY, session.user_name);
   localStorage.setItem(ROLE_KEY, session.user_role || 'USER');
-  localStorage.setItem(SUBSCRIPTION_TIER_KEY, session.user_subscription_tier || 'PERSONAL');
+  localStorage.setItem(SUBSCRIPTION_TIER_KEY, session.user_subscription_tier || 'FREE');
 }
 
 export function clearAppSession() {
@@ -39,7 +39,7 @@ export function getAppUser() {
     name: localStorage.getItem(NAME_KEY) || '',
     email: localStorage.getItem(EMAIL_KEY) || '',
     role: localStorage.getItem(ROLE_KEY) || 'USER',
-    subscriptionTier: localStorage.getItem(SUBSCRIPTION_TIER_KEY) || 'PERSONAL',
+    subscriptionTier: localStorage.getItem(SUBSCRIPTION_TIER_KEY) || 'FREE',
   };
 }
 

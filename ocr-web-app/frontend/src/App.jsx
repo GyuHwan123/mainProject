@@ -9,6 +9,8 @@ import MyPage from './pages/MyPage';
 import OCRPage from './pages/OCRPage';
 import ReportPage from './pages/ReportPage';
 import ChatPage from './pages/ChatPage';
+import PaymentSuccessPage from './pages/PaymentSuccessPage';
+import PaymentFailPage from './pages/PaymentFailPage';
 
 function ProtectedRoute({ children }) {
   if (!hasAppSession()) {
@@ -60,6 +62,8 @@ export default function App() {
         <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
         <Route path="/reports" element={hasSession ? null : <Navigate to="/login" replace />} />
         <Route path="/mypage" element={<ProtectedRoute><MyPage /></ProtectedRoute>} />
+        <Route path="/payment/success" element={<ProtectedRoute><PaymentSuccessPage /></ProtectedRoute>} />
+        <Route path="/payment/fail" element={<ProtectedRoute><PaymentFailPage /></ProtectedRoute>} />
       </Routes>
     </>
   );

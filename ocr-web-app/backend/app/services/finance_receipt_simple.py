@@ -1,8 +1,7 @@
 """Minimal one-call receipt pipeline.
 
-The model extracts one compact JSON object.  Code validates the answer and
-decides PASS/REVIEW; it deliberately does not repair model output with OCR
-candidate graphs, retries, or merchant-specific recovery rules.
+The model extracts one compact JSON object from OCR text. Code validates the
+answer and decides PASS/REVIEW without another model call.
 """
 from __future__ import annotations
 
@@ -16,13 +15,17 @@ from app.api.routes.chatbot import generate
 from app.constants.finance_taxonomy import (
     ALLOWED_EXPENSE_CATEGORIES,
     CATEGORY_TO_DOCUMENT_TYPE,
+    CATEGORY_CLASSIFICATION_POLICIES,
+    CATEGORY_DECISION_RULES,
     refine_expense_category,
 )
 from app.core.config import settings
 from app.services.finance_normalization import normalize_date
+from app.services.receipt_item_grounding import ground_items
 
 
-FINANCE_PROMPT_VERSION = "receipt-simple-v1.1-one-call-amount-evidence"
+FINANCE_PROMPT_VERSION = "receipt-simple-v1.3-compact-category-decision-rules"
+RECEIPT_PIPELINE_VERSION = "receipt-simple-v3.1-post-llm-grounding"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
 RECEIPT_LLM_TIMEOUT_SECONDS = settings.RECEIPTS_LLM_TIMEOUT_SECONDS
@@ -134,43 +137,33 @@ def _preflight_review_reasons(text: str) -> list[str]:
     return reasons
 
 
-def _simple_receipt_prompt(text: str, filename: str) -> tuple[str, dict[str, Any]]:
+def _simple_receipt_prompt(
+    text: str, filename: str, pages: list[dict[str, Any]] | None = None,
+) -> tuple[str, dict[str, Any]]:
     ocr_text, diagnostics = _bounded_ocr_text(text)
+    # Pages are used only after generation; the prompt remains text-only.
     amount_evidence = _extract_amount_evidence(text)
     diagnostics["amount_evidence"] = amount_evidence
-    category_lines = "\n".join(f"- {value}" for value in EXPENSE_CATEGORIES)
-    prompt = f"""다음 OCR은 한국 영수증입니다. OCR에 실제로 보이는 값만 사용해 JSON 객체 하나로 반환하세요.
-설명, 마크다운, 코드 블록은 출력하지 마세요. 알 수 없는 값은 null, 품목 근거가 없으면 items는 []입니다.
-
-반환 키:
-merchant, transaction_date, expense_category, supply_amount, tax_amount,
-discount_amount, total_amount, payment_method, items
-
-items의 키:
-name, quantity, unit_price, total_amount
-
+    category_lines = "\n".join(
+        f"- {value}: {CATEGORY_CLASSIFICATION_POLICIES[value]}" for value in EXPENSE_CATEGORIES
+    )
+    compact_amounts = {key: value for key, value in amount_evidence.items() if key != "labels"}
+    prompt = f"""한국 영수증 OCR을 JSON 객체 하나로 구조화하세요. 설명·마크다운 없이 간결하게 출력하세요.
+OCR에 직접 나타나야 하는 추출값이 없으면 null, 품목 근거가 없으면 items=[]입니다.
+반환 키: merchant, transaction_date, expense_category, supply_amount, tax_amount, discount_amount, total_amount, items
+items의 키: name, quantity, unit_price, total_amount
 규칙:
-1. transaction_date는 YYYY-MM-DD입니다.
-2. 금액과 수량은 숫자입니다. 할인·쿠폰·소계·부가세·결제 행을 품목으로 만들지 마세요. 단, 쇼핑백·포장비·배달비처럼 실제로 대가를 지불한 유상 거래 행은 품목입니다.
-3. total_amount는 실제 최종 결제·승인·받을 금액입니다.
-4. supply_amount는 과세상품의 세전 금액과 면세상품금액을 합한 전체 공급액입니다.
-5. 면세상품만 있으면 supply_amount는 면세상품금액이고 tax_amount는 0입니다.
-6. 과세상품과 면세상품이 함께 있으면 supply_amount는 과세상품가액과 면세상품가액의 합입니다. 예: 과세상품가액 38,000, 면세상품가액 100, 부가세 3,800이면 supply_amount=38,100입니다.
-7. 과세액·과세물품가액은 세전 공급액이며 부가세액이 아닙니다. 부가세·부가세액·VAT만 tax_amount입니다.
-8. '부가세포함 (2,109)'처럼 결제금액 아래 괄호로 표시된 값은 tax_amount입니다.
-9. 아래 금액 근거는 OCR 라벨과 숫자의 연결이 명확한 값입니다. null인 값은 추정하지 마세요.
-10. 일반적인 상품 행이 없는 택시·승차권·미용·서비스 승인전표는 items=[]를 허용합니다.
-11. 공급가액과 부가세가 할인 전 세금 요약으로 명시된 경우 그 OCR 값을 유지하세요. 공급가액+부가세가 최종 결제액과 다르다는 이유만으로 값을 다시 계산하지 마세요.
-12. expense_category는 아래 목록에서만 고릅니다.
-13. payment_method는 반드시 "카드", "현금", "기타" 중 하나만 사용합니다. 카드사명, 신용카드, 체크카드, 간편결제의 카드 승인은 모두 "카드"로, 현금영수증과 CASH는 "현금"으로, 계좌이체 등 나머지 결제수단은 "기타"로 반환하세요. 근거가 없으면 null입니다.
+- 날짜는 YYYY-MM-DD, 금액·수량은 숫자.
+- 할인·쿠폰·소계·세금·결제 행은 품목에서 제외. 쇼핑백·포장비·배달비 등 유상 거래는 포함.
+- total_amount는 최종 결제·승인 금액. 공급액·세액은 아래 금액 근거 우선, 근거 없는 값은 추정하지 마세요.
+- 할인 전 세금 요약은 결제액과 달라도 다시 계산하지 마세요.
+- expense_category는 추출값이 아니라 분류값입니다. 상호·품목·서비스 근거가 하나라도 있으면 14개 중 하나를 선택하고, 거래 성격을 판단할 근거가 전혀 없을 때만 null.
+- 카테고리 판정: {CATEGORY_DECISION_RULES}
+- 광고·환불 안내의 브랜드·상품은 분류 근거에서 제외하세요.
+[카테고리 기준]
 {category_lines}
-
-[파일명]
-{filename}
-
 [규칙 기반 금액 근거]
-{json.dumps(amount_evidence, ensure_ascii=False)}
-
+{json.dumps(compact_amounts, ensure_ascii=False, separators=(",", ":"))}
 [OCR 행]
 {ocr_text}
 """
@@ -185,6 +178,7 @@ def _generation_metrics(response: Any) -> dict[str, Any]:
         "prompt_eval_count": int(metrics.get("prompt_eval_count") or 0),
         "eval_count": int(metrics.get("eval_count") or 0),
         "done_reason": str(metrics.get("done_reason") or ""),
+        "load_duration_ms": round(float(metrics.get("load_duration") or 0) / 1_000_000, 2),
         "total_duration_ms": round(float(metrics.get("total_duration") or 0) / 1_000_000, 2),
         "prompt_eval_duration_ms": round(float(metrics.get("prompt_eval_duration") or 0) / 1_000_000, 2),
         "eval_duration_ms": round(float(metrics.get("eval_duration") or 0) / 1_000_000, 2),
@@ -474,6 +468,7 @@ async def _classify_receipt_with_model(
             "total_amount": None, "payment_method": None, "items": [],
             "automation_validation": {"decision": "REVIEW", "reasons": preflight_reasons, "checks": {}},
             "llm_trace": {
+                "pipeline_version": RECEIPT_PIPELINE_VERSION,
                 "model_name": model_name, "prompt_version": FINANCE_PROMPT_VERSION,
                 "call_count": 0, "call_status": "skipped_preflight_review",
                 "input_chars": 0, "output_chars": 0, "latency_ms": 0, "ollama": {},
@@ -482,7 +477,7 @@ async def _classify_receipt_with_model(
             "_model_name": model_name,
         }
 
-    prompt, input_diagnostics = _simple_receipt_prompt(text, filename)
+    prompt, input_diagnostics = _simple_receipt_prompt(text, filename, pages)
     started = perf_counter()
     raw = await _generate_receipt_json(
         prompt,
@@ -498,8 +493,11 @@ async def _classify_receipt_with_model(
     if not isinstance(parsed, dict):
         raise ValueError("receipt JSON object expected")
     _reconcile_amounts(parsed, text)
+    parsed["payment_method"], parsed["payment_method_evidence"] = _payment_from_ocr(text)
+    parsed["item_grounding"] = ground_items(parsed.get("items"), text, pages)
     parsed["automation_validation"] = _simple_validation(parsed, text)
     parsed["llm_trace"] = {
+        "pipeline_version": RECEIPT_PIPELINE_VERSION,
         "model_name": model_name,
         "prompt_version": FINANCE_PROMPT_VERSION,
         "call_count": 1,
@@ -535,6 +533,7 @@ async def _classify_receipt(
                 "checks": {},
             },
             "llm_trace": {
+                "pipeline_version": RECEIPT_PIPELINE_VERSION,
                 "model_name": RECEIPTS_MODEL_NAME,
                 "prompt_version": FINANCE_PROMPT_VERSION,
                 "call_count": 1,
@@ -545,15 +544,29 @@ async def _classify_receipt(
         }
 
 
-def _normalize_payment_method(value: Any) -> str | None:
-    normalized = str(value or "").strip().lower()
-    if not normalized:
-        return None
-    if any(token in normalized for token in ("카드", "card", "credit", "debit", "체크", "신용", "간편결제")):
-        return "카드"
-    if any(token in normalized for token in ("현금", "cash")):
-        return "현금"
-    return "기타"
+def _payment_from_ocr(text: str) -> tuple[str | None, dict[str, Any]]:
+    """Use transaction evidence only; model guesses never fill missing evidence."""
+    evidence: dict[str, list[str]] = {"카드": [], "현금": []}
+    for raw in str(text or "").splitlines():
+        line = re.sub(r"\s+", "", raw).lower()
+        if not line or re.search(r"환불|반품|교환|혜택|프로모션|적립|할인행사|가능|안내|미발급|발급불가|발급대상", line):
+            continue
+        if re.search(r"(?:카드|현금|cash)(?:결제|금액)?[:：]?(?:0|0\.00)원?$", line):
+            continue
+        card = bool(re.search(r"신용카드|신용[.·]?승인|체크카드|카드(?:결제|승인|번호)|(?:신한|현대|삼성|롯데|국민|하나|우리|농협|비씨|bc)카드|credit|debit", line))
+        card = card or bool(re.fullmatch(r"카드(?:[:：]?[0-9,]+원?)?", line))
+        cash = bool(re.search(r"현금영수증|현금(?:결제|수납)|(?<![a-z])cash(?![a-z])", line))
+        cash = cash or bool(re.fullmatch(r"현금(?:[:：]?[0-9,]+원?)?", line))
+        if card:
+            evidence["카드"].append(raw.strip())
+        if cash:
+            evidence["현금"].append(raw.strip())
+    matches = [method for method, rows in evidence.items() if rows]
+    return (matches[0] if len(matches) == 1 else None), {
+        "policy": "ocr_card_cash_or_null",
+        "reason": "unique_evidence" if len(matches) == 1 else "conflicting_evidence" if matches else "missing_evidence",
+        "evidence": evidence,
+    }
 
 
 def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, Any]:
@@ -571,7 +584,8 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         if total_quantity.is_integer():
             total_quantity = int(total_quantity)
     grounded_card, card_evidence = _ground_masked_card_number(None, text)
-    payment_method = _normalize_payment_method(result.get("payment_method"))
+    payment_method, payment_evidence = _payment_from_ocr(text)
+    result["payment_method_evidence"] = payment_evidence
     result.update({
         "doc_type": document_type,
         "document_type": document_type,

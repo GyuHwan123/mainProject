@@ -1027,7 +1027,7 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     {batchInsightsReady && <>
       <section className="batch-insight-grid single-batch-insights">
         <section className="eval-summary-grid batch-selection-metrics">{scoredSummaries.map((summary) => <article key={summary.model}>
-          <span className="selection-metric-title"><small>일괄 평가 결과</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>문서유형·총수량·카드번호처럼 코드에서 파생되는 값은 모델 점수에서 제외합니다.</span><em>품질 게이트: PASS 영수증이 존재하고 자동 승인 정확도가 95% 이상</em></span></span>
+          <span className="selection-metric-title"><small>일괄 평가 결과</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>문서유형·총수량처럼 코드에서 파생되는 값은 모델 점수에서 제외합니다. 카드번호는 정답 데이터에 값이 있어도 필드 정확도와 모델 점수 모두에서 제외합니다.</span><em>품질 게이트: PASS 영수증이 존재하고 자동 승인 정확도가 95% 이상</em></span></span>
           <h2 title={summary.model}>{summary.model}</h2><strong>{summary.finalScore.toFixed(1)}점</strong><p>{summary.documents}건 평가 · {summary.qualityGate ? '자동 승인 게이트 통과' : '자동 승인 게이트 재검토'}</p>
           <dl>
             <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 100</dd></div>

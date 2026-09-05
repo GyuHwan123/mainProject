@@ -383,7 +383,7 @@ def score_fields(
     evaluated = 0
     correct = 0
     for field in CORE_FIELDS:
-        if field not in truth:
+        if field == "card_number" or field not in truth:
             continue
         matched = _values_match(field, truth.get(field), prediction.get(field), ocr_pages)
         details[field] = {"expected": truth.get(field), "actual": prediction.get(field), "correct": matched}

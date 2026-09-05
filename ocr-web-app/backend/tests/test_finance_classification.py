@@ -16,7 +16,7 @@ from app.api.routes.finance import (  # noqa: E402
     _simple_receipt_prompt,
 )
 from app.services.finance_receipt_simple import _reconcile_amounts  # noqa: E402
-from app.services.finance_receipt_simple import _simple_validation  # noqa: E402
+from app.services.finance_receipt_simple import _payment_from_ocr, _simple_validation  # noqa: E402
 
 
 SAMPLE_OCR = """GS25 청주테크노점
@@ -34,12 +34,11 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_simple_v1_prompt_requests_all_fields_once(self):
         prompt, diagnostics = _simple_receipt_prompt(SAMPLE_OCR, "receipt.jpg")
 
-        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1.1-one-call-amount-evidence")
+        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1.2-compact-category-ocr-payment")
         self.assertIn("merchant, transaction_date, expense_category", prompt)
         self.assertIn("items의 키", prompt)
-        self.assertIn("과세상품의 세전 금액과 면세상품금액을 합한 전체 공급액", prompt)
-        self.assertIn("면세상품만 있으면 supply_amount는 면세상품금액이고 tax_amount는 0", prompt)
-        self.assertIn("supply_amount=38,100", prompt)
+        self.assertIn("분류명이 OCR에 직접 없어도 됩니다", prompt)
+        self.assertNotIn("payment_method", prompt)
         self.assertIn("쇼핑백·포장비·배달비", prompt)
         self.assertIn("할인 전 세금 요약", prompt)
         self.assertTrue(all(category in prompt for category in EXPENSE_CATEGORIES))
@@ -95,6 +94,37 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["llm_trace"]["call_count"], 0)
         self.assertEqual(result["automation_validation"]["decision"], "REVIEW")
 
+    async def test_pages_do_not_change_the_single_llm_prompt_or_validation(self):
+        from test_receipt_item_grounding import page_of, cell, header, coffee
+
+        text, page = page_of([cell('테스트 카페 2026-09-05', 0, 0)], header(),
+                             coffee(), coffee(110, name='카페라떼', q='3', u='5000', a='15000'),
+                             coffee(150, name='녹차라떼', q='4', u='6000', a='24000'),
+                             [cell('결제금액', 0, 190), cell('27,000', 420, 190)])
+        raw = json.dumps({"merchant": "테스트 카페", "transaction_date": "2026-09-05",
+                          "expense_category": "카페/음료", "total_amount": 27000,
+                          "items": [{"name": "아메리카노", "quantity": 2, "unit_price": 4500, "total_amount": 8000}]}, ensure_ascii=False)
+        generator = AsyncMock(return_value=raw)
+        with patch('app.api.routes.finance.generate', generator):
+            result = await _classify_receipt_with_model(text, 'receipt.jpg', 'gemma3:4b', [page])
+        self.assertEqual(generator.await_count, 1)
+        prompt = generator.await_args.args[0]
+        self.assertNotIn('[품목 후보:', prompt)
+        self.assertEqual(prompt, _simple_receipt_prompt(text, 'receipt.jpg')[0])
+        self.assertEqual(prompt.count('아메리카노'), 1)
+        self.assertNotIn('item_candidates', result['llm_trace']['input_diagnostics'])
+        self.assertEqual(result['llm_trace']['response_text'], raw)
+        self.assertIn('ITEM_SUM_MISMATCH', result['automation_validation']['reasons'])
+        self.assertFalse(result['automation_validation']['warnings'])
+        self.assertEqual(result['items'][0]['total_amount'], 9000)
+        self.assertEqual(result['item_grounding']['changed_items'], 1)
+
+    def test_layout_fallback_preserves_text_prompt(self):
+        baseline, _ = _simple_receipt_prompt(SAMPLE_OCR, 'receipt.jpg')
+        stale, diagnostics = _simple_receipt_prompt(SAMPLE_OCR, 'receipt.jpg', [{'text': '다른 문서', 'items': []}])
+        self.assertEqual(baseline, stale)
+        self.assertNotIn('item_candidates', diagnostics)
+
     def test_normalization_does_not_repair_wrong_amount(self):
         result = {
             "merchant": "GS25 청주테크노점",
@@ -127,8 +157,38 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(card["payment_method"], "카드")
         self.assertEqual(card["structured_data"]["payment_method"], "카드")
         self.assertEqual(cash["payment_method"], "현금")
-        self.assertEqual(unknown["payment_method"], "기타")
+        self.assertIsNone(unknown["payment_method"])
         self.assertIsNone(missing["payment_method"])
+
+    def test_payment_transaction_evidence(self):
+        cases = [
+            ("현대카드\n지급방법:일시불", "카드"),
+            ("신 용 카 드", "카드"),
+            ("신용승인", "카드"),
+            ("카드결제\nCASHIER:관리자", "카드"),
+            ("CASHIER", None),
+            ("현금영수증\n승인번호:123456", "현금"),
+            ("결제방식 결제완료", None),
+            ("계좌이체 10,000", None),
+            ("현대카드 할인행사 안내\n현금영수증 발급 가능", None),
+            ("카드결제 10,000\n현금결제 5,000", None),
+            ("카드결제 10,000\n현금 0", "카드"),
+            ("현금결제 10,000\n카드 0", "현금"),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                self.assertEqual(_payment_from_ocr(text)[0], expected)
+
+    async def test_payment_recovers_model_null_without_another_call(self):
+        raw = json.dumps({"merchant": "GS25", "transaction_date": "2026-02-20",
+                          "expense_category": "식품/장보기", "total_amount": 6900,
+                          "payment_method": None, "items": []}, ensure_ascii=False)
+        generator = AsyncMock(return_value=raw)
+        with patch("app.api.routes.finance.generate", generator):
+            result = await _classify_receipt_with_model(SAMPLE_OCR, "receipt.jpg", "gemma3:4b")
+        self.assertEqual(result["payment_method"], "카드")
+        self.assertEqual(result["llm_trace"]["response_text"], raw)
+        self.assertEqual(generator.await_count, 1)
 
     def test_normalization_preserves_unknown_supply_and_tax_as_null(self):
         result = {

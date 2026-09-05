@@ -1,0 +1,7287 @@
+{
+  "version": "bbox-item-grounding-v3",
+  "extra_llm_calls": 0,
+  "live_latency_measured": false,
+  "cases": [
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_006.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "택시 이용료",
+          "quantity": 1,
+          "unit_price": 5300,
+          "total_amount": 5300
+        }
+      ],
+      "after_items": [
+        {
+          "name": "택시 이용료",
+          "quantity": 1,
+          "unit_price": 5300,
+          "total_amount": 5300
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "택시 이용료",
+              "quantity": 1,
+              "unit_price": 5300,
+              "total_amount": 5300
+            },
+            "corrected_item": {
+              "name": "택시 이용료",
+              "quantity": 1,
+              "unit_price": 5300,
+              "total_amount": 5300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5300,
+              "total_amount": 5300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 1,
+        "after_count": 1,
+        "elapsed_ms": 3.718
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "택시 이용",
+          "before": "택시 이용료",
+          "after": "택시 이용료",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 5300,
+          "before": 5300,
+          "after": 5300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 5300,
+          "before": 5300,
+          "after": 5300,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_008.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "승차권",
+          "quantity": 1,
+          "unit_price": 10500,
+          "total_amount": 10500
+        }
+      ],
+      "after_items": [
+        {
+          "name": "승차권",
+          "quantity": 1,
+          "unit_price": 10500,
+          "total_amount": 10500
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "승차권",
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "corrected_item": {
+              "name": "승차권",
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 0,
+        "after_count": 1,
+        "elapsed_ms": 1.641
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "시외/고속버스 승차권",
+          "before": "승차권",
+          "after": "승차권",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 10500,
+          "before": 10500,
+          "after": 10500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 10500,
+          "before": 10500,
+          "after": 10500,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_009.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "승차권",
+          "quantity": 1,
+          "unit_price": 10500,
+          "total_amount": 10500
+        }
+      ],
+      "after_items": [
+        {
+          "name": "승차권",
+          "quantity": 1,
+          "unit_price": 10500,
+          "total_amount": 10500
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "승차권",
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "corrected_item": {
+              "name": "승차권",
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 10500,
+              "total_amount": 10500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 0,
+        "after_count": 1,
+        "elapsed_ms": 0.85
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "시외/고속버스 승차권",
+          "before": "승차권",
+          "after": "승차권",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 10500,
+          "before": 10500,
+          "after": 10500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 10500,
+          "before": 10500,
+          "after": 10500,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_021.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "망고 스무디+떨",
+          "quantity": 2,
+          "unit_price": 6200,
+          "total_amount": 12400
+        },
+        {
+          "name": "망고주스",
+          "quantity": 1,
+          "unit_price": 3800,
+          "total_amount": 3800
+        },
+        {
+          "name": "공차 허니 자몽 금 블랙티(10T)",
+          "quantity": 1,
+          "unit_price": 4500,
+          "total_amount": 4500
+        }
+      ],
+      "after_items": [
+        {
+          "name": "망고 스무디+떨",
+          "quantity": 2,
+          "unit_price": 6200,
+          "total_amount": 12400
+        },
+        {
+          "name": "망고주스",
+          "quantity": 1,
+          "unit_price": 3800,
+          "total_amount": 3800
+        },
+        {
+          "name": "공차 허니 자몽 금 블랙티(10T)",
+          "quantity": 1,
+          "unit_price": 4500,
+          "total_amount": 4500
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "망고 스무디+떨",
+              "quantity": 2,
+              "unit_price": 6200,
+              "total_amount": 12400
+            },
+            "corrected_item": {
+              "name": "망고 스무디+떨",
+              "quantity": 2,
+              "unit_price": 6200,
+              "total_amount": 12400
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 2,
+              "unit_price": 6200,
+              "total_amount": 12400
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "망고주스",
+              "quantity": 1,
+              "unit_price": 3800,
+              "total_amount": 3800
+            },
+            "corrected_item": {
+              "name": "망고주스",
+              "quantity": 1,
+              "unit_price": 3800,
+              "total_amount": 3800
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3800,
+              "total_amount": 3800
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "공차 허니 자몽 금 블랙티(10T)",
+              "quantity": 1,
+              "unit_price": 4500,
+              "total_amount": 4500
+            },
+            "corrected_item": {
+              "name": "공차 허니 자몽 금 블랙티(10T)",
+              "quantity": 1,
+              "unit_price": 4500,
+              "total_amount": 4500
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 4500,
+              "total_amount": 4500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 3,
+        "logical_row_count": 1,
+        "after_count": 3,
+        "elapsed_ms": 2.648
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "망고 스무디",
+          "before": "망고 스무디+떨",
+          "after": "망고 스무디+떨",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 2,
+          "before": 2,
+          "after": 2,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 6200,
+          "before": 6200,
+          "after": 6200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 12400,
+          "before": 12400,
+          "after": 12400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "망고주스",
+          "before": "망고주스",
+          "after": "망고주스",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 3800,
+          "before": 3800,
+          "after": 3800,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 3800,
+          "before": 3800,
+          "after": 3800,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "공차 허니 자몽 블랙티(10T)",
+          "before": "공차 허니 자몽 금 블랙티(10T)",
+          "after": "공차 허니 자몽 금 블랙티(10T)",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 4500,
+          "before": 4500,
+          "after": 4500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 4500,
+          "before": 4500,
+          "after": 4500,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_025.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "치즈라볶이",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "짜빠구리범벅세트",
+          "quantity": 1,
+          "unit_price": 14900,
+          "total_amount": 14900
+        },
+        {
+          "name": "플티슈",
+          "quantity": 4,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "할맥500ml",
+          "quantity": 7,
+          "unit_price": 30100,
+          "total_amount": 21070
+        },
+        {
+          "name": "역전하이볼",
+          "quantity": 1,
+          "unit_price": 8000,
+          "total_amount": 8000
+        },
+        {
+          "name": "염통꼬치",
+          "quantity": 1,
+          "unit_price": 13000,
+          "total_amount": 13000
+        },
+        {
+          "name": "모듬소세지",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "허니온",
+          "quantity": 1,
+          "unit_price": 8000,
+          "total_amount": 8000
+        },
+        {
+          "name": "고구마프라이즈",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        }
+      ],
+      "after_items": [
+        {
+          "name": "치즈라볶이",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "짜빠구리범벅세트",
+          "quantity": 1,
+          "unit_price": 14900,
+          "total_amount": 14900
+        },
+        {
+          "name": "플티슈",
+          "quantity": 4,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "할맥500ml",
+          "quantity": 7,
+          "unit_price": 30100,
+          "total_amount": 21070
+        },
+        {
+          "name": "역전하이볼",
+          "quantity": 1,
+          "unit_price": 8000,
+          "total_amount": 8000
+        },
+        {
+          "name": "염통꼬치",
+          "quantity": 1,
+          "unit_price": 13000,
+          "total_amount": 13000
+        },
+        {
+          "name": "모듬소세지",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "허니온",
+          "quantity": 1,
+          "unit_price": 8000,
+          "total_amount": 8000
+        },
+        {
+          "name": "고구마프라이즈",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "치즈라볶이",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "corrected_item": {
+              "name": "치즈라볶이",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "짜빠구리범벅세트",
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "corrected_item": {
+              "name": "짜빠구리범벅세트",
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "플티슈",
+              "quantity": 4,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "플티슈",
+              "quantity": 4,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 4,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "name_not_grounded"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "할맥500ml",
+              "quantity": 7,
+              "unit_price": 30100,
+              "total_amount": 21070
+            },
+            "corrected_item": {
+              "name": "할맥500ml",
+              "quantity": 7,
+              "unit_price": 30100,
+              "total_amount": 21070
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 7,
+              "unit_price": 30100,
+              "total_amount": 21070
+            },
+            "changes": {},
+            "reason": "ambiguous_numeric_row",
+            "matched_text": "할맥500m1",
+            "match_score": 1.0,
+            "page": 1,
+            "name_boxes": [
+              [
+                119.0,
+                654.0,
+                256.0,
+                697.0
+              ]
+            ]
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "역전하이볼",
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "corrected_item": {
+              "name": "역전하이볼",
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 5,
+            "original_item": {
+              "name": "염통꼬치",
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "corrected_item": {
+              "name": "염통꼬치",
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 6,
+            "original_item": {
+              "name": "모듬소세지",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "모듬소세지",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "ambiguous_numeric_row",
+            "matched_text": "모듬소세지",
+            "match_score": 1.0,
+            "page": 1,
+            "name_boxes": [
+              [
+                123.0,
+                753.0,
+                260.0,
+                793.0
+              ]
+            ]
+          },
+          {
+            "index": 7,
+            "original_item": {
+              "name": "허니온",
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "corrected_item": {
+              "name": "허니온",
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "허니온 고구마프라이즈",
+              "numbers": [
+                {
+                  "text": "8,000",
+                  "bbox": [
+                    608.0,
+                    765.0,
+                    688.0,
+                    806.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 8000,
+              "total_amount": 8000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 8,
+            "original_item": {
+              "name": "고구마프라이즈",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "고구마프라이즈",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "허니온 고구마프라이즈",
+              "numbers": [
+                {
+                  "text": "8,000",
+                  "bbox": [
+                    608.0,
+                    765.0,
+                    688.0,
+                    806.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "insufficient_numeric_evidence",
+            "matched_text": "고구마프라이즈",
+            "match_score": 1.0,
+            "page": 1,
+            "name_boxes": [
+              [
+                125.0,
+                783.0,
+                313.0,
+                826.0
+              ]
+            ],
+            "numbers": [
+              {
+                "text": "8,000",
+                "bbox": [
+                  608.0,
+                  765.0,
+                  688.0,
+                  806.0
+                ]
+              }
+            ]
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 9,
+        "logical_row_count": 4,
+        "after_count": 9,
+        "elapsed_ms": 6.204
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "치즈라볶이",
+          "before": "치즈라볶이",
+          "after": "치즈라볶이",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "짜빠구리범벅세트",
+          "before": "짜빠구리범벅세트",
+          "after": "짜빠구리범벅세트",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 14900,
+          "before": 14900,
+          "after": 14900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 14900,
+          "before": 14900,
+          "after": 14900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "할맥 500ml",
+          "before": "할맥500ml",
+          "after": "할맥500ml",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 6,
+          "before": 7,
+          "after": 7,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 3700,
+          "before": 30100,
+          "after": 30100,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 22200,
+          "before": 21070,
+          "after": 21070,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "역전하이볼",
+          "before": "역전하이볼",
+          "after": "역전하이볼",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 7,
+          "before": 1,
+          "after": 1,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 4300,
+          "before": 8000,
+          "after": 8000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 30100,
+          "before": 8000,
+          "after": 8000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "염통꼬치",
+          "before": "염통꼬치",
+          "after": "염통꼬치",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 8000,
+          "before": 13000,
+          "after": 13000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 8000,
+          "before": 13000,
+          "after": 13000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "name",
+          "expected": "모듬소세지",
+          "before": "모듬소세지",
+          "after": "모듬소세지",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "unit_price",
+          "expected": 13000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "total_amount",
+          "expected": 13000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 6,
+          "field": "name",
+          "expected": "고구마프라이즈",
+          "before": "고구마프라이즈",
+          "after": "고구마프라이즈",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "unit_price",
+          "expected": 8000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 6,
+          "field": "total_amount",
+          "expected": 8000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 2,
+        "unit_price": 5,
+        "total_amount": 5,
+        "item_count": 1,
+        "EXTRA_ITEM": 2,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 2,
+        "unit_price": 5,
+        "total_amount": 5,
+        "item_count": 1,
+        "EXTRA_ITEM": 2,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_027.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "치즈돈까스",
+          "quantity": 1,
+          "unit_price": 4000,
+          "total_amount": 4000
+        },
+        {
+          "name": "치즈돈까스",
+          "quantity": 5,
+          "unit_price": 20000,
+          "total_amount": 100000
+        },
+        {
+          "name": "대리·약치즈돈까",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "대리·약치즈돈까",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 2,
+          "unit_price": 7800,
+          "total_amount": 15600
+        },
+        {
+          "name": "살만주 300ml",
+          "quantity": 1,
+          "unit_price": 2200,
+          "total_amount": 2200
+        },
+        {
+          "name": "살만주 300ml",
+          "quantity": 1,
+          "unit_price": 2200,
+          "total_amount": 2200
+        },
+        {
+          "name": "오파구리범벅",
+          "quantity": 1,
+          "unit_price": 13900,
+          "total_amount": 13900
+        },
+        {
+          "name": "차돌지럼",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "술알파인애플",
+          "quantity": 2,
+          "unit_price": 12000,
+          "total_amount": 24000
+        },
+        {
+          "name": "시온은황도",
+          "quantity": 1,
+          "unit_price": 5000,
+          "total_amount": 5000
+        }
+      ],
+      "after_items": [
+        {
+          "name": "치즈돈까스",
+          "quantity": 1,
+          "unit_price": 4000,
+          "total_amount": 4000
+        },
+        {
+          "name": "치즈돈까스",
+          "quantity": 5,
+          "unit_price": 20000,
+          "total_amount": 100000
+        },
+        {
+          "name": "대리·약치즈돈까",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "대리·약치즈돈까",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "살만주 500ml",
+          "quantity": 2,
+          "unit_price": 7800,
+          "total_amount": 15600
+        },
+        {
+          "name": "살만주 300ml",
+          "quantity": 1,
+          "unit_price": 2200,
+          "total_amount": 2200
+        },
+        {
+          "name": "살만주 300ml",
+          "quantity": 1,
+          "unit_price": 2200,
+          "total_amount": 2200
+        },
+        {
+          "name": "오파구리범벅",
+          "quantity": 1,
+          "unit_price": 13900,
+          "total_amount": 13900
+        },
+        {
+          "name": "차돌지럼",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "술알파인애플",
+          "quantity": 2,
+          "unit_price": 12000,
+          "total_amount": 24000
+        },
+        {
+          "name": "시온은황도",
+          "quantity": 1,
+          "unit_price": 5000,
+          "total_amount": 5000
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "치즈돈까스",
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_amount": 4000
+            },
+            "corrected_item": {
+              "name": "치즈돈까스",
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_amount": 4000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 4000,
+              "total_amount": 4000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "치즈돈까스",
+              "quantity": 5,
+              "unit_price": 20000,
+              "total_amount": 100000
+            },
+            "corrected_item": {
+              "name": "치즈돈까스",
+              "quantity": 5,
+              "unit_price": 20000,
+              "total_amount": 100000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 5,
+              "unit_price": 20000,
+              "total_amount": 100000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "대리·약치즈돈까",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "corrected_item": {
+              "name": "대리·약치즈돈까",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "대리·약치즈돈까",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "corrected_item": {
+              "name": "대리·약치즈돈까",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "살만주 500ml",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "corrected_item": {
+              "name": "살만주 500ml",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 5,
+            "original_item": {
+              "name": "살만주 500ml",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "corrected_item": {
+              "name": "살만주 500ml",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 6,
+            "original_item": {
+              "name": "살만주 500ml",
+              "quantity": 2,
+              "unit_price": 7800,
+              "total_amount": 15600
+            },
+            "corrected_item": {
+              "name": "살만주 500ml",
+              "quantity": 2,
+              "unit_price": 7800,
+              "total_amount": 15600
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 2,
+              "unit_price": 7800,
+              "total_amount": 15600
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 7,
+            "original_item": {
+              "name": "살만주 300ml",
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "corrected_item": {
+              "name": "살만주 300ml",
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 8,
+            "original_item": {
+              "name": "살만주 300ml",
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "corrected_item": {
+              "name": "살만주 300ml",
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 2200,
+              "total_amount": 2200
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 9,
+            "original_item": {
+              "name": "오파구리범벅",
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "corrected_item": {
+              "name": "오파구리범벅",
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "0파구리범벅",
+              "numbers": [
+                {
+                  "text": "13,900",
+                  "bbox": [
+                    392.0,
+                    731.0,
+                    503.0,
+                    778.0
+                  ]
+                },
+                {
+                  "text": "13,900",
+                  "bbox": [
+                    673.0,
+                    726.0,
+                    793.0,
+                    778.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 10,
+            "original_item": {
+              "name": "차돌지럼",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "corrected_item": {
+              "name": "차돌지럼",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "차돌지럼",
+              "numbers": [
+                {
+                  "text": "4,000",
+                  "bbox": [
+                    402.0,
+                    773.0,
+                    504.0,
+                    821.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    565.0,
+                    781.0,
+                    586.0,
+                    814.0
+                  ]
+                },
+                {
+                  "text": "4,000",
+                  "bbox": [
+                    686.0,
+                    771.0,
+                    794.0,
+                    823.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 11,
+            "original_item": {
+              "name": "술알파인애플",
+              "quantity": 2,
+              "unit_price": 12000,
+              "total_amount": 24000
+            },
+            "corrected_item": {
+              "name": "술알파인애플",
+              "quantity": 2,
+              "unit_price": 12000,
+              "total_amount": 24000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "술알파인애를",
+              "numbers": [
+                {
+                  "text": "6,000",
+                  "bbox": [
+                    405.0,
+                    858.0,
+                    505.0,
+                    910.0
+                  ]
+                },
+                {
+                  "text": "2",
+                  "bbox": [
+                    564.0,
+                    868.0,
+                    591.0,
+                    907.0
+                  ]
+                },
+                {
+                  "text": "12,000",
+                  "bbox": [
+                    675.0,
+                    862.0,
+                    797.0,
+                    917.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 2,
+              "unit_price": 12000,
+              "total_amount": 24000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 12,
+            "original_item": {
+              "name": "시온은황도",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "corrected_item": {
+              "name": "시온은황도",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "시온은황도",
+              "numbers": [
+                {
+                  "text": "5,000",
+                  "bbox": [
+                    403.0,
+                    901.0,
+                    504.0,
+                    956.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    563.0,
+                    911.0,
+                    590.0,
+                    947.0
+                  ]
+                },
+                {
+                  "text": "5,000",
+                  "bbox": [
+                    688.0,
+                    908.0,
+                    799.0,
+                    963.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 13,
+        "logical_row_count": 6,
+        "after_count": 13,
+        "elapsed_ms": 5.995
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "진로",
+          "before": "살만주 500ml",
+          "after": "살만주 500ml",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 4000,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 4000,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "참이슬",
+          "before": "치즈돈까스",
+          "after": "치즈돈까스",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 5,
+          "before": 5,
+          "after": 5,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 4000,
+          "before": 20000,
+          "after": 20000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 20000,
+          "before": 100000,
+          "after": 100000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "30cm 마약치즈돈까스",
+          "before": "치즈돈까스",
+          "after": "치즈돈까스",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 9000,
+          "before": 4000,
+          "after": 4000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 9000,
+          "before": 4000,
+          "after": 4000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "짬뽕탕",
+          "before": "대리·약치즈돈까",
+          "after": "대리·약치즈돈까",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "생맥주 500ml",
+          "before": "살만주 500ml",
+          "after": "살만주 500ml",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "name",
+          "expected": "하이볼",
+          "before": "살만주 500ml",
+          "after": "살만주 500ml",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "quantity",
+          "expected": 2,
+          "before": 2,
+          "after": 2,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "unit_price",
+          "expected": 3900,
+          "before": 7800,
+          "after": 7800,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "total_amount",
+          "expected": 7800,
+          "before": 15600,
+          "after": 15600,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 6,
+          "field": "name",
+          "expected": "생맥주300ml",
+          "before": "살만주 300ml",
+          "after": "살만주 300ml",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "unit_price",
+          "expected": 2200,
+          "before": 2200,
+          "after": 2200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "total_amount",
+          "expected": 2200,
+          "before": 2200,
+          "after": 2200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 7,
+          "field": "name",
+          "expected": "짜빠구리범벅",
+          "before": "오파구리범벅",
+          "after": "오파구리범벅",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 7,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 7,
+          "field": "unit_price",
+          "expected": 13900,
+          "before": 13900,
+          "after": 13900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 7,
+          "field": "total_amount",
+          "expected": 13900,
+          "before": 13900,
+          "after": 13900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 8,
+          "field": "name",
+          "expected": "처음처럼",
+          "before": "살만주 300ml",
+          "after": "살만주 300ml",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 8,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 8,
+          "field": "unit_price",
+          "expected": 4000,
+          "before": 2200,
+          "after": 2200,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 8,
+          "field": "total_amount",
+          "expected": 4000,
+          "before": 2200,
+          "after": 2200,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 9,
+          "field": "name",
+          "expected": "양념감자튀김",
+          "before": "차돌지럼",
+          "after": "차돌지럼",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 9,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 9,
+          "field": "unit_price",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 9,
+          "field": "total_amount",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 10,
+          "field": "name",
+          "expected": "파인애플",
+          "before": "술알파인애플",
+          "after": "술알파인애플",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 10,
+          "field": "quantity",
+          "expected": 2,
+          "before": 2,
+          "after": 2,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 10,
+          "field": "unit_price",
+          "expected": 6000,
+          "before": 12000,
+          "after": 12000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 10,
+          "field": "total_amount",
+          "expected": 12000,
+          "before": 24000,
+          "after": 24000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 11,
+          "field": "name",
+          "expected": "황도",
+          "before": "시온은황도",
+          "after": "시온은황도",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 11,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 11,
+          "field": "unit_price",
+          "expected": 5000,
+          "before": 5000,
+          "after": 5000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 11,
+          "field": "total_amount",
+          "expected": 5000,
+          "before": 5000,
+          "after": 5000,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 7,
+        "quantity": 0,
+        "unit_price": 6,
+        "total_amount": 6,
+        "item_count": 1,
+        "EXTRA_ITEM": 1,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 7,
+        "quantity": 0,
+        "unit_price": 6,
+        "total_amount": 6,
+        "item_count": 1,
+        "EXTRA_ITEM": 1,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_030.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "생맥주 500ml",
+          "quantity": 9,
+          "unit_price": 29700,
+          "total_amount": 29700
+        },
+        {
+          "name": "짜빠구리",
+          "quantity": 1,
+          "unit_price": 7000,
+          "total_amount": 7000
+        },
+        {
+          "name": "오징어입",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "염통꼬치",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "양념감자튀김",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "참이슬",
+          "quantity": 3,
+          "unit_price": 12000,
+          "total_amount": 36000
+        },
+        {
+          "name": "할매네바지락탕",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        }
+      ],
+      "after_items": [
+        {
+          "name": "생맥주 500ml",
+          "quantity": 9,
+          "unit_price": 3300,
+          "total_amount": 29700
+        },
+        {
+          "name": "짜빠구리",
+          "quantity": 1,
+          "unit_price": 7000,
+          "total_amount": 7000
+        },
+        {
+          "name": "오징어입",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "염통꼬치",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "양념감자튀김",
+          "quantity": 1,
+          "unit_price": 6000,
+          "total_amount": 6000
+        },
+        {
+          "name": "참이슬",
+          "quantity": 3,
+          "unit_price": 12000,
+          "total_amount": 36000
+        },
+        {
+          "name": "할매네바지락탕",
+          "quantity": 1,
+          "unit_price": 9000,
+          "total_amount": 9000
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 1,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "생맥주 500ml",
+              "quantity": 9,
+              "unit_price": 29700,
+              "total_amount": 29700
+            },
+            "corrected_item": {
+              "name": "생맥주 500ml",
+              "quantity": 9,
+              "unit_price": 3300,
+              "total_amount": 29700
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "생맥주500m1",
+              "numbers": [
+                {
+                  "text": "3,300",
+                  "bbox": [
+                    1131.0,
+                    1817.0,
+                    1420.0,
+                    1953.0
+                  ]
+                },
+                {
+                  "text": "9",
+                  "bbox": [
+                    1570.0,
+                    1824.0,
+                    1670.0,
+                    1935.0
+                  ]
+                },
+                {
+                  "text": "29,700",
+                  "bbox": [
+                    1902.0,
+                    1802.0,
+                    2250.0,
+                    1943.0
+                  ]
+                }
+              ]
+            },
+            "action": "corrected",
+            "confidence": 1.0,
+            "before": {
+              "quantity": 9,
+              "unit_price": 29700,
+              "total_amount": 29700
+            },
+            "changes": {
+              "unit_price": {
+                "before": 29700,
+                "after": 3300
+              }
+            },
+            "reason": "unique_arithmetic_with_geometry",
+            "matched_text": "생맥주500m1",
+            "match_score": 1.0,
+            "page": 1,
+            "name_boxes": [
+              [
+                126.0,
+                1818.0,
+                656.0,
+                1967.0
+              ]
+            ],
+            "numbers": [
+              {
+                "text": "3,300",
+                "bbox": [
+                  1131.0,
+                  1817.0,
+                  1420.0,
+                  1953.0
+                ]
+              },
+              {
+                "text": "9",
+                "bbox": [
+                  1570.0,
+                  1824.0,
+                  1670.0,
+                  1935.0
+                ]
+              },
+              {
+                "text": "29,700",
+                "bbox": [
+                  1902.0,
+                  1802.0,
+                  2250.0,
+                  1943.0
+                ]
+              }
+            ],
+            "after": {
+              "quantity": 9,
+              "unit_price": 3300,
+              "total_amount": 29700
+            }
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "짜빠구리",
+              "quantity": 1,
+              "unit_price": 7000,
+              "total_amount": 7000
+            },
+            "corrected_item": {
+              "name": "짜빠구리",
+              "quantity": 1,
+              "unit_price": 7000,
+              "total_amount": 7000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "짜빠구리",
+              "numbers": [
+                {
+                  "text": "8,000",
+                  "bbox": [
+                    1134.0,
+                    1946.0,
+                    1419.0,
+                    2081.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    1605.0,
+                    1962.0,
+                    1667.0,
+                    2053.0
+                  ]
+                },
+                {
+                  "text": "8,000",
+                  "bbox": [
+                    1958.0,
+                    1935.0,
+                    2254.0,
+                    2070.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 7000,
+              "total_amount": 7000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "오징어입",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "corrected_item": {
+              "name": "오징어입",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "오징어입",
+              "numbers": [
+                {
+                  "text": "7,000",
+                  "bbox": [
+                    1138.0,
+                    2076.0,
+                    1419.0,
+                    2209.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    1604.0,
+                    2086.0,
+                    1676.0,
+                    2180.0
+                  ]
+                },
+                {
+                  "text": "7,000",
+                  "bbox": [
+                    1966.0,
+                    2067.0,
+                    2263.0,
+                    2206.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "염통꼬치",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "corrected_item": {
+              "name": "염통꼬치",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "염통꼬치",
+              "numbers": [
+                {
+                  "text": "6,000",
+                  "bbox": [
+                    1138.0,
+                    2206.0,
+                    1421.0,
+                    2339.0
+                  ]
+                },
+                {
+                  "text": "6,000",
+                  "bbox": [
+                    1975.0,
+                    2202.0,
+                    2271.0,
+                    2339.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "양념감자튀김",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "corrected_item": {
+              "name": "양념감자튀김",
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "양념감자튀김",
+              "numbers": [
+                {
+                  "text": "6,000",
+                  "bbox": [
+                    1138.0,
+                    2339.0,
+                    1423.0,
+                    2472.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    1616.0,
+                    2357.0,
+                    1672.0,
+                    2447.0
+                  ]
+                },
+                {
+                  "text": "6,000",
+                  "bbox": [
+                    1982.0,
+                    2339.0,
+                    2282.0,
+                    2475.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6000,
+              "total_amount": 6000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 5,
+            "original_item": {
+              "name": "참이슬",
+              "quantity": 3,
+              "unit_price": 12000,
+              "total_amount": 36000
+            },
+            "corrected_item": {
+              "name": "참이슬",
+              "quantity": 3,
+              "unit_price": 12000,
+              "total_amount": 36000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "참이슬",
+              "numbers": [
+                {
+                  "text": "4,000",
+                  "bbox": [
+                    1133.0,
+                    2472.0,
+                    1426.0,
+                    2611.0
+                  ]
+                },
+                {
+                  "text": "3",
+                  "bbox": [
+                    1608.0,
+                    2487.0,
+                    1685.0,
+                    2598.0
+                  ]
+                },
+                {
+                  "text": "12,000",
+                  "bbox": [
+                    1945.0,
+                    2475.0,
+                    2290.0,
+                    2616.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 3,
+              "unit_price": 12000,
+              "total_amount": 36000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 6,
+            "original_item": {
+              "name": "할매네바지락탕",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "corrected_item": {
+              "name": "할매네바지락탕",
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "할매네바지락탕",
+              "numbers": [
+                {
+                  "text": "9,000",
+                  "bbox": [
+                    1132.0,
+                    2612.0,
+                    1429.0,
+                    2753.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    1622.0,
+                    2635.0,
+                    1689.0,
+                    2721.0
+                  ]
+                },
+                {
+                  "text": "9,000",
+                  "bbox": [
+                    1992.0,
+                    2616.0,
+                    2297.0,
+                    2760.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9000,
+              "total_amount": 9000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 7,
+        "logical_row_count": 7,
+        "after_count": 7,
+        "elapsed_ms": 3.395
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "생맥주 500ml",
+          "before": "생맥주 500ml",
+          "after": "생맥주 500ml",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 9,
+          "before": 9,
+          "after": 9,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 3300,
+          "before": 29700,
+          "after": 3300,
+          "correct_before": false,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 29700,
+          "before": 29700,
+          "after": 29700,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "짜빠구리",
+          "before": "짜빠구리",
+          "after": "짜빠구리",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 8000,
+          "before": 7000,
+          "after": 7000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 8000,
+          "before": 7000,
+          "after": 7000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "오징어입",
+          "before": "오징어입",
+          "after": "오징어입",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 7000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 7000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "염통꼬치",
+          "before": "염통꼬치",
+          "after": "염통꼬치",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "양념감자튀김",
+          "before": "양념감자튀김",
+          "after": "양념감자튀김",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 6000,
+          "before": 6000,
+          "after": 6000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "name",
+          "expected": "참이슬",
+          "before": "참이슬",
+          "after": "참이슬",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "quantity",
+          "expected": 3,
+          "before": 3,
+          "after": 3,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "unit_price",
+          "expected": 4000,
+          "before": 12000,
+          "after": 12000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "total_amount",
+          "expected": 12000,
+          "before": 36000,
+          "after": 36000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 6,
+          "field": "name",
+          "expected": "할머니네바지락탕",
+          "before": "할매네바지락탕",
+          "after": "할매네바지락탕",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "unit_price",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 6,
+          "field": "total_amount",
+          "expected": 9000,
+          "before": 9000,
+          "after": 9000,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 4,
+        "total_amount": 3,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 3,
+        "total_amount": 3,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_032.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "상하이버거/라지",
+          "quantity": 1,
+          "unit_price": 5500,
+          "total_amount": 5500
+        },
+        {
+          "name": "McAllday L-Shangha1",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "CL-콜라",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "LGEVMDrinkSwap Coke",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "L-후렌치 후라이",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "빅맥세트",
+          "quantity": 1,
+          "unit_price": 3000,
+          "total_amount": 3000
+        },
+        {
+          "name": "CM-콜라",
+          "quantity": 4,
+          "unit_price": 500,
+          "total_amount": 2000
+        },
+        {
+          "name": "M-후렌치 후라이 DrinkSwap Coke",
+          "quantity": 2,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "French FriesM",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "슈슈버거/라지세트",
+          "quantity": 1,
+          "unit_price": 697,
+          "total_amount": 697
+        },
+        {
+          "name": "Shushu/LEVM-McAllday",
+          "quantity": 1,
+          "unit_price": 519,
+          "total_amount": 519
+        }
+      ],
+      "after_items": [
+        {
+          "name": "상하이버거/라지",
+          "quantity": 1,
+          "unit_price": 5500,
+          "total_amount": 5500
+        },
+        {
+          "name": "McAllday L-Shangha1",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "CL-콜라",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "LGEVMDrinkSwap Coke",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "L-후렌치 후라이",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "빅맥세트",
+          "quantity": 1,
+          "unit_price": 3000,
+          "total_amount": 3000
+        },
+        {
+          "name": "CM-콜라",
+          "quantity": 4,
+          "unit_price": 500,
+          "total_amount": 2000
+        },
+        {
+          "name": "M-후렌치 후라이 DrinkSwap Coke",
+          "quantity": 2,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "French FriesM",
+          "quantity": 1,
+          "unit_price": null,
+          "total_amount": null
+        },
+        {
+          "name": "슈슈버거/라지세트",
+          "quantity": 1,
+          "unit_price": 697,
+          "total_amount": 697
+        },
+        {
+          "name": "Shushu/LEVM-McAllday",
+          "quantity": 1,
+          "unit_price": 519,
+          "total_amount": 519
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "상하이버거/라지",
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "corrected_item": {
+              "name": "상하이버거/라지",
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "QTY ITEM 1상하이버거/라지",
+              "numbers": [
+                {
+                  "text": "5,500",
+                  "bbox": [
+                    866.0,
+                    1272.0,
+                    997.0,
+                    1341.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "McAllday L-Shangha1",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "McAllday L-Shangha1",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "summary_or_discount_row",
+            "matched_text": "McA11day L-Shangha1",
+            "match_score": 0.8824,
+            "page": 1,
+            "name_boxes": [
+              [
+                219.0,
+                1306.0,
+                659.0,
+                1382.0
+              ]
+            ]
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "CL-콜라",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "CL-콜라",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "ambiguous_name"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "LGEVMDrinkSwap Coke",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "LGEVMDrinkSwap Coke",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "ambiguous_name"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "L-후렌치 후라이",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "L-후렌치 후라이",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "ambiguous_name"
+          },
+          {
+            "index": 5,
+            "original_item": {
+              "name": "빅맥세트",
+              "quantity": 1,
+              "unit_price": 3000,
+              "total_amount": 3000
+            },
+            "corrected_item": {
+              "name": "빅맥세트",
+              "quantity": 1,
+              "unit_price": 3000,
+              "total_amount": 3000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "French Fries-L 1 빅맥세트 Big Mac/EVM-McA1lday",
+              "numbers": [
+                {
+                  "text": "4,900",
+                  "bbox": [
+                    877.0,
+                    1577.0,
+                    1004.0,
+                    1640.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3000,
+              "total_amount": 3000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 6,
+            "original_item": {
+              "name": "CM-콜라",
+              "quantity": 4,
+              "unit_price": 500,
+              "total_amount": 2000
+            },
+            "corrected_item": {
+              "name": "CM-콜라",
+              "quantity": 4,
+              "unit_price": 500,
+              "total_amount": 2000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 4,
+              "unit_price": 500,
+              "total_amount": 2000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 7,
+            "original_item": {
+              "name": "M-후렌치 후라이 DrinkSwap Coke",
+              "quantity": 2,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "M-후렌치 후라이 DrinkSwap Coke",
+              "quantity": 2,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 2,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "name_not_grounded"
+          },
+          {
+            "index": 8,
+            "original_item": {
+              "name": "French FriesM",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "corrected_item": {
+              "name": "French FriesM",
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": null,
+              "total_amount": null
+            },
+            "changes": {},
+            "reason": "ambiguous_name"
+          },
+          {
+            "index": 9,
+            "original_item": {
+              "name": "슈슈버거/라지세트",
+              "quantity": 1,
+              "unit_price": 697,
+              "total_amount": 697
+            },
+            "corrected_item": {
+              "name": "슈슈버거/라지세트",
+              "quantity": 1,
+              "unit_price": 697,
+              "total_amount": 697
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 697,
+              "total_amount": 697
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 10,
+            "original_item": {
+              "name": "Shushu/LEVM-McAllday",
+              "quantity": 1,
+              "unit_price": 519,
+              "total_amount": 519
+            },
+            "corrected_item": {
+              "name": "Shushu/LEVM-McAllday",
+              "quantity": 1,
+              "unit_price": 519,
+              "total_amount": 519
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 519,
+              "total_amount": 519
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 11,
+        "logical_row_count": 2,
+        "after_count": 11,
+        "elapsed_ms": 14.023
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "상하이버거 라지세트",
+          "before": "상하이버거/라지",
+          "after": "상하이버거/라지",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 5500,
+          "before": 5500,
+          "after": 5500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 5500,
+          "before": 5500,
+          "after": 5500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "빅맥 세트",
+          "before": "빅맥세트",
+          "after": "빅맥세트",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 4900,
+          "before": 3000,
+          "after": 3000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 4900,
+          "before": 3000,
+          "after": 3000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "슈슈버거 라지세트",
+          "before": "슈슈버거/라지세트",
+          "after": "슈슈버거/라지세트",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 5500,
+          "before": 697,
+          "after": 697,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 5500,
+          "before": 697,
+          "after": 697,
+          "correct_before": false,
+          "correct_after": false
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 2,
+        "total_amount": 2,
+        "item_count": 1,
+        "EXTRA_ITEM": 8,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 2,
+        "total_amount": 2,
+        "item_count": 1,
+        "EXTRA_ITEM": 8,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_033.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "갈릭립아이 280g",
+          "quantity": 4,
+          "unit_price": 41900,
+          "total_amount": 167600
+        },
+        {
+          "name": "→1/2멜티드 치즈",
+          "quantity": 1,
+          "unit_price": 3900,
+          "total_amount": 3900
+        },
+        {
+          "name": "블랙라벨랍스터패밀리세 허니머스타드 US",
+          "quantity": 1,
+          "unit_price": 137000,
+          "total_amount": 137000
+        },
+        {
+          "name": "샐러드",
+          "quantity": 1,
+          "unit_price": 1400,
+          "total_amount": 1400
+        },
+        {
+          "name": "치킨핑거 2개",
+          "quantity": 1,
+          "unit_price": 5800,
+          "total_amount": 5800
+        }
+      ],
+      "after_items": [
+        {
+          "name": "갈릭립아이 280g",
+          "quantity": 4,
+          "unit_price": 41900,
+          "total_amount": 167600
+        },
+        {
+          "name": "→1/2멜티드 치즈",
+          "quantity": 1,
+          "unit_price": 3900,
+          "total_amount": 3900
+        },
+        {
+          "name": "블랙라벨랍스터패밀리세 허니머스타드 US",
+          "quantity": 1,
+          "unit_price": 137000,
+          "total_amount": 137000
+        },
+        {
+          "name": "샐러드",
+          "quantity": 1,
+          "unit_price": 1400,
+          "total_amount": 1400
+        },
+        {
+          "name": "치킨핑거 2개",
+          "quantity": 1,
+          "unit_price": 5800,
+          "total_amount": 5800
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "갈릭립아이 280g",
+              "quantity": 4,
+              "unit_price": 41900,
+              "total_amount": 167600
+            },
+            "corrected_item": {
+              "name": "갈릭립아이 280g",
+              "quantity": 4,
+              "unit_price": 41900,
+              "total_amount": 167600
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "갈릭립아이280g",
+              "numbers": [
+                {
+                  "text": "41,900",
+                  "bbox": [
+                    2053.0,
+                    1094.0,
+                    2446.0,
+                    1243.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 4,
+              "unit_price": 41900,
+              "total_amount": 167600
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "→1/2멜티드 치즈",
+              "quantity": 1,
+              "unit_price": 3900,
+              "total_amount": 3900
+            },
+            "corrected_item": {
+              "name": "→1/2멜티드 치즈",
+              "quantity": 1,
+              "unit_price": 3900,
+              "total_amount": 3900
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3900,
+              "total_amount": 3900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "블랙라벨랍스터패밀리세 허니머스타드 US",
+              "quantity": 1,
+              "unit_price": 137000,
+              "total_amount": 137000
+            },
+            "corrected_item": {
+              "name": "블랙라벨랍스터패밀리세 허니머스타드 US",
+              "quantity": 1,
+              "unit_price": 137000,
+              "total_amount": 137000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "블랙라벨랍스터패밀리세 US",
+              "numbers": [
+                {
+                  "text": "137,000",
+                  "bbox": [
+                    2005.0,
+                    1370.0,
+                    2437.0,
+                    1531.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 137000,
+              "total_amount": 137000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "샐러드",
+              "quantity": 1,
+              "unit_price": 1400,
+              "total_amount": 1400
+            },
+            "corrected_item": {
+              "name": "샐러드",
+              "quantity": 1,
+              "unit_price": 1400,
+              "total_amount": 1400
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 1400,
+              "total_amount": 1400
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "치킨핑거 2개",
+              "quantity": 1,
+              "unit_price": 5800,
+              "total_amount": 5800
+            },
+            "corrected_item": {
+              "name": "치킨핑거 2개",
+              "quantity": 1,
+              "unit_price": 5800,
+              "total_amount": 5800
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5800,
+              "total_amount": 5800
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 5,
+        "logical_row_count": 2,
+        "after_count": 5,
+        "elapsed_ms": 1.859
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "갈릭립아이 280g",
+          "before": "갈릭립아이 280g",
+          "after": "갈릭립아이 280g",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 4,
+          "after": 4,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 41900,
+          "before": 41900,
+          "after": 41900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 41900,
+          "before": 167600,
+          "after": 167600,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "1/2 멜티드 치즈",
+          "before": "→1/2멜티드 치즈",
+          "after": "→1/2멜티드 치즈",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 3900,
+          "before": 3900,
+          "after": 3900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 3900,
+          "before": 3900,
+          "after": 3900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "블랙라벨 램 스테이크 밀리세트",
+          "before": "블랙라벨랍스터패밀리세 허니머스타드 US",
+          "after": "블랙라벨랍스터패밀리세 허니머스타드 US",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 137000,
+          "before": 137000,
+          "after": 137000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 137000,
+          "before": 137000,
+          "after": 137000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "허니머스타드 샐러드",
+          "before": "샐러드",
+          "after": "샐러드",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 1400,
+          "before": 1400,
+          "after": 1400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 1400,
+          "before": 1400,
+          "after": 1400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "치킨핑거 2개",
+          "before": "치킨핑거 2개",
+          "after": "치킨핑거 2개",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 5800,
+          "before": 5800,
+          "after": 5800,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 5800,
+          "before": 5800,
+          "after": 5800,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 1,
+        "unit_price": 0,
+        "total_amount": 1,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 1,
+        "unit_price": 0,
+        "total_amount": 1,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_038.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "어깨에 머리를 기대던 시절(난다시편 10)",
+          "quantity": 1,
+          "unit_price": 13000,
+          "total_amount": 13000
+        },
+        {
+          "name": "세계문학전집 이야기(세계문학전집 1998-2026",
+          "quantity": 1,
+          "unit_price": 12000,
+          "total_amount": 12000
+        }
+      ],
+      "after_items": [
+        {
+          "name": "어깨에 머리를 기대던 시절(난다시편 10)",
+          "quantity": 1,
+          "unit_price": 13000,
+          "total_amount": 13000
+        },
+        {
+          "name": "세계문학전집 이야기(세계문학전집 1998-2026",
+          "quantity": 1,
+          "unit_price": 12000,
+          "total_amount": 12000
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "어깨에 머리를 기대던 시절(난다시편 10)",
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "corrected_item": {
+              "name": "어깨에 머리를 기대던 시절(난다시편 10)",
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 13000,
+              "total_amount": 13000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "세계문학전집 이야기(세계문학전집 1998-2026",
+              "quantity": 1,
+              "unit_price": 12000,
+              "total_amount": 12000
+            },
+            "corrected_item": {
+              "name": "세계문학전집 이야기(세계문학전집 1998-2026",
+              "quantity": 1,
+              "unit_price": 12000,
+              "total_amount": 12000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 12000,
+              "total_amount": 12000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 2,
+        "logical_row_count": 4,
+        "after_count": 2,
+        "elapsed_ms": 12.263
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "어깨에 머리를 기대던 시절",
+          "before": "어깨에 머리를 기대던 시절(난다시편 10)",
+          "after": "어깨에 머리를 기대던 시절(난다시편 10)",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 13000,
+          "before": 13000,
+          "after": 13000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 13000,
+          "before": 13000,
+          "after": 13000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "세계문학전집 이야기: 세계문학전집 1998-2026",
+          "before": "세계문학전집 이야기(세계문학전집 1998-2026",
+          "after": "세계문학전집 이야기(세계문학전집 1998-2026",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 12000,
+          "before": 12000,
+          "after": 12000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 12000,
+          "before": 12000,
+          "after": 12000,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_041.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "냉삼",
+          "quantity": 1,
+          "unit_price": 58500,
+          "total_amount": 58500
+        }
+      ],
+      "after_items": [
+        {
+          "name": "냉삼",
+          "quantity": 1,
+          "unit_price": 58500,
+          "total_amount": 58500
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "냉삼",
+              "quantity": 1,
+              "unit_price": 58500,
+              "total_amount": 58500
+            },
+            "corrected_item": {
+              "name": "냉삼",
+              "quantity": 1,
+              "unit_price": 58500,
+              "total_amount": 58500
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "3.냉삼",
+              "numbers": [
+                {
+                  "text": "6,500",
+                  "bbox": [
+                    811.0,
+                    1085.0,
+                    995.0,
+                    1174.0
+                  ]
+                },
+                {
+                  "text": "32,500",
+                  "bbox": [
+                    1231.0,
+                    1075.0,
+                    1446.0,
+                    1158.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 58500,
+              "total_amount": 58500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 3,
+        "after_count": 1,
+        "elapsed_ms": 3.136
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "맥주",
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 2,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 5000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 10000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "국주",
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 2,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 8000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 16000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "냉삼",
+          "before": "냉삼",
+          "after": "냉삼",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 5,
+          "before": 1,
+          "after": 1,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 6500,
+          "before": 58500,
+          "after": 58500,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 32500,
+          "before": 58500,
+          "after": 58500,
+          "correct_before": false,
+          "correct_after": false
+        }
+      ],
+      "errors_before": {
+        "name": 2,
+        "quantity": 3,
+        "unit_price": 3,
+        "total_amount": 3,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 2,
+        "quantity": 3,
+        "unit_price": 3,
+        "total_amount": 3,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_044.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "감자닭강정(반/반)",
+          "quantity": 1,
+          "unit_price": 27000,
+          "total_amount": 27000
+        }
+      ],
+      "after_items": [
+        {
+          "name": "감자닭강정(반/반)",
+          "quantity": 1,
+          "unit_price": 27000,
+          "total_amount": 27000
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "감자닭강정(반/반)",
+              "quantity": 1,
+              "unit_price": 27000,
+              "total_amount": 27000
+            },
+            "corrected_item": {
+              "name": "감자닭강정(반/반)",
+              "quantity": 1,
+              "unit_price": 27000,
+              "total_amount": 27000
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 27000,
+              "total_amount": 27000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 1,
+        "after_count": 1,
+        "elapsed_ms": 2.49
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "감자닭강정(반/반)",
+          "before": "감자닭강정(반/반)",
+          "after": "감자닭강정(반/반)",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 27000,
+          "before": 27000,
+          "after": 27000,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 27000,
+          "before": 27000,
+          "after": 27000,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_045.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "소금 초콜릿 위닝시에",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "무화과 위낭시에",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "크리스미스 쇼핑백",
+          "quantity": 1,
+          "unit_price": 400,
+          "total_amount": 400
+        }
+      ],
+      "after_items": [
+        {
+          "name": "소금 초콜릿 위닝시에",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "무화과 위낭시에",
+          "quantity": 1,
+          "unit_price": 3300,
+          "total_amount": 3300
+        },
+        {
+          "name": "크리스미스 쇼핑백",
+          "quantity": 1,
+          "unit_price": 400,
+          "total_amount": 400
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "소금 초콜릿 위닝시에",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "corrected_item": {
+              "name": "소금 초콜릿 위닝시에",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "무화과 위낭시에",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "corrected_item": {
+              "name": "무화과 위낭시에",
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3300,
+              "total_amount": 3300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "크리스미스 쇼핑백",
+              "quantity": 1,
+              "unit_price": 400,
+              "total_amount": 400
+            },
+            "corrected_item": {
+              "name": "크리스미스 쇼핑백",
+              "quantity": 1,
+              "unit_price": 400,
+              "total_amount": 400
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 400,
+              "total_amount": 400
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 3,
+        "logical_row_count": 1,
+        "after_count": 3,
+        "elapsed_ms": 2.789
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "조음",
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 9700,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 9700,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "소금 초콜릿 휘낭시에",
+          "before": "소금 초콜릿 위닝시에",
+          "after": "소금 초콜릿 위닝시에",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "무화과 휘낭시에",
+          "before": "무화과 위낭시에",
+          "after": "무화과 위낭시에",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 3300,
+          "before": 3300,
+          "after": 3300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "코인스미스 쇼핑백",
+          "before": "크리스미스 쇼핑백",
+          "after": "크리스미스 쇼핑백",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 400,
+          "before": 400,
+          "after": 400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 400,
+          "before": 400,
+          "after": 400,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 1,
+        "unit_price": 1,
+        "total_amount": 1,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 1,
+        "unit_price": 1,
+        "total_amount": 1,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_047.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "미요클라우드OnlyIce",
+          "quantity": 1,
+          "unit_price": 6500,
+          "total_amount": 6500
+        }
+      ],
+      "after_items": [
+        {
+          "name": "미요클라우드OnlyIce",
+          "quantity": 1,
+          "unit_price": 6500,
+          "total_amount": 6500
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "미요클라우드OnlyIce",
+              "quantity": 1,
+              "unit_price": 6500,
+              "total_amount": 6500
+            },
+            "corrected_item": {
+              "name": "미요클라우드OnlyIce",
+              "quantity": 1,
+              "unit_price": 6500,
+              "total_amount": 6500
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "미요클라우드OnlyIce",
+              "numbers": [
+                {
+                  "text": "6,500",
+                  "bbox": [
+                    628.0,
+                    911.0,
+                    769.0,
+                    980.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    852.0,
+                    912.0,
+                    885.0,
+                    957.0
+                  ]
+                },
+                {
+                  "text": "6,500",
+                  "bbox": [
+                    1015.0,
+                    882.0,
+                    1164.0,
+                    954.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6500,
+              "total_amount": 6500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 6,
+        "after_count": 1,
+        "elapsed_ms": 2.406
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "미요클라우드 OnlyIce",
+          "before": "미요클라우드OnlyIce",
+          "after": "미요클라우드OnlyIce",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 6500,
+          "before": 6500,
+          "after": 6500,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 6500,
+          "before": 6500,
+          "after": 6500,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_050.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "호롱소세지",
+          "quantity": 1,
+          "unit_price": 5500,
+          "total_amount": 5500
+        },
+        {
+          "name": "코요타",
+          "quantity": 1,
+          "unit_price": 5000,
+          "total_amount": 5000
+        },
+        {
+          "name": "치즈품듀",
+          "quantity": 2,
+          "unit_price": 2000,
+          "total_amount": 4000
+        },
+        {
+          "name": "초코스콘",
+          "quantity": 1,
+          "unit_price": 3200,
+          "total_amount": 3200
+        },
+        {
+          "name": "종이백",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "after_items": [
+        {
+          "name": "호롱소세지",
+          "quantity": 1,
+          "unit_price": 5500,
+          "total_amount": 5500
+        },
+        {
+          "name": "코요타",
+          "quantity": 1,
+          "unit_price": 5000,
+          "total_amount": 5000
+        },
+        {
+          "name": "치즈품듀",
+          "quantity": 2,
+          "unit_price": 2000,
+          "total_amount": 4000
+        },
+        {
+          "name": "초코스콘",
+          "quantity": 1,
+          "unit_price": 3200,
+          "total_amount": 3200
+        },
+        {
+          "name": "종이백",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "호롱소세지",
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "corrected_item": {
+              "name": "호롱소세지",
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "명란바게트 호롱소세지",
+              "numbers": [
+                {
+                  "text": "5,500",
+                  "bbox": [
+                    525.0,
+                    851.0,
+                    659.0,
+                    922.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    734.0,
+                    875.0,
+                    769.0,
+                    918.0
+                  ]
+                },
+                {
+                  "text": "5,500",
+                  "bbox": [
+                    888.0,
+                    864.0,
+                    1019.0,
+                    927.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5500,
+              "total_amount": 5500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "코요타",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "corrected_item": {
+              "name": "코요타",
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "코요타",
+              "numbers": [
+                {
+                  "text": "5,000",
+                  "bbox": [
+                    525.0,
+                    962.0,
+                    658.0,
+                    1032.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    734.0,
+                    985.0,
+                    767.0,
+                    1028.0
+                  ]
+                },
+                {
+                  "text": "5,000",
+                  "bbox": [
+                    887.0,
+                    977.0,
+                    1017.0,
+                    1036.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 5000,
+              "total_amount": 5000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "치즈품듀",
+              "quantity": 2,
+              "unit_price": 2000,
+              "total_amount": 4000
+            },
+            "corrected_item": {
+              "name": "치즈품듀",
+              "quantity": 2,
+              "unit_price": 2000,
+              "total_amount": 4000
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "치즈품듀",
+              "numbers": [
+                {
+                  "text": "2,000",
+                  "bbox": [
+                    522.0,
+                    1073.0,
+                    657.0,
+                    1143.0
+                  ]
+                },
+                {
+                  "text": "2,000",
+                  "bbox": [
+                    885.0,
+                    1085.0,
+                    1017.0,
+                    1147.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 2,
+              "unit_price": 2000,
+              "total_amount": 4000
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "초코스콘",
+              "quantity": 1,
+              "unit_price": 3200,
+              "total_amount": 3200
+            },
+            "corrected_item": {
+              "name": "초코스콘",
+              "quantity": 1,
+              "unit_price": 3200,
+              "total_amount": 3200
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "초코스콘",
+              "numbers": [
+                {
+                  "text": "1,800",
+                  "bbox": [
+                    528.0,
+                    1187.0,
+                    652.0,
+                    1250.0
+                  ]
+                },
+                {
+                  "text": "1,800",
+                  "bbox": [
+                    889.0,
+                    1196.0,
+                    1014.0,
+                    1256.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3200,
+              "total_amount": 3200
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "종이백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "corrected_item": {
+              "name": "종이백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "종이백",
+              "numbers": [
+                {
+                  "text": "3,200",
+                  "bbox": [
+                    520.0,
+                    1296.0,
+                    653.0,
+                    1363.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    732.0,
+                    1314.0,
+                    759.0,
+                    1355.0
+                  ]
+                },
+                {
+                  "text": "3,200",
+                  "bbox": [
+                    881.0,
+                    1303.0,
+                    1014.0,
+                    1368.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 5,
+        "logical_row_count": 8,
+        "after_count": 5,
+        "elapsed_ms": 4.163
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "명란바게트",
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 5500,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 5500,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "호롱소세지",
+          "before": "호롱소세지",
+          "after": "호롱소세지",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 5000,
+          "before": 5500,
+          "after": 5500,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 5000,
+          "before": 5500,
+          "after": 5500,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "코요타",
+          "before": "코요타",
+          "after": "코요타",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 2000,
+          "before": 5000,
+          "after": 5000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 2000,
+          "before": 5000,
+          "after": 5000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "치즈퐁듀",
+          "before": "치즈품듀",
+          "after": "치즈품듀",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 2,
+          "after": 2,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 1800,
+          "before": 2000,
+          "after": 2000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 1800,
+          "before": 4000,
+          "after": 4000,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "초코스콘",
+          "before": "초코스콘",
+          "after": "초코스콘",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 3200,
+          "before": 3200,
+          "after": 3200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 3200,
+          "before": 3200,
+          "after": 3200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "name",
+          "expected": "종이대",
+          "before": "종이백",
+          "after": "종이백",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 5,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "unit_price",
+          "expected": 100,
+          "before": 100,
+          "after": 100,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 5,
+          "field": "total_amount",
+          "expected": 100,
+          "before": 100,
+          "after": 100,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 2,
+        "quantity": 2,
+        "unit_price": 4,
+        "total_amount": 4,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 2,
+        "quantity": 2,
+        "unit_price": 4,
+        "total_amount": 4,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_051.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "모시지즈포터",
+          "quantity": 1,
+          "unit_price": 14900,
+          "total_amount": 14900
+        }
+      ],
+      "after_items": [
+        {
+          "name": "모시지즈포터",
+          "quantity": 1,
+          "unit_price": 14900,
+          "total_amount": 14900
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "모시지즈포터",
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "corrected_item": {
+              "name": "모시지즈포터",
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "모시지즈포터",
+              "numbers": [
+                {
+                  "text": "14,900",
+                  "bbox": [
+                    602.0,
+                    787.0,
+                    807.0,
+                    862.0
+                  ]
+                },
+                {
+                  "text": "1",
+                  "bbox": [
+                    945.0,
+                    789.0,
+                    985.0,
+                    846.0
+                  ]
+                },
+                {
+                  "text": "14.900",
+                  "bbox": [
+                    1124.0,
+                    765.0,
+                    1342.0,
+                    850.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 14900,
+              "total_amount": 14900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 1,
+        "after_count": 1,
+        "elapsed_ms": 1.434
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "오지치즈포테",
+          "before": "모시지즈포터",
+          "after": "모시지즈포터",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 14900,
+          "before": 14900,
+          "after": 14900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 14900,
+          "before": 14900,
+          "after": 14900,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_053.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "메뉴명",
+          "quantity": 1,
+          "unit_price": 15200,
+          "total_amount": 15200
+        }
+      ],
+      "after_items": [
+        {
+          "name": "메뉴명",
+          "quantity": 1,
+          "unit_price": 15200,
+          "total_amount": 15200
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "메뉴명",
+              "quantity": 1,
+              "unit_price": 15200,
+              "total_amount": 15200
+            },
+            "corrected_item": {
+              "name": "메뉴명",
+              "quantity": 1,
+              "unit_price": 15200,
+              "total_amount": 15200
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 15200,
+              "total_amount": 15200
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 0,
+        "after_count": 1,
+        "elapsed_ms": 1.385
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "4",
+          "before": "메뉴명",
+          "after": "메뉴명",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 15200,
+          "before": 15200,
+          "after": 15200,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 15200,
+          "before": 15200,
+          "after": 15200,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_054.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "바늘이야기",
+          "quantity": 1,
+          "unit_price": 81300,
+          "total_amount": 81300
+        }
+      ],
+      "after_items": [
+        {
+          "name": "바늘이야기",
+          "quantity": 1,
+          "unit_price": 81300,
+          "total_amount": 81300
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "바늘이야기",
+              "quantity": 1,
+              "unit_price": 81300,
+              "total_amount": 81300
+            },
+            "corrected_item": {
+              "name": "바늘이야기",
+              "quantity": 1,
+              "unit_price": 81300,
+              "total_amount": 81300
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "001 바늘이야기",
+              "numbers": [
+                {
+                  "text": "81,300",
+                  "bbox": [
+                    1074.0,
+                    1004.0,
+                    1274.0,
+                    1089.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 81300,
+              "total_amount": 81300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 3,
+        "after_count": 1,
+        "elapsed_ms": 2.981
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "바늘이야기 기타",
+          "before": "바늘이야기",
+          "after": "바늘이야기",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 81300,
+          "before": 81300,
+          "after": 81300,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 81300,
+          "before": 81300,
+          "after": 81300,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/receipt_36.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "참치포케 -메밀면 &샐러드",
+          "quantity": 1,
+          "unit_price": 13900,
+          "total_amount": 13900
+        },
+        {
+          "name": "솔트엔페퍼 소스",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        },
+        {
+          "name": "주무그액",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        }
+      ],
+      "after_items": [
+        {
+          "name": "참치포케 -메밀면 &샐러드",
+          "quantity": 1,
+          "unit_price": 13900,
+          "total_amount": 13900
+        },
+        {
+          "name": "솔트엔페퍼 소스",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        },
+        {
+          "name": "주무그액",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "참치포케 -메밀면 &샐러드",
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "corrected_item": {
+              "name": "참치포케 -메밀면 &샐러드",
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "-메밀면 &샐러드",
+              "numbers": [
+                {
+                  "text": "0",
+                  "bbox": [
+                    831.0,
+                    1227.0,
+                    861.0,
+                    1266.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 13900,
+              "total_amount": 13900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "솔트엔페퍼 소스",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "corrected_item": {
+              "name": "솔트엔페퍼 소스",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "ᄂ 솔트엔페퍼 소스",
+              "numbers": [
+                {
+                  "text": "0",
+                  "bbox": [
+                    833.0,
+                    1283.0,
+                    863.0,
+                    1322.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "주무그액",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "corrected_item": {
+              "name": "주무그액",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "주무그액 수문금액",
+              "numbers": [
+                {
+                  "text": "13,900",
+                  "bbox": [
+                    729.0,
+                    1375.0,
+                    871.0,
+                    1467.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 3,
+        "logical_row_count": 6,
+        "after_count": 3,
+        "elapsed_ms": 2.956
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "참치포케",
+          "before": "참치포케 -메밀면 &샐러드",
+          "after": "참치포케 -메밀면 &샐러드",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 13900,
+          "before": 13900,
+          "after": 13900,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 13900,
+          "before": 13900,
+          "after": 13900,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 1,
+        "EXTRA_ITEM": 2,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 1,
+        "EXTRA_ITEM": 2,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/test04.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "우삼겹포케볼",
+          "quantity": 1,
+          "unit_price": 9400,
+          "total_amount": 9400
+        },
+        {
+          "name": "+포케볼(기본)",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        },
+        {
+          "name": "+추천드레싱",
+          "quantity": 1,
+          "unit_price": 9300,
+          "total_amount": 9300
+        },
+        {
+          "name": "우삼겹멘밀면 누들볼",
+          "quantity": 1,
+          "unit_price": 6900,
+          "total_amount": 6900
+        },
+        {
+          "name": "튜나_치아바타,샌드위치",
+          "quantity": 1,
+          "unit_price": 4900,
+          "total_amount": 4900
+        },
+        {
+          "name": "단호박 크림스프",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "after_items": [
+        {
+          "name": "우삼겹포케볼",
+          "quantity": 1,
+          "unit_price": 9400,
+          "total_amount": 9400
+        },
+        {
+          "name": "+포케볼(기본)",
+          "quantity": 1,
+          "unit_price": 0,
+          "total_amount": 0
+        },
+        {
+          "name": "+추천드레싱",
+          "quantity": 1,
+          "unit_price": 9300,
+          "total_amount": 9300
+        },
+        {
+          "name": "우삼겹멘밀면 누들볼",
+          "quantity": 1,
+          "unit_price": 6900,
+          "total_amount": 6900
+        },
+        {
+          "name": "튜나_치아바타,샌드위치",
+          "quantity": 1,
+          "unit_price": 4900,
+          "total_amount": 4900
+        },
+        {
+          "name": "단호박 크림스프",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "우삼겹포케볼",
+              "quantity": 1,
+              "unit_price": 9400,
+              "total_amount": 9400
+            },
+            "corrected_item": {
+              "name": "우삼겹포케볼",
+              "quantity": 1,
+              "unit_price": 9400,
+              "total_amount": 9400
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "우삼겹포케볼",
+              "numbers": [
+                {
+                  "text": "9,400",
+                  "bbox": [
+                    986.0,
+                    676.0,
+                    1110.0,
+                    765.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9400,
+              "total_amount": 9400
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "+포케볼(기본)",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "corrected_item": {
+              "name": "+포케볼(기본)",
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 0,
+              "total_amount": 0
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 2,
+            "original_item": {
+              "name": "+추천드레싱",
+              "quantity": 1,
+              "unit_price": 9300,
+              "total_amount": 9300
+            },
+            "corrected_item": {
+              "name": "+추천드레싱",
+              "quantity": 1,
+              "unit_price": 9300,
+              "total_amount": 9300
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 9300,
+              "total_amount": 9300
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 3,
+            "original_item": {
+              "name": "우삼겹멘밀면 누들볼",
+              "quantity": 1,
+              "unit_price": 6900,
+              "total_amount": 6900
+            },
+            "corrected_item": {
+              "name": "우삼겹멘밀면 누들볼",
+              "quantity": 1,
+              "unit_price": 6900,
+              "total_amount": 6900
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 6900,
+              "total_amount": 6900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 4,
+            "original_item": {
+              "name": "튜나_치아바타,샌드위치",
+              "quantity": 1,
+              "unit_price": 4900,
+              "total_amount": 4900
+            },
+            "corrected_item": {
+              "name": "튜나_치아바타,샌드위치",
+              "quantity": 1,
+              "unit_price": 4900,
+              "total_amount": 4900
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 4900,
+              "total_amount": 4900
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 5,
+            "original_item": {
+              "name": "단호박 크림스프",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "corrected_item": {
+              "name": "단호박 크림스프",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "단호박 크림스프",
+              "numbers": [
+                {
+                  "text": "1",
+                  "bbox": [
+                    873.0,
+                    1246.0,
+                    903.0,
+                    1314.0
+                  ]
+                },
+                {
+                  "text": "4,900",
+                  "bbox": [
+                    985.0,
+                    1253.0,
+                    1101.0,
+                    1343.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 6,
+        "logical_row_count": 5,
+        "after_count": 6,
+        "elapsed_ms": 4.448
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "우삼겹 포케볼",
+          "before": "우삼겹포케볼",
+          "after": "우삼겹포케볼",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 9400,
+          "before": 9400,
+          "after": 9400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 9400,
+          "before": 9400,
+          "after": 9400,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "우삼겹메밀면 누들볼",
+          "before": "우삼겹멘밀면 누들볼",
+          "after": "우삼겹멘밀면 누들볼",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 9300,
+          "before": 6900,
+          "after": 6900,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 9300,
+          "before": 6900,
+          "after": 6900,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "튜나 치아바타 샌드위치",
+          "before": "튜나_치아바타,샌드위치",
+          "after": "튜나_치아바타,샌드위치",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 6900,
+          "before": 4900,
+          "after": 4900,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 6900,
+          "before": 4900,
+          "after": 4900,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "name",
+          "expected": "단호박 크림스프",
+          "before": "단호박 크림스프",
+          "after": "단호박 크림스프",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 3,
+          "field": "unit_price",
+          "expected": 4900,
+          "before": 100,
+          "after": 100,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 3,
+          "field": "total_amount",
+          "expected": 4900,
+          "before": 100,
+          "after": 100,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "name",
+          "expected": "포장비",
+          "before": "+추천드레싱",
+          "after": "+추천드레싱",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 4,
+          "field": "unit_price",
+          "expected": 100,
+          "before": 9300,
+          "after": 9300,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 4,
+          "field": "total_amount",
+          "expected": 100,
+          "before": 9300,
+          "after": 9300,
+          "correct_before": false,
+          "correct_after": false
+        }
+      ],
+      "errors_before": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 4,
+        "total_amount": 4,
+        "item_count": 1,
+        "EXTRA_ITEM": 1,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 1,
+        "quantity": 0,
+        "unit_price": 4,
+        "total_amount": 4,
+        "item_count": 1,
+        "EXTRA_ITEM": 1,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/test16.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "져지",
+          "quantity": 3,
+          "unit_price": 94500,
+          "total_amount": 283500
+        },
+        {
+          "name": "COS 쇼핑백",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "after_items": [
+        {
+          "name": "져지",
+          "quantity": 3,
+          "unit_price": 94500,
+          "total_amount": 283500
+        },
+        {
+          "name": "COS 쇼핑백",
+          "quantity": 1,
+          "unit_price": 100,
+          "total_amount": 100
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "져지",
+              "quantity": 3,
+              "unit_price": 94500,
+              "total_amount": 283500
+            },
+            "corrected_item": {
+              "name": "져지",
+              "quantity": 3,
+              "unit_price": 94500,
+              "total_amount": 283500
+            },
+            "matched_ocr_row": null,
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 3,
+              "unit_price": 94500,
+              "total_amount": 283500
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          },
+          {
+            "index": 1,
+            "original_item": {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "corrected_item": {
+              "name": "COS 쇼핑백",
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "COS 쇼핑백",
+              "numbers": [
+                {
+                  "text": "100",
+                  "bbox": [
+                    836.0,
+                    1005.0,
+                    879.0,
+                    1034.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 100,
+              "total_amount": 100
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 2,
+        "logical_row_count": 3,
+        "after_count": 2,
+        "elapsed_ms": 7.199
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "저지 S 노란색",
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 135000,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 94500,
+          "before": null,
+          "after": null,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "name",
+          "expected": "저지 S 흰색",
+          "before": "져지",
+          "after": "져지",
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "quantity",
+          "expected": 1,
+          "before": 3,
+          "after": 3,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "unit_price",
+          "expected": 105000,
+          "before": 94500,
+          "after": 94500,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 1,
+          "field": "total_amount",
+          "expected": 63000,
+          "before": 283500,
+          "after": 283500,
+          "correct_before": false,
+          "correct_after": false
+        },
+        {
+          "index": 2,
+          "field": "name",
+          "expected": "COS 쇼핑백",
+          "before": "COS 쇼핑백",
+          "after": "COS 쇼핑백",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "unit_price",
+          "expected": 100,
+          "before": 100,
+          "after": 100,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 2,
+          "field": "total_amount",
+          "expected": 100,
+          "before": 100,
+          "after": 100,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 2,
+        "quantity": 2,
+        "unit_price": 2,
+        "total_amount": 2,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      },
+      "errors_after": {
+        "name": 2,
+        "quantity": 2,
+        "unit_price": 2,
+        "total_amount": 2,
+        "item_count": 1,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 1
+      }
+    },
+    {
+      "source": "grounding-20260905.json",
+      "image": "이미지 test 데이터/test20.jpg",
+      "model": "gemma3:4b-receipt-v3",
+      "before_items": [
+        {
+          "name": "버터",
+          "quantity": 1,
+          "unit_price": 3120,
+          "total_amount": 3120
+        }
+      ],
+      "after_items": [
+        {
+          "name": "버터",
+          "quantity": 1,
+          "unit_price": 3120,
+          "total_amount": 3120
+        }
+      ],
+      "grounding": {
+        "version": "bbox-item-grounding-v3",
+        "changed_items": 0,
+        "items": [
+          {
+            "index": 0,
+            "original_item": {
+              "name": "버터",
+              "quantity": 1,
+              "unit_price": 3120,
+              "total_amount": 3120
+            },
+            "corrected_item": {
+              "name": "버터",
+              "quantity": 1,
+              "unit_price": 3120,
+              "total_amount": 3120
+            },
+            "matched_ocr_row": {
+              "page": 1,
+              "text": "버터",
+              "numbers": [
+                {
+                  "text": "1",
+                  "bbox": [
+                    733.0,
+                    761.0,
+                    746.0,
+                    776.0
+                  ]
+                },
+                {
+                  "text": "3,120",
+                  "bbox": [
+                    827.0,
+                    754.0,
+                    896.0,
+                    784.0
+                  ]
+                }
+              ]
+            },
+            "action": "kept",
+            "confidence": 0.0,
+            "before": {
+              "quantity": 1,
+              "unit_price": 3120,
+              "total_amount": 3120
+            },
+            "changes": {},
+            "reason": "model_arithmetic_consistent"
+          }
+        ],
+        "added_items": [],
+        "removed_items": [],
+        "before_count": 1,
+        "logical_row_count": 2,
+        "after_count": 1,
+        "elapsed_ms": 1.863
+      },
+      "comparisons": [
+        {
+          "index": 0,
+          "field": "name",
+          "expected": "버터",
+          "before": "버터",
+          "after": "버터",
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "quantity",
+          "expected": 1,
+          "before": 1,
+          "after": 1,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "unit_price",
+          "expected": 3120,
+          "before": 3120,
+          "after": 3120,
+          "correct_before": true,
+          "correct_after": true
+        },
+        {
+          "index": 0,
+          "field": "total_amount",
+          "expected": 3120,
+          "before": 3120,
+          "after": 3120,
+          "correct_before": true,
+          "correct_after": true
+        }
+      ],
+      "errors_before": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      },
+      "errors_after": {
+        "name": 0,
+        "quantity": 0,
+        "unit_price": 0,
+        "total_amount": 0,
+        "item_count": 0,
+        "EXTRA_ITEM": 0,
+        "total_quantity": 0
+      }
+    }
+  ],
+  "summary": {
+    "cases": 22,
+    "documents_changed": 1,
+    "changed_items": 1,
+    "numeric_fields": 210,
+    "numeric_correct_before": 137,
+    "numeric_correct_after": 138,
+    "fixed_fields": 1,
+    "regressed_fields": 0,
+    "grounding_ms_mean": 4.083909090909091,
+    "prompt_identical": true,
+    "item_error_counts": {
+      "item_count": {
+        "before": 9,
+        "after": 9,
+        "delta": 0
+      },
+      "total_quantity": {
+        "before": 8,
+        "after": 8,
+        "delta": 0
+      },
+      "name": {
+        "before": 20,
+        "after": 20,
+        "delta": 0
+      },
+      "quantity": {
+        "before": 11,
+        "after": 11,
+        "delta": 0
+      },
+      "unit_price": {
+        "before": 31,
+        "after": 30,
+        "delta": -1
+      },
+      "total_amount": {
+        "before": 31,
+        "after": 31,
+        "delta": 0
+      },
+      "EXTRA_ITEM": {
+        "before": 14,
+        "after": 14,
+        "delta": 0
+      }
+    },
+    "added_items": 0,
+    "removed_items": 0
+  },
+  "baseline": "cleaned_saved_llm_items_before_grounding",
+  "extra_item_definition": "surplus predicted count: max(0, predicted - expected); not error-analysis tag count"
+}

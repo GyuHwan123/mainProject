@@ -208,7 +208,7 @@ def _deduplicate(tags: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _evaluation_failed(ground_truth: dict[str, Any], prediction: dict[str, Any]) -> bool:
     for field, expected in ground_truth.items():
-        if field == "items":
+        if field in {"items", "card_number"}:
             continue
         if not _value_equal(field, expected, prediction.get(field)):
             return True
@@ -243,7 +243,7 @@ def analyze_finance_evaluation_failure(
     truth_items = [row for row in ground_truth.get("items") or [] if isinstance(row, dict)]
     tags: list[dict[str, Any]] = []
     for field, expected in ground_truth.items():
-        if field == "items":
+        if field in {"items", "card_number"}:
             continue
         actual = prediction.get(field)
         if (
@@ -311,7 +311,7 @@ def analyze_finance_evaluation_failure(
 
     # Summary OCR evidence: absence alone is uncertain because OCR can split tokens.
     for field, expected in ground_truth.items():
-        if field == "items" or expected in (None, "", []):
+        if field in {"items", "card_number"} or expected in (None, "", []):
             continue
         actual = prediction.get(field)
         if _value_equal(field, expected, actual):
@@ -514,7 +514,7 @@ def analyze_finance_evaluation_failure(
     # This prevents UI rows from ending as "분류 없음" even when a specialized
     # heuristic has not been added yet.
     for field, expected in ground_truth.items():
-        if field == "items" or _value_equal(field, expected, prediction.get(field)):
+        if field in {"items", "card_number"} or _value_equal(field, expected, prediction.get(field)):
             continue
         if not any(tag.get("scope") == "sample" and tag.get("field") == field for tag in tags):
             tags.append(_tag(

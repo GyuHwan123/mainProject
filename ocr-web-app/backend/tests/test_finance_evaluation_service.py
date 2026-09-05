@@ -8,6 +8,21 @@ from app.services.finance_evaluation_service import estimate_ocr_impact, normali
 
 
 class FinanceEvaluationServiceTests(unittest.TestCase):
+    def test_card_number_is_excluded_from_evaluation(self):
+        baseline = score_fields({"total_amount": 1000}, {"total_amount": 1000})
+        for key in ("card_number", "카드번호"):
+            truth = normalize_ground_truth({"total_amount": 1000, key: "1234"})
+            for prediction in ({}, {"card_number": None}, {"card_number": "9999"}, {"card_number": "1234"}):
+                with self.subTest(key=key, prediction=prediction):
+                    score = score_fields({"total_amount": 1000, **prediction}, truth)
+                    self.assertEqual(score, baseline)
+                    self.assertEqual(score["evaluated_fields"], 1)
+                    self.assertEqual(score["field_accuracy"], 1.0)
+                    self.assertTrue(score["complete_match"])
+                    self.assertNotIn("card_number", score["fields"])
+                    impact = estimate_ocr_impact("1000", truth, score)
+                    self.assertFalse(any(e["field"] == "card_number" for e in impact["fields"]))
+
     def test_treats_haircut_and_beauty_service_as_same_item(self):
         score = score_fields(
             {"items": [{"name": "헤어컷", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},

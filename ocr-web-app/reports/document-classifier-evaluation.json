@@ -1,0 +1,4576 @@
+{
+  "audit": {
+    "rows": 1000,
+    "label_counts": {
+      "EXPENSE_REPORT": 225,
+      "REVIEW_NULL": 100,
+      "TRAVEL_EXPENSE": 225,
+      "PURCHASE_REQUEST": 225,
+      "WELFARE_BENEFIT": 225
+    },
+    "gold_category_labels": {
+      "도서인쇄비": {
+        "EXPENSE_REPORT": 20
+      },
+      "None": {
+        "REVIEW_NULL": 100
+      },
+      "지급수수료": {
+        "EXPENSE_REPORT": 80
+      },
+      "여비교통비": {
+        "TRAVEL_EXPENSE": 148
+      },
+      "비품비": {
+        "PURCHASE_REQUEST": 145
+      },
+      "통신비": {
+        "EXPENSE_REPORT": 26
+      },
+      "복리후생비(간식)": {
+        "WELFARE_BENEFIT": 125
+      },
+      "소모품비": {
+        "PURCHASE_REQUEST": 80
+      },
+      "인쇄비": {
+        "EXPENSE_REPORT": 16
+      },
+      "교통비": {
+        "EXPENSE_REPORT": 31
+      },
+      "회의비": {
+        "EXPENSE_REPORT": 21
+      },
+      "복리후생비(식대)": {
+        "WELFARE_BENEFIT": 100
+      },
+      "출장식비": {
+        "TRAVEL_EXPENSE": 37
+      },
+      "운반비": {
+        "EXPENSE_REPORT": 10
+      },
+      "차량유지비": {
+        "EXPENSE_REPORT": 21
+      },
+      "출장숙박비": {
+        "TRAVEL_EXPENSE": 40
+      }
+    },
+    "unique_ids": 1000,
+    "unique_inputs": 1000,
+    "description_present": 847,
+    "items_present": 854,
+    "proxy_category_present": 694
+  },
+  "data_sha256": "4d8b1b39bf5e97788747c708223f282f133363bbe9d69ae87bc889100870d1e3",
+  "sklearn_version": "1.7.2",
+  "python": "3.12.10",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "group_count": 163,
+  "split_counts": {
+    "train": {
+      "EXPENSE_REPORT": 115,
+      "TRAVEL_EXPENSE": 138,
+      "WELFARE_BENEFIT": 130,
+      "PURCHASE_REQUEST": 133,
+      "REVIEW_NULL": 57
+    },
+    "validation": {
+      "EXPENSE_REPORT": 63,
+      "TRAVEL_EXPENSE": 36,
+      "PURCHASE_REQUEST": 33,
+      "REVIEW_NULL": 24,
+      "WELFARE_BENEFIT": 60
+    },
+    "test": {
+      "EXPENSE_REPORT": 47,
+      "REVIEW_NULL": 19,
+      "PURCHASE_REQUEST": 59,
+      "WELFARE_BENEFIT": 35,
+      "TRAVEL_EXPENSE": 51
+    }
+  },
+  "split_ids": {
+    "train": [
+      "synthetic_01151",
+      "synthetic_01137",
+      "synthetic_01243",
+      "synthetic_01886",
+      "synthetic_01726",
+      "synthetic_01758",
+      "synthetic_01527",
+      "synthetic_01311",
+      "synthetic_02245",
+      "synthetic_00095",
+      "synthetic_01806",
+      "synthetic_02227",
+      "synthetic_01593",
+      "synthetic_02739",
+      "synthetic_00062",
+      "synthetic_02577",
+      "synthetic_02631",
+      "synthetic_00752",
+      "synthetic_00035",
+      "synthetic_00624",
+      "synthetic_01444",
+      "synthetic_01483",
+      "synthetic_01388",
+      "synthetic_02572",
+      "synthetic_00044",
+      "synthetic_01632",
+      "synthetic_02565",
+      "synthetic_00583",
+      "synthetic_00970",
+      "synthetic_02050",
+      "synthetic_02633",
+      "synthetic_02580",
+      "synthetic_02079",
+      "synthetic_00124",
+      "synthetic_01577",
+      "synthetic_02718",
+      "synthetic_00712",
+      "synthetic_00393",
+      "synthetic_01991",
+      "synthetic_02197",
+      "synthetic_01127",
+      "synthetic_01457",
+      "synthetic_02260",
+      "synthetic_02376",
+      "synthetic_02501",
+      "synthetic_02888",
+      "synthetic_01572",
+      "synthetic_00009",
+      "synthetic_02405",
+      "synthetic_00779",
+      "synthetic_02109",
+      "synthetic_02423",
+      "synthetic_00038",
+      "synthetic_01051",
+      "synthetic_00172",
+      "synthetic_00799",
+      "synthetic_02884",
+      "synthetic_01690",
+      "synthetic_00454",
+      "synthetic_02137",
+      "synthetic_02433",
+      "synthetic_00492",
+      "synthetic_01521",
+      "synthetic_01670",
+      "synthetic_02095",
+      "synthetic_00666",
+      "synthetic_01032",
+      "synthetic_00387",
+      "synthetic_01134",
+      "synthetic_01923",
+      "synthetic_02839",
+      "synthetic_01420",
+      "synthetic_02802",
+      "synthetic_00844",
+      "synthetic_00599",
+      "synthetic_01063",
+      "synthetic_01829",
+      "synthetic_00700",
+      "synthetic_00814",
+      "synthetic_00281",
+      "synthetic_02323",
+      "synthetic_01754",
+      "synthetic_02255",
+      "synthetic_01154",
+      "synthetic_02032",
+      "synthetic_02782",
+      "synthetic_01337",
+      "synthetic_00672",
+      "synthetic_01086",
+      "synthetic_01897",
+      "synthetic_01261",
+      "synthetic_02248",
+      "synthetic_02719",
+      "synthetic_01989",
+      "synthetic_00922",
+      "synthetic_01578",
+      "synthetic_00941",
+      "synthetic_00199",
+      "synthetic_01506",
+      "synthetic_02259",
+      "synthetic_01413",
+      "synthetic_00196",
+      "synthetic_01939",
+      "synthetic_01335",
+      "synthetic_00246",
+      "synthetic_02154",
+      "synthetic_01191",
+      "synthetic_02187",
+      "synthetic_02589",
+      "synthetic_01467",
+      "synthetic_02689",
+      "synthetic_01352",
+      "synthetic_01804",
+      "synthetic_02811",
+      "synthetic_00349",
+      "synthetic_02499",
+      "synthetic_01698",
+      "synthetic_01485",
+      "synthetic_00962",
+      "synthetic_02393",
+      "synthetic_02731",
+      "synthetic_01141",
+      "synthetic_01481",
+      "synthetic_00475",
+      "synthetic_00406",
+      "synthetic_00028",
+      "synthetic_00373",
+      "synthetic_00496",
+      "synthetic_02569",
+      "synthetic_00288",
+      "synthetic_02322",
+      "synthetic_01623",
+      "synthetic_00741",
+      "synthetic_02075",
+      "synthetic_02317",
+      "synthetic_00451",
+      "synthetic_00746",
+      "synthetic_02491",
+      "synthetic_00761",
+      "synthetic_02550",
+      "synthetic_00426",
+      "synthetic_00278",
+      "synthetic_00018",
+      "synthetic_00357",
+      "synthetic_02651",
+      "synthetic_00140",
+      "synthetic_00459",
+      "synthetic_00050",
+      "synthetic_00846",
+      "synthetic_02623",
+      "synthetic_00224",
+      "synthetic_01421",
+      "synthetic_02054",
+      "synthetic_00470",
+      "synthetic_02897",
+      "synthetic_01956",
+      "synthetic_00612",
+      "synthetic_00629",
+      "synthetic_02191",
+      "synthetic_01517",
+      "synthetic_01694",
+      "synthetic_00648",
+      "synthetic_02174",
+      "synthetic_00088",
+      "synthetic_00637",
+      "synthetic_01273",
+      "synthetic_01872",
+      "synthetic_02319",
+      "synthetic_01020",
+      "synthetic_01629",
+      "synthetic_00023",
+      "synthetic_00439",
+      "synthetic_02212",
+      "synthetic_00999",
+      "synthetic_00412",
+      "synthetic_01067",
+      "synthetic_01755",
+      "synthetic_00031",
+      "synthetic_00104",
+      "synthetic_01322",
+      "synthetic_00457",
+      "synthetic_00330",
+      "synthetic_02115",
+      "synthetic_00117",
+      "synthetic_00161",
+      "synthetic_00983",
+      "synthetic_01713",
+      "synthetic_00729",
+      "synthetic_01357",
+      "synthetic_00082",
+      "synthetic_01001",
+      "synthetic_02076",
+      "synthetic_02578",
+      "synthetic_01462",
+      "synthetic_00366",
+      "synthetic_01395",
+      "synthetic_01373",
+      "synthetic_02218",
+      "synthetic_01839",
+      "synthetic_01831",
+      "synthetic_01185",
+      "synthetic_01024",
+      "synthetic_00348",
+      "synthetic_01110",
+      "synthetic_02395",
+      "synthetic_01221",
+      "synthetic_00945",
+      "synthetic_00210",
+      "synthetic_02307",
+      "synthetic_00134",
+      "synthetic_00944",
+      "synthetic_02697",
+      "synthetic_00956",
+      "synthetic_00116",
+      "synthetic_00068",
+      "synthetic_02339",
+      "synthetic_00895",
+      "synthetic_02299",
+      "synthetic_01560",
+      "synthetic_00531",
+      "synthetic_02543",
+      "synthetic_02302",
+      "synthetic_02371",
+      "synthetic_00063",
+      "synthetic_02665",
+      "synthetic_00536",
+      "synthetic_00184",
+      "synthetic_01877",
+      "synthetic_02107",
+      "synthetic_02551",
+      "synthetic_00584",
+      "synthetic_00227",
+      "synthetic_02488",
+      "synthetic_01479",
+      "synthetic_02891",
+      "synthetic_01140",
+      "synthetic_00742",
+      "synthetic_01135",
+      "synthetic_02369",
+      "synthetic_00876",
+      "synthetic_01520",
+      "synthetic_00094",
+      "synthetic_02690",
+      "synthetic_00569",
+      "synthetic_00230",
+      "synthetic_02736",
+      "synthetic_00687",
+      "synthetic_01174",
+      "synthetic_02794",
+      "synthetic_01397",
+      "synthetic_00315",
+      "synthetic_02208",
+      "synthetic_02083",
+      "synthetic_00998",
+      "synthetic_00144",
+      "synthetic_00943",
+      "synthetic_01411",
+      "synthetic_01611",
+      "synthetic_00422",
+      "synthetic_00869",
+      "synthetic_01218",
+      "synthetic_00135",
+      "synthetic_00074",
+      "synthetic_00497",
+      "synthetic_00691",
+      "synthetic_00540",
+      "synthetic_01305",
+      "synthetic_01466",
+      "synthetic_01489",
+      "synthetic_00264",
+      "synthetic_01292",
+      "synthetic_02309",
+      "synthetic_00331",
+      "synthetic_00292",
+      "synthetic_01106",
+      "synthetic_01978",
+      "synthetic_02276",
+      "synthetic_01627",
+      "synthetic_01296",
+      "synthetic_02247",
+      "synthetic_01760",
+      "synthetic_01761",
+      "synthetic_00633",
+      "synthetic_01883",
+      "synthetic_01424",
+      "synthetic_02646",
+      "synthetic_00319",
+      "synthetic_01898",
+      "synthetic_02648",
+      "synthetic_02688",
+      "synthetic_01304",
+      "synthetic_02166",
+      "synthetic_01903",
+      "synthetic_01975",
+      "synthetic_01438",
+      "synthetic_00480",
+      "synthetic_01447",
+      "synthetic_01960",
+      "synthetic_02740",
+      "synthetic_00615",
+      "synthetic_01363",
+      "synthetic_00040",
+      "synthetic_01697",
+      "synthetic_01737",
+      "synthetic_02540",
+      "synthetic_01929",
+      "synthetic_00132",
+      "synthetic_02547",
+      "synthetic_00320",
+      "synthetic_02099",
+      "synthetic_01785",
+      "synthetic_00473",
+      "synthetic_00433",
+      "synthetic_00883",
+      "synthetic_02206",
+      "synthetic_00277",
+      "synthetic_02680",
+      "synthetic_02503",
+      "synthetic_02441",
+      "synthetic_00151",
+      "synthetic_00750",
+      "synthetic_00477",
+      "synthetic_01747",
+      "synthetic_02863",
+      "synthetic_01551",
+      "synthetic_00804",
+      "synthetic_00258",
+      "synthetic_02321",
+      "synthetic_00617",
+      "synthetic_02464",
+      "synthetic_01378",
+      "synthetic_02780",
+      "synthetic_00460",
+      "synthetic_02704",
+      "synthetic_02152",
+      "synthetic_00103",
+      "synthetic_00680",
+      "synthetic_02615",
+      "synthetic_00228",
+      "synthetic_01124",
+      "synthetic_00024",
+      "synthetic_02172",
+      "synthetic_01856",
+      "synthetic_02851",
+      "synthetic_01465",
+      "synthetic_00774",
+      "synthetic_01920",
+      "synthetic_01913",
+      "synthetic_02889",
+      "synthetic_02601",
+      "synthetic_00937",
+      "synthetic_01744",
+      "synthetic_00818",
+      "synthetic_01736",
+      "synthetic_02496",
+      "synthetic_02063",
+      "synthetic_01318",
+      "synthetic_01060",
+      "synthetic_02883",
+      "synthetic_02805",
+      "synthetic_02483",
+      "synthetic_01303",
+      "synthetic_00718",
+      "synthetic_02341",
+      "synthetic_02745",
+      "synthetic_00553",
+      "synthetic_00289",
+      "synthetic_02086",
+      "synthetic_02717",
+      "synthetic_00974",
+      "synthetic_01009",
+      "synthetic_02691",
+      "synthetic_01518",
+      "synthetic_01876",
+      "synthetic_02282",
+      "synthetic_01300",
+      "synthetic_00236",
+      "synthetic_01725",
+      "synthetic_01580",
+      "synthetic_01180",
+      "synthetic_02778",
+      "synthetic_02847",
+      "synthetic_00162",
+      "synthetic_00902",
+      "synthetic_02292",
+      "synthetic_02556",
+      "synthetic_00880",
+      "synthetic_02822",
+      "synthetic_00966",
+      "synthetic_01256",
+      "synthetic_00535",
+      "synthetic_00513",
+      "synthetic_00344",
+      "synthetic_00169",
+      "synthetic_02147",
+      "synthetic_01002",
+      "synthetic_00205",
+      "synthetic_00861",
+      "synthetic_00571",
+      "synthetic_00519",
+      "synthetic_00532",
+      "synthetic_02025",
+      "synthetic_02358",
+      "synthetic_02895",
+      "synthetic_01108",
+      "synthetic_00989",
+      "synthetic_02103",
+      "synthetic_01705",
+      "synthetic_02006",
+      "synthetic_01634",
+      "synthetic_00167",
+      "synthetic_01195",
+      "synthetic_00229",
+      "synthetic_00242",
+      "synthetic_01428",
+      "synthetic_00539",
+      "synthetic_02334",
+      "synthetic_02178",
+      "synthetic_00282",
+      "synthetic_00158",
+      "synthetic_01914",
+      "synthetic_00179",
+      "synthetic_01971",
+      "synthetic_01272",
+      "synthetic_01819",
+      "synthetic_02041",
+      "synthetic_01200",
+      "synthetic_02378",
+      "synthetic_01237",
+      "synthetic_01917",
+      "synthetic_01219",
+      "synthetic_01540",
+      "synthetic_01778",
+      "synthetic_00399",
+      "synthetic_02879",
+      "synthetic_02823",
+      "synthetic_02642",
+      "synthetic_01661",
+      "synthetic_00307",
+      "synthetic_01487",
+      "synthetic_00353",
+      "synthetic_02667",
+      "synthetic_00643",
+      "synthetic_00503",
+      "synthetic_00688",
+      "synthetic_02098",
+      "synthetic_01132",
+      "synthetic_01951",
+      "synthetic_00275",
+      "synthetic_01643",
+      "synthetic_02436",
+      "synthetic_01972",
+      "synthetic_00427",
+      "synthetic_01087",
+      "synthetic_02258",
+      "synthetic_02568",
+      "synthetic_01159",
+      "synthetic_02460",
+      "synthetic_00141",
+      "synthetic_00504",
+      "synthetic_02751",
+      "synthetic_01317",
+      "synthetic_01782",
+      "synthetic_00476",
+      "synthetic_01666",
+      "synthetic_01281",
+      "synthetic_02275",
+      "synthetic_00635",
+      "synthetic_02093",
+      "synthetic_01715",
+      "synthetic_02413",
+      "synthetic_01207",
+      "synthetic_00905",
+      "synthetic_01116",
+      "synthetic_00951",
+      "synthetic_02048",
+      "synthetic_01344",
+      "synthetic_01089",
+      "synthetic_02101",
+      "synthetic_01707",
+      "synthetic_02280",
+      "synthetic_02709",
+      "synthetic_00490",
+      "synthetic_02675",
+      "synthetic_00019",
+      "synthetic_02618",
+      "synthetic_01371",
+      "synthetic_01474",
+      "synthetic_02290",
+      "synthetic_02554",
+      "synthetic_01503",
+      "synthetic_01301",
+      "synthetic_00692",
+      "synthetic_01779",
+      "synthetic_00760",
+      "synthetic_01209",
+      "synthetic_02090",
+      "synthetic_01324",
+      "synthetic_01478",
+      "synthetic_01103",
+      "synthetic_01128",
+      "synthetic_01047",
+      "synthetic_02085",
+      "synthetic_02867",
+      "synthetic_00391",
+      "synthetic_02336",
+      "synthetic_01955",
+      "synthetic_00993",
+      "synthetic_00657",
+      "synthetic_02640",
+      "synthetic_01900",
+      "synthetic_01579",
+      "synthetic_01745",
+      "synthetic_01868",
+      "synthetic_02237",
+      "synthetic_01058",
+      "synthetic_02286",
+      "synthetic_01796",
+      "synthetic_02701",
+      "synthetic_00772",
+      "synthetic_02784",
+      "synthetic_02900",
+      "synthetic_01267",
+      "synthetic_01088",
+      "synthetic_00058",
+      "synthetic_02650",
+      "synthetic_01329",
+      "synthetic_01511",
+      "synthetic_01583",
+      "synthetic_01410",
+      "synthetic_02712",
+      "synthetic_01875",
+      "synthetic_02684",
+      "synthetic_02162",
+      "synthetic_02148",
+      "synthetic_02458",
+      "synthetic_02349",
+      "synthetic_00987",
+      "synthetic_00619",
+      "synthetic_02764",
+      "synthetic_01297",
+      "synthetic_00308",
+      "synthetic_00547",
+      "synthetic_01484",
+      "synthetic_02452",
+      "synthetic_01924",
+      "synthetic_01499",
+      "synthetic_02249",
+      "synthetic_00604",
+      "synthetic_01309",
+      "synthetic_01360",
+      "synthetic_02347",
+      "synthetic_02272",
+      "synthetic_00077",
+      "synthetic_01765",
+      "synthetic_00190",
+      "synthetic_00384",
+      "synthetic_02502",
+      "synthetic_02106",
+      "synthetic_01319",
+      "synthetic_01199",
+      "synthetic_01283",
+      "synthetic_02281",
+      "synthetic_02755",
+      "synthetic_00345",
+      "synthetic_00559",
+      "synthetic_00809",
+      "synthetic_02139",
+      "synthetic_01792",
+      "synthetic_00359",
+      "synthetic_00881",
+      "synthetic_01470",
+      "synthetic_02725"
+    ],
+    "validation": [
+      "synthetic_02598",
+      "synthetic_00165",
+      "synthetic_01788",
+      "synthetic_01772",
+      "synthetic_02327",
+      "synthetic_00678",
+      "synthetic_01033",
+      "synthetic_01669",
+      "synthetic_01158",
+      "synthetic_02112",
+      "synthetic_02320",
+      "synthetic_01935",
+      "synthetic_00015",
+      "synthetic_00544",
+      "synthetic_02474",
+      "synthetic_01537",
+      "synthetic_00740",
+      "synthetic_00709",
+      "synthetic_02421",
+      "synthetic_02084",
+      "synthetic_01588",
+      "synthetic_02515",
+      "synthetic_01259",
+      "synthetic_02848",
+      "synthetic_02254",
+      "synthetic_00356",
+      "synthetic_01934",
+      "synthetic_02354",
+      "synthetic_00105",
+      "synthetic_00693",
+      "synthetic_02149",
+      "synthetic_02600",
+      "synthetic_02812",
+      "synthetic_00602",
+      "synthetic_01118",
+      "synthetic_02561",
+      "synthetic_00091",
+      "synthetic_02333",
+      "synthetic_00362",
+      "synthetic_01538",
+      "synthetic_00874",
+      "synthetic_02658",
+      "synthetic_00033",
+      "synthetic_01493",
+      "synthetic_00299",
+      "synthetic_01194",
+      "synthetic_01722",
+      "synthetic_00174",
+      "synthetic_02669",
+      "synthetic_00981",
+      "synthetic_01464",
+      "synthetic_02155",
+      "synthetic_02008",
+      "synthetic_02057",
+      "synthetic_02188",
+      "synthetic_01276",
+      "synthetic_01545",
+      "synthetic_02486",
+      "synthetic_02388",
+      "synthetic_01763",
+      "synthetic_01581",
+      "synthetic_01668",
+      "synthetic_02824",
+      "synthetic_01160",
+      "synthetic_00714",
+      "synthetic_00896",
+      "synthetic_01691",
+      "synthetic_02798",
+      "synthetic_00392",
+      "synthetic_01704",
+      "synthetic_01097",
+      "synthetic_01720",
+      "synthetic_00020",
+      "synthetic_00462",
+      "synthetic_00829",
+      "synthetic_01941",
+      "synthetic_01587",
+      "synthetic_00025",
+      "synthetic_00482",
+      "synthetic_00856",
+      "synthetic_02342",
+      "synthetic_02738",
+      "synthetic_00354",
+      "synthetic_01621",
+      "synthetic_00310",
+      "synthetic_01940",
+      "synthetic_01550",
+      "synthetic_00389",
+      "synthetic_01014",
+      "synthetic_02737",
+      "synthetic_00096",
+      "synthetic_01245",
+      "synthetic_02576",
+      "synthetic_02742",
+      "synthetic_00686",
+      "synthetic_01416",
+      "synthetic_00660",
+      "synthetic_00318",
+      "synthetic_01255",
+      "synthetic_00075",
+      "synthetic_01401",
+      "synthetic_02445",
+      "synthetic_00495",
+      "synthetic_01735",
+      "synthetic_02451",
+      "synthetic_01204",
+      "synthetic_02871",
+      "synthetic_02375",
+      "synthetic_00542",
+      "synthetic_01849",
+      "synthetic_01250",
+      "synthetic_01068",
+      "synthetic_00751",
+      "synthetic_01801",
+      "synthetic_02854",
+      "synthetic_01112",
+      "synthetic_02494",
+      "synthetic_00129",
+      "synthetic_02446",
+      "synthetic_00146",
+      "synthetic_02335",
+      "synthetic_01379",
+      "synthetic_00247",
+      "synthetic_00441",
+      "synthetic_01873",
+      "synthetic_01516",
+      "synthetic_01333",
+      "synthetic_00458",
+      "synthetic_02392",
+      "synthetic_01459",
+      "synthetic_00616",
+      "synthetic_00771",
+      "synthetic_02235",
+      "synthetic_02051",
+      "synthetic_01659",
+      "synthetic_01210",
+      "synthetic_02219",
+      "synthetic_02480",
+      "synthetic_02367",
+      "synthetic_00554",
+      "synthetic_01895",
+      "synthetic_01004",
+      "synthetic_00609",
+      "synthetic_01325",
+      "synthetic_01992",
+      "synthetic_01056",
+      "synthetic_01734",
+      "synthetic_02599",
+      "synthetic_02880",
+      "synthetic_02831",
+      "synthetic_01054",
+      "synthetic_01539",
+      "synthetic_02183",
+      "synthetic_00314",
+      "synthetic_02431",
+      "synthetic_00372",
+      "synthetic_00723",
+      "synthetic_01519",
+      "synthetic_02872",
+      "synthetic_00656",
+      "synthetic_00898",
+      "synthetic_01030",
+      "synthetic_01071",
+      "synthetic_00936",
+      "synthetic_02525",
+      "synthetic_00394",
+      "synthetic_00065",
+      "synthetic_01783",
+      "synthetic_02350",
+      "synthetic_00524",
+      "synthetic_01463",
+      "synthetic_01853",
+      "synthetic_01700",
+      "synthetic_01938",
+      "synthetic_00381",
+      "synthetic_00695",
+      "synthetic_02564",
+      "synthetic_01359",
+      "synthetic_00114",
+      "synthetic_01790",
+      "synthetic_01241",
+      "synthetic_02422",
+      "synthetic_02425",
+      "synthetic_02013",
+      "synthetic_00234",
+      "synthetic_01426",
+      "synthetic_02616",
+      "synthetic_01070",
+      "synthetic_01505",
+      "synthetic_02786",
+      "synthetic_00485",
+      "synthetic_01402",
+      "synthetic_01376",
+      "synthetic_01901",
+      "synthetic_01440",
+      "synthetic_00739",
+      "synthetic_00276",
+      "synthetic_00608",
+      "synthetic_02657",
+      "synthetic_01183",
+      "synthetic_01513",
+      "synthetic_02256",
+      "synthetic_01743",
+      "synthetic_01667",
+      "synthetic_01136",
+      "synthetic_02124",
+      "synthetic_02716",
+      "synthetic_01963",
+      "synthetic_00491",
+      "synthetic_02527",
+      "synthetic_02632",
+      "synthetic_00152",
+      "synthetic_02593",
+      "synthetic_00212",
+      "synthetic_00920",
+      "synthetic_02514"
+    ],
+    "test": [
+      "synthetic_02373",
+      "synthetic_01215",
+      "synthetic_02298",
+      "synthetic_02070",
+      "synthetic_02896",
+      "synthetic_02434",
+      "synthetic_02252",
+      "synthetic_02607",
+      "synthetic_01594",
+      "synthetic_01294",
+      "synthetic_02792",
+      "synthetic_02531",
+      "synthetic_01964",
+      "synthetic_00369",
+      "synthetic_02308",
+      "synthetic_01582",
+      "synthetic_01797",
+      "synthetic_01268",
+      "synthetic_02686",
+      "synthetic_01026",
+      "synthetic_02710",
+      "synthetic_02261",
+      "synthetic_00585",
+      "synthetic_00967",
+      "synthetic_00715",
+      "synthetic_00749",
+      "synthetic_01254",
+      "synthetic_00665",
+      "synthetic_00949",
+      "synthetic_01808",
+      "synthetic_01741",
+      "synthetic_02760",
+      "synthetic_00919",
+      "synthetic_00797",
+      "synthetic_00947",
+      "synthetic_02089",
+      "synthetic_01439",
+      "synthetic_02357",
+      "synthetic_00735",
+      "synthetic_01933",
+      "synthetic_01851",
+      "synthetic_01488",
+      "synthetic_01589",
+      "synthetic_00839",
+      "synthetic_00796",
+      "synthetic_01981",
+      "synthetic_02752",
+      "synthetic_00261",
+      "synthetic_00181",
+      "synthetic_02610",
+      "synthetic_00855",
+      "synthetic_01073",
+      "synthetic_00150",
+      "synthetic_01889",
+      "synthetic_02402",
+      "synthetic_02864",
+      "synthetic_02656",
+      "synthetic_00516",
+      "synthetic_02611",
+      "synthetic_00598",
+      "synthetic_01076",
+      "synthetic_02762",
+      "synthetic_02857",
+      "synthetic_01385",
+      "synthetic_01525",
+      "synthetic_00946",
+      "synthetic_00702",
+      "synthetic_00639",
+      "synthetic_01178",
+      "synthetic_01101",
+      "synthetic_00119",
+      "synthetic_01189",
+      "synthetic_01600",
+      "synthetic_00030",
+      "synthetic_01045",
+      "synthetic_01892",
+      "synthetic_01928",
+      "synthetic_02734",
+      "synthetic_00918",
+      "synthetic_01370",
+      "synthetic_02563",
+      "synthetic_01093",
+      "synthetic_00185",
+      "synthetic_00270",
+      "synthetic_01902",
+      "synthetic_00976",
+      "synthetic_01827",
+      "synthetic_00241",
+      "synthetic_01198",
+      "synthetic_00685",
+      "synthetic_00957",
+      "synthetic_01146",
+      "synthetic_01891",
+      "synthetic_01083",
+      "synthetic_00133",
+      "synthetic_02293",
+      "synthetic_01603",
+      "synthetic_00436",
+      "synthetic_02876",
+      "synthetic_02001",
+      "synthetic_01969",
+      "synthetic_02303",
+      "synthetic_01035",
+      "synthetic_00390",
+      "synthetic_01943",
+      "synthetic_02140",
+      "synthetic_02674",
+      "synthetic_01036",
+      "synthetic_02661",
+      "synthetic_02064",
+      "synthetic_02744",
+      "synthetic_00341",
+      "synthetic_01855",
+      "synthetic_01633",
+      "synthetic_00634",
+      "synthetic_00444",
+      "synthetic_00237",
+      "synthetic_01038",
+      "synthetic_01365",
+      "synthetic_01685",
+      "synthetic_00265",
+      "synthetic_00704",
+      "synthetic_00871",
+      "synthetic_00877",
+      "synthetic_00582",
+      "synthetic_01866",
+      "synthetic_02865",
+      "synthetic_01005",
+      "synthetic_02560",
+      "synthetic_00093",
+      "synthetic_01836",
+      "synthetic_00396",
+      "synthetic_00347",
+      "synthetic_01228",
+      "synthetic_00193",
+      "synthetic_01163",
+      "synthetic_01156",
+      "synthetic_02541",
+      "synthetic_02859",
+      "synthetic_01423",
+      "synthetic_00527",
+      "synthetic_01482",
+      "synthetic_01192",
+      "synthetic_01491",
+      "synthetic_02627",
+      "synthetic_01832",
+      "synthetic_00517",
+      "synthetic_02796",
+      "synthetic_00012",
+      "synthetic_02200",
+      "synthetic_00763",
+      "synthetic_00039",
+      "synthetic_02074",
+      "synthetic_01952",
+      "synthetic_00047",
+      "synthetic_00027",
+      "synthetic_00431",
+      "synthetic_02312",
+      "synthetic_02810",
+      "synthetic_00765",
+      "synthetic_00636",
+      "synthetic_01945",
+      "synthetic_01130",
+      "synthetic_02416",
+      "synthetic_00016",
+      "synthetic_00189",
+      "synthetic_02654",
+      "synthetic_00930",
+      "synthetic_02841",
+      "synthetic_02039",
+      "synthetic_01164",
+      "synthetic_02265",
+      "synthetic_02753",
+      "synthetic_01257",
+      "synthetic_00080",
+      "synthetic_01271",
+      "synthetic_00340",
+      "synthetic_01982",
+      "synthetic_01362",
+      "synthetic_02463",
+      "synthetic_01340",
+      "synthetic_00515",
+      "synthetic_00007",
+      "synthetic_01723",
+      "synthetic_02862",
+      "synthetic_02585",
+      "synthetic_00449",
+      "synthetic_00757",
+      "synthetic_02071",
+      "synthetic_01687",
+      "synthetic_00087",
+      "synthetic_02118",
+      "synthetic_01059",
+      "synthetic_01959",
+      "synthetic_01592",
+      "synthetic_00770",
+      "synthetic_01677",
+      "synthetic_02773",
+      "synthetic_02706",
+      "synthetic_01575",
+      "synthetic_02150",
+      "synthetic_00820",
+      "synthetic_02735",
+      "synthetic_02195",
+      "synthetic_00256",
+      "synthetic_00977",
+      "synthetic_02625",
+      "synthetic_00870",
+      "synthetic_02620",
+      "synthetic_01227",
+      "synthetic_02590"
+    ]
+  },
+  "selection_policy": {
+    "target_precision": 0.95,
+    "min_support": 10,
+    "note": "Exploratory risk target, not a production guarantee; null cases count as errors."
+  },
+  "experiments": {
+    "production_no_category": {
+      "profile": {
+        "with_description": false,
+        "with_category": false
+      },
+      "validation": {
+        "labeled_count": 192,
+        "review_null_count": 24,
+        "accuracy": 0.6041666666666666,
+        "macro_f1": 0.5964674712982043,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 0.9411764705882353,
+            "recall": 0.25396825396825395,
+            "f1-score": 0.4,
+            "support": 63.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 0.5869565217391305,
+            "recall": 0.8181818181818182,
+            "f1-score": 0.6835443037974683,
+            "support": 33.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.5333333333333333,
+            "recall": 0.8888888888888888,
+            "f1-score": 0.6666666666666666,
+            "support": 36.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 0.5942028985507246,
+            "recall": 0.6833333333333333,
+            "f1-score": 0.6356589147286822,
+            "support": 60.0
+          },
+          "accuracy": 0.6041666666666666,
+          "macro avg": {
+            "precision": 0.6639173060528559,
+            "recall": 0.6610930735930736,
+            "f1-score": 0.5964674712982043,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.6953950873827792,
+            "recall": 0.6041666666666666,
+            "f1-score": 0.5723775880679031,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            16,
+            18,
+            9,
+            20
+          ],
+          [
+            0,
+            27,
+            1,
+            5
+          ],
+          [
+            1,
+            0,
+            32,
+            3
+          ],
+          [
+            0,
+            1,
+            18,
+            41
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.6041666666666666,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 17,
+                "precision": 0.9411764705882353
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 46,
+                "precision": 0.5869565217391305
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 60,
+                "precision": 0.5333333333333333
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 69,
+                "precision": 0.5942028985507246
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 155,
+            "coverage": 0.8072916666666666,
+            "accuracy": 0.5741935483870968,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 10,
+                "precision": 0.9
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 0.5454545454545454
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 55,
+                "precision": 0.5636363636363636
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 57,
+                "precision": 0.543859649122807
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 115,
+            "coverage": 0.5989583333333334,
+            "accuracy": 0.6347826086956522,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 18,
+                "precision": 0.6111111111111112
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 39,
+                "precision": 0.6410256410256411
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 50,
+                "precision": 0.6
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 80,
+            "coverage": 0.4166666666666667,
+            "accuracy": 0.825,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 11,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 24,
+                "precision": 0.875
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 37,
+                "precision": 0.7297297297297297
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 54,
+            "coverage": 0.28125,
+            "accuracy": 0.8888888888888888,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 16,
+                "precision": 0.875
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 24,
+                "precision": 0.875
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 17,
+            "coverage": 0.08854166666666667,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 14,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 16,
+            "coverage": 0.08333333333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 13,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 216,
+            "coverage": 1.0,
+            "accuracy": 0.5370370370370371,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 17,
+                "precision": 0.9411764705882353
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 50,
+                "precision": 0.54
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 68,
+                "precision": 0.47058823529411764
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 81,
+                "precision": 0.5061728395061729
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 175,
+            "coverage": 0.8101851851851852,
+            "accuracy": 0.5085714285714286,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 10,
+                "precision": 0.9
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 35,
+                "precision": 0.5142857142857142
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 62,
+                "precision": 0.5
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 68,
+                "precision": 0.45588235294117646
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 129,
+            "coverage": 0.5972222222222222,
+            "accuracy": 0.5658914728682171,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 18,
+                "precision": 0.6111111111111112
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 43,
+                "precision": 0.5813953488372093
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 60,
+                "precision": 0.5
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 89,
+            "coverage": 0.41203703703703703,
+            "accuracy": 0.7415730337078652,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 11,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 25,
+                "precision": 0.84
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 45,
+                "precision": 0.6
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 56,
+            "coverage": 0.25925925925925924,
+            "accuracy": 0.8571428571428571,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 16,
+                "precision": 0.875
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 26,
+                "precision": 0.8076923076923077
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 18,
+            "coverage": 0.08333333333333333,
+            "accuracy": 0.9444444444444444,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 15,
+                "precision": 0.9333333333333333
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 17,
+            "coverage": 0.0787037037037037,
+            "accuracy": 0.9411764705882353,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 14,
+                "precision": 0.9285714285714286
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "recommended_thresholds": {
+        "EXPENSE_REPORT": null,
+        "PURCHASE_REQUEST": 0.6,
+        "TRAVEL_EXPENSE": null,
+        "WELFARE_BENEFIT": null
+      },
+      "validation_selective": {
+        "accepted": 11,
+        "coverage": 0.05092592592592592,
+        "accuracy": 1.0,
+        "null_false_accepts": 0
+      },
+      "test": {
+        "labeled_count": 192,
+        "review_null_count": 19,
+        "accuracy": 0.59375,
+        "macro_f1": 0.5087544751310574,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 1.0,
+            "recall": 0.02127659574468085,
+            "f1-score": 0.041666666666666664,
+            "support": 47.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 0.5656565656565656,
+            "recall": 0.9491525423728814,
+            "f1-score": 0.7088607594936709,
+            "support": 59.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.6458333333333334,
+            "recall": 0.6078431372549019,
+            "f1-score": 0.6262626262626263,
+            "support": 51.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 0.5909090909090909,
+            "recall": 0.7428571428571429,
+            "f1-score": 0.6582278481012658,
+            "support": 35.0
+          },
+          "accuracy": 0.59375,
+          "macro avg": {
+            "precision": 0.7005997474747475,
+            "recall": 0.5802823545574017,
+            "f1-score": 0.5087544751310574,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.6978804976851851,
+            "recall": 0.59375,
+            "f1-score": 0.5143671185749904,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            1,
+            27,
+            8,
+            11
+          ],
+          [
+            0,
+            56,
+            2,
+            1
+          ],
+          [
+            0,
+            14,
+            31,
+            6
+          ],
+          [
+            0,
+            2,
+            7,
+            26
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.59375,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 99,
+                "precision": 0.5656565656565656
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 48,
+                "precision": 0.6458333333333334
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 44,
+                "precision": 0.5909090909090909
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 160,
+            "coverage": 0.8333333333333334,
+            "accuracy": 0.6625,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 84,
+                "precision": 0.5952380952380952
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 40,
+                "precision": 0.775
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 35,
+                "precision": 0.6857142857142857
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 107,
+            "coverage": 0.5572916666666666,
+            "accuracy": 0.8878504672897196,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 48,
+                "precision": 0.8958333333333334
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 0.9666666666666667
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 28,
+                "precision": 0.7857142857142857
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 80,
+            "coverage": 0.4166666666666667,
+            "accuracy": 0.95,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 36,
+                "precision": 0.8888888888888888
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 24,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 19,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 58,
+            "coverage": 0.3020833333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 24,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 23,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 11,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 22,
+            "coverage": 0.11458333333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 13,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 9,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 11,
+            "coverage": 0.057291666666666664,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 5,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 5,
+            "coverage": 0.026041666666666668,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 5,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 211,
+            "coverage": 1.0,
+            "accuracy": 0.5402843601895735,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 106,
+                "precision": 0.5283018867924528
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 53,
+                "precision": 0.5849056603773585
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 51,
+                "precision": 0.5098039215686274
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 175,
+            "coverage": 0.8293838862559242,
+            "accuracy": 0.6057142857142858,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 90,
+                "precision": 0.5555555555555556
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 42,
+                "precision": 0.7380952380952381
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 42,
+                "precision": 0.5714285714285714
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 117,
+            "coverage": 0.5545023696682464,
+            "accuracy": 0.811965811965812,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 53,
+                "precision": 0.8113207547169812
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 31,
+                "precision": 0.9354838709677419
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 32,
+                "precision": 0.6875
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 89,
+            "coverage": 0.4218009478672986,
+            "accuracy": 0.8539325842696629,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 40,
+                "precision": 0.8
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 25,
+                "precision": 0.96
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 23,
+                "precision": 0.8260869565217391
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 66,
+            "coverage": 0.3127962085308057,
+            "accuracy": 0.8787878787878788,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 27,
+                "precision": 0.8888888888888888
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 24,
+                "precision": 0.9583333333333334
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 15,
+                "precision": 0.7333333333333333
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 28,
+            "coverage": 0.13270142180094788,
+            "accuracy": 0.7857142857142857,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 1,
+                "precision": 0.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 14,
+                "precision": 0.9285714285714286
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 13,
+                "precision": 0.6923076923076923
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 13,
+            "coverage": 0.061611374407582936,
+            "accuracy": 0.8461538461538461,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 1,
+                "precision": 0.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 6,
+                "precision": 0.8333333333333334
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 5,
+            "coverage": 0.023696682464454975,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 5,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "test_selective": {
+        "accepted": 40,
+        "coverage": 0.1895734597156398,
+        "accuracy": 0.8,
+        "null_false_accepts": 4
+      },
+      "inference_ms": {
+        "mean": 0.7613453334245909,
+        "p50": 0.6378500038408674,
+        "p95": 1.3505800023267511,
+        "calls": 300,
+        "batch_size": 1,
+        "includes": "TF-IDF + LogisticRegression; warm CPU"
+      }
+    },
+    "production_proxy_category": {
+      "profile": {
+        "with_description": false,
+        "with_category": true
+      },
+      "validation": {
+        "labeled_count": 192,
+        "review_null_count": 24,
+        "accuracy": 0.6302083333333334,
+        "macro_f1": 0.6330083630474672,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 0.9629629629629629,
+            "recall": 0.4126984126984127,
+            "f1-score": 0.5777777777777777,
+            "support": 63.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 0.5740740740740741,
+            "recall": 0.9393939393939394,
+            "f1-score": 0.7126436781609196,
+            "support": 33.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.5245901639344263,
+            "recall": 0.8888888888888888,
+            "f1-score": 0.6597938144329897,
+            "support": 36.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 0.64,
+            "recall": 0.5333333333333333,
+            "f1-score": 0.5818181818181818,
+            "support": 60.0
+          },
+          "accuracy": 0.6302083333333334,
+          "macro avg": {
+            "precision": 0.6754068002428658,
+            "recall": 0.6935786435786435,
+            "f1-score": 0.6330083630474672,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.7130018594414086,
+            "recall": 0.6302083333333334,
+            "f1-score": 0.6175984875416087,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            26,
+            15,
+            9,
+            13
+          ],
+          [
+            0,
+            31,
+            0,
+            2
+          ],
+          [
+            1,
+            0,
+            32,
+            3
+          ],
+          [
+            0,
+            8,
+            20,
+            32
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.6302083333333334,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 27,
+                "precision": 0.9629629629629629
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 54,
+                "precision": 0.5740740740740741
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 61,
+                "precision": 0.5245901639344263
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 50,
+                "precision": 0.64
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 163,
+            "coverage": 0.8489583333333334,
+            "accuracy": 0.656441717791411,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 23,
+                "precision": 0.9565217391304348
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 34,
+                "precision": 0.6176470588235294
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 61,
+                "precision": 0.5245901639344263
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 45,
+                "precision": 0.7111111111111111
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 128,
+            "coverage": 0.6666666666666666,
+            "accuracy": 0.7265625,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 12,
+                "precision": 0.9166666666666666
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 21,
+                "precision": 0.9523809523809523
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 54,
+                "precision": 0.5925925925925926
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 41,
+                "precision": 0.7317073170731707
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 106,
+            "coverage": 0.5520833333333334,
+            "accuracy": 0.8113207547169812,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 18,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 41,
+                "precision": 0.7804878048780488
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 39,
+                "precision": 0.7435897435897436
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 86,
+            "coverage": 0.4479166666666667,
+            "accuracy": 0.8255813953488372,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 12,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 36,
+                "precision": 0.8055555555555556
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 31,
+                "precision": 0.7419354838709677
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 53,
+            "coverage": 0.2760416666666667,
+            "accuracy": 0.8867924528301887,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 19,
+                "precision": 0.8421052631578947
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 24,
+                "precision": 0.875
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 33,
+            "coverage": 0.171875,
+            "accuracy": 0.9090909090909091,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 10,
+                "precision": 0.7
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 14,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 13,
+            "coverage": 0.06770833333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 5,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 5,
+            "coverage": 0.026041666666666668,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 5,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 216,
+            "coverage": 1.0,
+            "accuracy": 0.5601851851851852,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 30,
+                "precision": 0.8666666666666667
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 60,
+                "precision": 0.5166666666666667
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 69,
+                "precision": 0.463768115942029
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 57,
+                "precision": 0.5614035087719298
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 186,
+            "coverage": 0.8611111111111112,
+            "accuracy": 0.5752688172043011,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 26,
+                "precision": 0.8461538461538461
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 39,
+                "precision": 0.5384615384615384
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 69,
+                "precision": 0.463768115942029
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 52,
+                "precision": 0.6153846153846154
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 149,
+            "coverage": 0.6898148148148148,
+            "accuracy": 0.6241610738255033,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 15,
+                "precision": 0.7333333333333333
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 26,
+                "precision": 0.7692307692307693
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 62,
+                "precision": 0.5161290322580645
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 46,
+                "precision": 0.6521739130434783
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 117,
+            "coverage": 0.5416666666666666,
+            "accuracy": 0.7350427350427351,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 8,
+                "precision": 0.875
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 22,
+                "precision": 0.8181818181818182
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 43,
+                "precision": 0.7441860465116279
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 44,
+                "precision": 0.6590909090909091
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 92,
+            "coverage": 0.42592592592592593,
+            "accuracy": 0.7717391304347826,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 14,
+                "precision": 0.8571428571428571
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 37,
+                "precision": 0.7837837837837838
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 34,
+                "precision": 0.6764705882352942
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 56,
+            "coverage": 0.25925925925925924,
+            "accuracy": 0.8392857142857143,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 19,
+                "precision": 0.8421052631578947
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 27,
+                "precision": 0.7777777777777778
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 35,
+            "coverage": 0.16203703703703703,
+            "accuracy": 0.8571428571428571,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 10,
+                "precision": 0.7
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 16,
+                "precision": 0.875
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 14,
+            "coverage": 0.06481481481481481,
+            "accuracy": 0.9285714285714286,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 6,
+                "precision": 0.8333333333333334
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 5,
+            "coverage": 0.023148148148148147,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 5,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "recommended_thresholds": {
+        "EXPENSE_REPORT": null,
+        "PURCHASE_REQUEST": null,
+        "TRAVEL_EXPENSE": null,
+        "WELFARE_BENEFIT": null
+      },
+      "validation_selective": {
+        "accepted": 0,
+        "coverage": 0.0,
+        "accuracy": null,
+        "null_false_accepts": 0
+      },
+      "test": {
+        "labeled_count": 192,
+        "review_null_count": 19,
+        "accuracy": 0.6302083333333334,
+        "macro_f1": 0.5558131962011272,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 1.0,
+            "recall": 0.02127659574468085,
+            "f1-score": 0.041666666666666664,
+            "support": 47.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 0.5086206896551724,
+            "recall": 1.0,
+            "f1-score": 0.6742857142857143,
+            "support": 59.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.9722222222222222,
+            "recall": 0.6862745098039216,
+            "f1-score": 0.8045977011494253,
+            "support": 51.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 0.6666666666666666,
+            "recall": 0.7428571428571429,
+            "f1-score": 0.7027027027027027,
+            "support": 35.0
+          },
+          "accuracy": 0.6302083333333334,
+          "macro avg": {
+            "precision": 0.7868773946360152,
+            "recall": 0.6126020621014363,
+            "f1-score": 0.5558131962011272,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.7808608716475097,
+            "recall": 0.6302083333333334,
+            "f1-score": 0.5592201449448216,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            1,
+            41,
+            0,
+            5
+          ],
+          [
+            0,
+            59,
+            0,
+            0
+          ],
+          [
+            0,
+            8,
+            35,
+            8
+          ],
+          [
+            0,
+            8,
+            1,
+            26
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.6302083333333334,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 116,
+                "precision": 0.5086206896551724
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 36,
+                "precision": 0.9722222222222222
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 39,
+                "precision": 0.6666666666666666
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 179,
+            "coverage": 0.9322916666666666,
+            "accuracy": 0.6759776536312849,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 107,
+                "precision": 0.5514018691588785
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 36,
+                "precision": 0.9722222222222222
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 35,
+                "precision": 0.7428571428571429
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 147,
+            "coverage": 0.765625,
+            "accuracy": 0.7142857142857143,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 85,
+                "precision": 0.5882352941176471
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 31,
+                "precision": 0.7741935483870968
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 129,
+            "coverage": 0.671875,
+            "accuracy": 0.7441860465116279,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 73,
+                "precision": 0.6301369863013698
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 27,
+                "precision": 0.7777777777777778
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 104,
+            "coverage": 0.5416666666666666,
+            "accuracy": 0.7884615384615384,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 64,
+                "precision": 0.65625
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 11,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 75,
+            "coverage": 0.390625,
+            "accuracy": 0.9333333333333333,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 43,
+                "precision": 0.8837209302325582
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 6,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 65,
+            "coverage": 0.3385416666666667,
+            "accuracy": 0.9692307692307692,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 35,
+                "precision": 0.9428571428571428
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 4,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 57,
+            "coverage": 0.296875,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 31,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 21,
+            "coverage": 0.109375,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 14,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 211,
+            "coverage": 1.0,
+            "accuracy": 0.5734597156398105,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 3,
+                "precision": 0.3333333333333333
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 127,
+                "precision": 0.4645669291338583
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 38,
+                "precision": 0.9210526315789473
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 43,
+                "precision": 0.6046511627906976
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 194,
+            "coverage": 0.919431279620853,
+            "accuracy": 0.6237113402061856,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 0.5
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 115,
+                "precision": 0.5130434782608696
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 38,
+                "precision": 0.9210526315789473
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 39,
+                "precision": 0.6666666666666666
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 158,
+            "coverage": 0.7488151658767772,
+            "accuracy": 0.6645569620253164,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 92,
+                "precision": 0.5434782608695652
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 35,
+                "precision": 0.6857142857142857
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 139,
+            "coverage": 0.6587677725118484,
+            "accuracy": 0.6906474820143885,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 79,
+                "precision": 0.5822784810126582
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 31,
+                "precision": 0.6774193548387096
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 113,
+            "coverage": 0.5355450236966824,
+            "accuracy": 0.7256637168141593,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 70,
+                "precision": 0.6
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 14,
+                "precision": 0.7857142857142857
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 82,
+            "coverage": 0.3886255924170616,
+            "accuracy": 0.8536585365853658,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 47,
+                "precision": 0.8085106382978723
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 9,
+                "precision": 0.6666666666666666
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 69,
+            "coverage": 0.32701421800947866,
+            "accuracy": 0.9130434782608695,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 38,
+                "precision": 0.868421052631579
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 5,
+                "precision": 0.8
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 60,
+            "coverage": 0.2843601895734597,
+            "accuracy": 0.95,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 0.9393939393939394
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 1,
+                "precision": 0.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 21,
+            "coverage": 0.0995260663507109,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 14,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "test_selective": {
+        "accepted": 0,
+        "coverage": 0.0,
+        "accuracy": null,
+        "null_false_accepts": 0
+      },
+      "inference_ms": {
+        "mean": 0.824940000238712,
+        "p50": 0.6850000027043279,
+        "p95": 1.4690449999761768,
+        "calls": 300,
+        "batch_size": 1,
+        "includes": "TF-IDF + LogisticRegression; warm CPU"
+      }
+    },
+    "context_proxy_category": {
+      "profile": {
+        "with_description": true,
+        "with_category": true
+      },
+      "validation": {
+        "labeled_count": 192,
+        "review_null_count": 24,
+        "accuracy": 0.9479166666666666,
+        "macro_f1": 0.9535369585687382,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 1.0,
+            "recall": 0.873015873015873,
+            "f1-score": 0.9322033898305084,
+            "support": 63.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1-score": 1.0,
+            "support": 33.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.9444444444444444,
+            "recall": 0.9444444444444444,
+            "f1-score": 0.9444444444444444,
+            "support": 36.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 0.8823529411764706,
+            "recall": 1.0,
+            "f1-score": 0.9375,
+            "support": 60.0
+          },
+          "accuracy": 0.9479166666666666,
+          "macro avg": {
+            "precision": 0.9566993464052288,
+            "recall": 0.9543650793650793,
+            "f1-score": 0.9535369585687382,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.9528186274509803,
+            "recall": 0.9479166666666666,
+            "f1-score": 0.9478063206214689,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            55,
+            0,
+            2,
+            6
+          ],
+          [
+            0,
+            33,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            34,
+            2
+          ],
+          [
+            0,
+            0,
+            0,
+            60
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.9479166666666666,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 55,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 36,
+                "precision": 0.9444444444444444
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 68,
+                "precision": 0.8823529411764706
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 185,
+            "coverage": 0.9635416666666666,
+            "accuracy": 0.9513513513513514,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 49,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 35,
+                "precision": 0.9714285714285714
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 68,
+                "precision": 0.8823529411764706
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 158,
+            "coverage": 0.8229166666666666,
+            "accuracy": 0.9873417721518988,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 32,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 60,
+                "precision": 0.9666666666666667
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 133,
+            "coverage": 0.6927083333333334,
+            "accuracy": 0.9924812030075187,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 20,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 32,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 32,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 49,
+                "precision": 0.9795918367346939
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 97,
+            "coverage": 0.5052083333333334,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 32,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 30,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 64,
+            "coverage": 0.3333333333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 12,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 20,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 53,
+            "coverage": 0.2760416666666667,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 12,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 22,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 19,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 30,
+            "coverage": 0.15625,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 18,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 216,
+            "coverage": 1.0,
+            "accuracy": 0.8425925925925926,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 58,
+                "precision": 0.9482758620689655
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 38,
+                "precision": 0.868421052631579
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 45,
+                "precision": 0.7555555555555555
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 75,
+                "precision": 0.8
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 205,
+            "coverage": 0.9490740740740741,
+            "accuracy": 0.8585365853658536,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 52,
+                "precision": 0.9423076923076923
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 36,
+                "precision": 0.9166666666666666
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 43,
+                "precision": 0.7906976744186046
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 74,
+                "precision": 0.8108108108108109
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 167,
+            "coverage": 0.7731481481481481,
+            "accuracy": 0.9341317365269461,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 33,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 36,
+                "precision": 0.8888888888888888
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 65,
+                "precision": 0.8923076923076924
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 138,
+            "coverage": 0.6388888888888888,
+            "accuracy": 0.9565217391304348,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 20,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 32,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 34,
+                "precision": 0.9411764705882353
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 52,
+                "precision": 0.9230769230769231
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 101,
+            "coverage": 0.4675925925925926,
+            "accuracy": 0.9603960396039604,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 7,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 33,
+                "precision": 0.9696969696969697
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 33,
+                "precision": 0.9090909090909091
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 65,
+            "coverage": 0.30092592592592593,
+            "accuracy": 0.9846153846153847,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 12,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 31,
+                "precision": 0.967741935483871
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 20,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 53,
+            "coverage": 0.24537037037037038,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 12,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 22,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 19,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 30,
+            "coverage": 0.1388888888888889,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 18,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "recommended_thresholds": {
+        "EXPENSE_REPORT": 0.5,
+        "PURCHASE_REQUEST": 0.5,
+        "TRAVEL_EXPENSE": 0.7,
+        "WELFARE_BENEFIT": 0.8
+      },
+      "validation_selective": {
+        "accepted": 119,
+        "coverage": 0.5509259259259259,
+        "accuracy": 0.9915966386554622,
+        "null_false_accepts": 1
+      },
+      "test": {
+        "labeled_count": 192,
+        "review_null_count": 19,
+        "accuracy": 0.7135416666666666,
+        "macro_f1": 0.639917975386876,
+        "classification_report": {
+          "EXPENSE_REPORT": {
+            "precision": 1.0,
+            "recall": 0.02127659574468085,
+            "f1-score": 0.041666666666666664,
+            "support": 47.0
+          },
+          "PURCHASE_REQUEST": {
+            "precision": 0.5315315315315315,
+            "recall": 1.0,
+            "f1-score": 0.6941176470588235,
+            "support": 59.0
+          },
+          "TRAVEL_EXPENSE": {
+            "precision": 0.9444444444444444,
+            "recall": 1.0,
+            "f1-score": 0.9714285714285714,
+            "support": 51.0
+          },
+          "WELFARE_BENEFIT": {
+            "precision": 1.0,
+            "recall": 0.7428571428571429,
+            "f1-score": 0.8524590163934426,
+            "support": 35.0
+          },
+          "accuracy": 0.7135416666666666,
+          "macro avg": {
+            "precision": 0.8689939939939939,
+            "recall": 0.6910334346504559,
+            "f1-score": 0.639917975386876,
+            "support": 192.0
+          },
+          "weighted avg": {
+            "precision": 0.8412865990990991,
+            "recall": 0.7135416666666666,
+            "f1-score": 0.6369281105543311,
+            "support": 192.0
+          }
+        },
+        "confusion_matrix_labels": [
+          "EXPENSE_REPORT",
+          "PURCHASE_REQUEST",
+          "TRAVEL_EXPENSE",
+          "WELFARE_BENEFIT"
+        ],
+        "confusion_matrix": [
+          [
+            1,
+            43,
+            3,
+            0
+          ],
+          [
+            0,
+            59,
+            0,
+            0
+          ],
+          [
+            0,
+            0,
+            51,
+            0
+          ],
+          [
+            0,
+            9,
+            0,
+            26
+          ]
+        ],
+        "thresholds_labeled": [
+          {
+            "threshold": 0.0,
+            "accepted": 192,
+            "coverage": 1.0,
+            "accuracy": 0.7135416666666666,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 111,
+                "precision": 0.5315315315315315
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 54,
+                "precision": 0.9444444444444444
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 26,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 173,
+            "coverage": 0.9010416666666666,
+            "accuracy": 0.7514450867052023,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 102,
+                "precision": 0.5784313725490197
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 44,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 26,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 156,
+            "coverage": 0.8125,
+            "accuracy": 0.8205128205128205,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 87,
+                "precision": 0.6781609195402298
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 42,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 26,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 127,
+            "coverage": 0.6614583333333334,
+            "accuracy": 0.889763779527559,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 70,
+                "precision": 0.8
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 31,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 26,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 105,
+            "coverage": 0.546875,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 51,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 24,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 91,
+            "coverage": 0.4739583333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 46,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 29,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 16,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 78,
+            "coverage": 0.40625,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 40,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 10,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 55,
+            "coverage": 0.2864583333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 1,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 19,
+            "coverage": 0.09895833333333333,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 13,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ],
+        "thresholds_including_review": [
+          {
+            "threshold": 0.0,
+            "accepted": 211,
+            "coverage": 1.0,
+            "accuracy": 0.6492890995260664,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 6,
+                "precision": 0.16666666666666666
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 119,
+                "precision": 0.4957983193277311
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 56,
+                "precision": 0.9107142857142857
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 30,
+                "precision": 0.8666666666666667
+              }
+            }
+          },
+          {
+            "threshold": 0.4,
+            "accepted": 187,
+            "coverage": 0.8862559241706162,
+            "accuracy": 0.6951871657754011,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 2,
+                "precision": 0.5
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 109,
+                "precision": 0.5412844036697247
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 46,
+                "precision": 0.9565217391304348
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 30,
+                "precision": 0.8666666666666667
+              }
+            }
+          },
+          {
+            "threshold": 0.5,
+            "accepted": 165,
+            "coverage": 0.7819905213270142,
+            "accuracy": 0.7757575757575758,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 1,
+                "precision": 1.0
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 92,
+                "precision": 0.6413043478260869
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 42,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 30,
+                "precision": 0.8666666666666667
+              }
+            }
+          },
+          {
+            "threshold": 0.6,
+            "accepted": 133,
+            "coverage": 0.6303317535545023,
+            "accuracy": 0.849624060150376,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 73,
+                "precision": 0.7671232876712328
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 31,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 29,
+                "precision": 0.896551724137931
+              }
+            }
+          },
+          {
+            "threshold": 0.7,
+            "accepted": 109,
+            "coverage": 0.5165876777251185,
+            "accuracy": 0.963302752293578,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 54,
+                "precision": 0.9444444444444444
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 30,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 25,
+                "precision": 0.96
+              }
+            }
+          },
+          {
+            "threshold": 0.8,
+            "accepted": 93,
+            "coverage": 0.44075829383886256,
+            "accuracy": 0.978494623655914,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 48,
+                "precision": 0.9583333333333334
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 29,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 16,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.85,
+            "accepted": 80,
+            "coverage": 0.3791469194312796,
+            "accuracy": 0.975,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 42,
+                "precision": 0.9523809523809523
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 28,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 10,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.9,
+            "accepted": 56,
+            "coverage": 0.26540284360189575,
+            "accuracy": 0.9821428571428571,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 29,
+                "precision": 0.9655172413793104
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 26,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 1,
+                "precision": 1.0
+              }
+            }
+          },
+          {
+            "threshold": 0.95,
+            "accepted": 19,
+            "coverage": 0.09004739336492891,
+            "accuracy": 1.0,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 6,
+                "precision": 1.0
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 13,
+                "precision": 1.0
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          },
+          {
+            "threshold": 0.99,
+            "accepted": 0,
+            "coverage": 0.0,
+            "accuracy": null,
+            "per_class": {
+              "EXPENSE_REPORT": {
+                "accepted": 0,
+                "precision": null
+              },
+              "PURCHASE_REQUEST": {
+                "accepted": 0,
+                "precision": null
+              },
+              "TRAVEL_EXPENSE": {
+                "accepted": 0,
+                "precision": null
+              },
+              "WELFARE_BENEFIT": {
+                "accepted": 0,
+                "precision": null
+              }
+            }
+          }
+        ]
+      },
+      "test_selective": {
+        "accepted": 139,
+        "coverage": 0.6587677725118484,
+        "accuracy": 0.762589928057554,
+        "null_false_accepts": 5
+      },
+      "inference_ms": {
+        "mean": 1.0336866666815088,
+        "p50": 0.8340499989571981,
+        "p95": 2.0232449998729876,
+        "calls": 300,
+        "batch_size": 1,
+        "includes": "TF-IDF + LogisticRegression; warm CPU"
+      }
+    }
+  },
+  "validation_baseline_winner": "production_no_category",
+  "deployment_selection_reason": "Requested category + merchant + items contract; REVIEW-only synthetic candidate. No test-based model selection.",
+  "selected_profile": "production_proxy_category",
+  "artifact_bytes": 60563
+}

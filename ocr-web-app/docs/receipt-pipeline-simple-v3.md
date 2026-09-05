@@ -2,6 +2,13 @@
 
 작성일: 2026-09-05. 현재 소스 코드와 프로젝트 `.env`를 기준으로 작성한 영수증 처리 문서다. 기존 `CURRENT-RECEIPT-PIPELINE.md`는 수정하지 않는다.
 
+문서 유형 분류 변경: 현재 코드는 `receipt-simple-v3.2-document-classifier`다.
+Gemma 1회와 기존 추출 프롬프트를 유지하고, 구조화 결과를 CPU TF-IDF + LogisticRegression에 전달한다.
+분류 결과와 기존 검증을 합친 뒤 DB에 저장한다. 카테고리 매핑은 fallback으로 유지한다.
+제공 합성 데이터 모델은 검증 기준 미달로 REVIEW 전용이며 자동 확정 threshold는 설정하지 않았다.
+아래의 기존 "문서 유형 매핑" 설명에 대한 최신 내용은
+[document classifier 분석·평가](receipt-document-classifier.md)를 따른다.
+
 문서 이름의 v3와 코드의 프롬프트 버전은 별개다. 현재 프롬프트 버전은 `receipt-simple-v1.2-compact-category-ocr-payment`다.
 
 현재 파이프라인 버전은 `receipt-simple-v3.1-post-llm-grounding`, 품목 후처리 버전은 `bbox-item-grounding-v3`다. 아래 설명은 품목 후처리와 카드번호 평가 제외까지 반영한다.

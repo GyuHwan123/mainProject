@@ -139,7 +139,7 @@ def _page_index(text: str, pages: Any) -> list[dict[str, Any]]:
         for c in cells:
             compact = _compact(c.text)
             parts = list(re.finditer(r'상품명|메뉴명|제품명|품명|품목|상품|메뉴|단가|수량|금액', compact))
-            if not parts or ''.join(p.group() for p in parts) != compact or c.confidence < .85:
+            if not parts or ''.join(p.group() for p in parts) != compact or c.confidence < .7:
                 continue
             for part in parts:
                 role = next(k for k, p in _HEADERS.items() if p.fullmatch(part.group()))
@@ -147,7 +147,7 @@ def _page_index(text: str, pages: Any) -> list[dict[str, Any]]:
                 headers.append(dict(role=role, x=x, cell=c, text=part.group()))
         detected = []
         for name in (h for h in headers if h['role'] == 'name'):
-            nearby = [h for h in headers if abs(h['cell'].y - name['cell'].y) <= max(h['cell'].height, name['cell'].height) * 1.2]
+            nearby = [h for h in headers if abs(h['cell'].y - name['cell'].y) <= max(h['cell'].height, name['cell'].height) * 1.6]
             roles = [h['role'] for h in nearby]
             if (len(roles) == len(set(roles)) and {'name', 'quantity', 'total_amount'} <= set(roles)
                     and all(h['x'] > name['x'] for h in nearby if h['role'] != 'name')):
@@ -325,6 +325,7 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                  and re.search(r'합계|주문총액|소계|부가세|공급가액|결제|승인|계금액|subtotal|total', _compact(c.text), re.I)]
         bottom = min(stops, default=float('inf'))
         body = [c for c in page['cells'] if top + height * .4 < row_y(c) < bottom - height * .35]
+        discount_ys = sorted(row_y(c) for c in body if re.search(r'할인|쿠폰|%', c.text))
         width = max(c.box[2] for c in page['cells']) - min(c.box[0] for c in page['cells'])
         columns = {k: [] for k in numeric_roles}
         names = []
@@ -353,7 +354,9 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         def attach(c):
             y = row_y(c)
             pos = bisect_left(ys, y)
-            options = sorted((abs(y - ys[i]), i) for i in (pos - 1, pos) if 0 <= i < len(ys))
+            options = sorted((abs(y - ys[i] - (rows[i].get('slope', slope) - slope)
+                                 * ((c.box[0] + c.box[2] - seeds[i].box[0] - seeds[i].box[2]) / 2)), i)
+                             for i in (pos - 2, pos - 1, pos, pos + 1) if 0 <= i < len(ys))
             delta, index = options[0]
             neighbors = [abs(ys[index] - ys[j]) for j in (index - 1, index + 1) if 0 <= j < len(ys)]
             tolerance = min(max(height, c.height) * .85, min(neighbors) * .46)
@@ -372,6 +375,16 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 row['columns'][role] = c
                 row['numbers'].append(c)
                 row['fields'][role] = _number(c)[0]
+        # Perspective can change skew down the page. Use already associated
+        # numeric columns to refine that row's line before attaching its name.
+        for row in rows:
+            pair = sorted(row['numbers'], key=lambda c: c.box[0])
+            first, last = pair[0], pair[-1]
+            dx = (last.box[0] + last.box[2] - first.box[0] - first.box[2]) / 2
+            if dx > width * .2 and not row['ambiguous']:
+                local_slope = (last.y - first.y) / dx
+                if abs(local_slope - slope) <= .08:
+                    row['slope'] = local_slope
         unattached = []
         for c in names:
             row = attach(c)
@@ -386,9 +399,17 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         # Child rows must be real option evidence, not minor shifts of product x.
         children = [c for c in unattached if re.search(r'옵션|소스|토핑|사이드|추가|구성', c.text)
                     and c.box[0] > min((n.box[0] for n in names), default=0) + height]
-        if len(children) >= 2:
+        children.extend(c for r in rows if r['fields']['total_amount'] == 0 for c in r['cells']
+                        if re.search(r'옵션|소스|토핑|사이드|추가|구성', c.text)
+                        and c.box[0] > min((n.box[0] for n in names), default=0) + height)
+        if children:
             page['table_reason'] = 'unresolved_child_rows'
             continue
+        # A leading orphan name plus a trailing orphan price is evidence of a
+        # multi-line/offset item block, even if the intervening rows look regular.
+        # Do not silently attach each price to the next product in that block.
+        row_offset = (any(row_y(c) < ys[0] - height * .5 for c in unattached)
+                      and not rows[-1]['cells'])
         for index, row in enumerate(rows):
             row['cells'].sort(key=lambda c: c.box[0])
             row['text'] = ' '.join(c.text for c in row['cells'])
@@ -399,13 +420,16 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             excluded = bool(_EXCLUDE.search(_compact(row['text'])))
             # Adjacent discount text invalidates repair of its product, never
             # substitutes the discount or final price for a quantity.
-            discounted = any(re.search(r'할인|쿠폰|%', c.text) and abs(row_y(c) - ys[index]) < height for c in body)
+            discount_pos = bisect_left(discount_ys, ys[index])
+            discounted = any(abs(discount_ys[j] - ys[index]) < height
+                             for j in (discount_pos - 1, discount_pos) if 0 <= j < len(discount_ys))
             q, u, amount = (row['fields'].get(k) for k in FIELDS)
             arithmetic = (q is not None and 0 < q <= 100 and int(q) == q and amount >= 0
                           and (u is None or u >= 0 and abs(q * u - amount) <= 1))
-            row['row_confidence'] = min(c.confidence for c in all_cells) if complete and not excluded and not discounted else 0.0
+            row['row_confidence'] = min(c.confidence for c in all_cells) if complete and not excluded and not discounted and not row_offset else 0.0
             row['repairable'] = row['row_confidence'] >= .9 and arithmetic
-            row['reason'] = ('strong_same_row_table_geometry' if row['repairable'] else
+            row['reason'] = ('unresolved_name_numeric_row_offset' if row_offset else
+                             'strong_same_row_table_geometry' if row['repairable'] else
                              'incomplete_or_low_confidence_row' if row['row_confidence'] < .9 else 'row_arithmetic_conflict')
         page['table_reason'] = 'header_schema_and_repeated_numeric_columns'
         page['table_schema'] = '4_COLUMN' if 'unit_price' in anchors else '3_COLUMN'
@@ -477,7 +501,7 @@ def _item_layout(pages: list[dict[str, Any]], table_rows: list[dict[str, Any]]) 
             layouts.append(('DISCOUNT_BLOCK', .9, 'repeated_product_discount_final_blocks'))
         elif children >= 2:
             layouts.append(('HIERARCHICAL', .9, 'repeated_indented_child_rows'))
-        elif suspicious:
+        elif suspicious or page.get('table_reason') == 'unresolved_child_rows':
             layouts.append(('UNKNOWN', 0.0, 'incomplete_special_layout_evidence'))
         elif any(r['identity'][0] == page['page'] for r in table_rows):
             layouts.append(('COLUMN_TABLE', .95, 'repeated_same_band_name_and_numeric_columns'))
@@ -495,9 +519,12 @@ def _reconcile_count(items: list, logical: list[dict[str, Any]], pages: list[dic
     # items that do not need numeric repair. Uncertainty must never create duplicates.
     related = {i: [r for r in logical if _related_name(str(item.get('name') or ''), r['text'])]
                for i, item in enumerate(original) if isinstance(item, dict)}
+    matched_items = {m['item_index'] for m in trace['row_matching']}
+    matched_rows = {(m['page'], m['row_index']) for m in trace['row_matching']}
     if logical:
         for row in logical:
-            if any(row in matches for matches in related.values()):
+            if ((row['identity'][0], row['row_index']) in matched_rows
+                    or any(row in matches for i, matches in related.items() if i not in matched_items)):
                 continue
             fields = row['fields']
             if (not row.get('repairable') or row['row_confidence'] < .95
@@ -536,7 +563,7 @@ def _reconcile_count(items: list, logical: list[dict[str, Any]], pages: list[dic
         # A suspicious batch is kept intact instead of choosing arbitrary items
         # to delete. The budget uses the original count, before OCR additions.
         if len(removals) <= max(1, len(original) // 5):
-                trace['removed_items'].extend(removals)
+            trace['removed_items'].extend(removals)
         else:
             for entry in trace['items']:
                 if any(r['index'] == entry['index'] for r in removals):
@@ -564,12 +591,12 @@ def _match_table_items(items: list, rows: list[dict[str, Any]]) -> dict[int, tup
             if len(other) < 2:
                 continue
             score = 1.0 if key == other else SequenceMatcher(None, key, other).ratio()
-            if score >= .88 and (score == 1 or min(len(key), len(other)) >= 4):
+            if score >= .8 and (score == 1 or min(len(key), len(other)) >= 4):
                 scores.append((j, score))
         if scores:
             best = max(score for _, score in scores)
             candidates[i] = [(j, score) for j, score in scores if best - score < .12]
-    matched = {i: options[0] for i, options in candidates.items() if len(options) == 1}
+    matched = {i: options[0] for i, options in candidates.items() if len(options) == 1 and options[0][1] >= .88}
     # Do not guess duplicate names from order alone. Require two unique bracketing
     # matches, an unused row, and agreement on page identity.
     usage = Counter(j for j, _ in matched.values())
@@ -668,23 +695,6 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
             entry['matched_ocr_row'] = dict(page=r['identity'][0], text=r['text'],
                 numbers=[dict(text=c.text, bbox=list(c.box)) for c in r['numbers']])
         match, reason = _match_name(str(item.get('name') or ''), indexed)
-        if match is not None:
-            entry['table_detected'] = any(r['identity'][0] == match['page_data']['page'] for r in table_rows)
-            grounded = [r for r in table_rows if r['identity'][0] == match['page_data']['page']
-                        and _name_key(r['text']) == _name_key(str(item.get('name') or ''))
-                        and {c.index for c in match['cells']} == {c.index for c in r['cells']}]
-            if len(grounded) == 1:
-                r = grounded[0]
-                entry.update(reason='strong_same_row_table_geometry', match_score=match['score'],
-                             matched_row=dict(page=r['identity'][0], text=r['text'],
-                                 name_boxes=[list(c.box) for c in r['cells']],
-                                 numbers=[dict(text=c.text, bbox=list(c.box)) for c in r['numbers']]))
-                entry['matched_ocr_row'] = entry['matched_row']
-                proposals.append((item, entry, r['fields'], r['identity']))
-                continue
-            if entry['table_detected']:
-                entry['reason'] = 'ambiguous_table_row'
-                continue
         if consistent:
             entry['reason'] = 'model_arithmetic_consistent'
             continue
@@ -741,6 +751,9 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
     else:
         trace['logical_row_count'] = len(logical)
     for removed in trace['removed_items']:
+        for candidate in trace['removal_candidates']:
+            if candidate['index'] == removed['index']:
+                candidate.update(action='removed', reason=removed['reason'])
         entry = next((e for e in trace['items'] if e['index'] == removed['index']), None)
         if entry is not None:
             entry.update(action='removed', corrected_item=None, reason=removed['reason'], confidence=.95)

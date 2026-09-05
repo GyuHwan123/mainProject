@@ -1,2 +1,2 @@
 FROM gemma3:4b-base
-ADAPTER /models/receipts/gemma3-4b-receipt-final-v3-lora-f16.gguf
+ADAPTER /models/receipts/gemma3-4b-receipt-v4-lora-f16.gguf

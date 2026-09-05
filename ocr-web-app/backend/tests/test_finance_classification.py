@@ -233,13 +233,14 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["supply_amount"], 27273)
         self.assertIn("supply_from_guarded_arithmetic", trace["changes"])
 
-    def test_reconcile_uses_explicit_tax_and_total_despite_discount(self):
+    def test_reconcile_reviews_discount_without_final_card_tax(self):
         result = {"supply_amount": 10000, "tax_amount": 1000, "total_amount": 15000}
 
         trace = _reconcile_amounts(result, "부가세 1,000\n할인 2,000\n결제금액 15,000")
 
-        self.assertEqual(result["supply_amount"], 14000)
-        self.assertIn("supply_from_guarded_arithmetic", trace["changes"])
+        self.assertIsNone(result["supply_amount"])
+        self.assertEqual(result["tax_amount"], 1000)
+        self.assertIn("DISCOUNT_TAX_BASIS_UNCLEAR", trace["review_reason"])
 
     def test_reconcile_does_not_confuse_taxable_amount_with_vat(self):
         result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
@@ -253,7 +254,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_reconcile_recognizes_parenthesized_tax_included(self):
         result = {"supply_amount": None, "tax_amount": None, "total_amount": None}
 
-        _reconcile_amounts(result, "결제금액 23,200\n(부가세포함) (2,109)\n할인금액 3,100")
+        _reconcile_amounts(result, "할인금액 3,100\n최종 카드결제금액 23,200\n(부가세포함) (2,109)")
 
         self.assertEqual(result["supply_amount"], 21091)
         self.assertEqual(result["tax_amount"], 2109)

@@ -67,7 +67,7 @@ class ItemGroundingTests(unittest.TestCase):
         items = [model_item()]
         trace = ground_items(items, text, [page])
         self.assertEqual(items, [model_item()])
-        self.assertEqual(trace['items'][0]['reason'], 'ambiguous_name')
+        self.assertEqual(trace['items'][0]['reason'], 'unmatched_or_ambiguous_table_name')
 
     def test_duplicate_names_on_different_rows_are_not_guessed(self):
         text, page = page_of(header(), coffee(), coffee(110))
@@ -187,11 +187,8 @@ class ItemGroundingTests(unittest.TestCase):
             (header(), coffee()),
             (coffee(), coffee(110, name='카페라테')),
             (header(), coffee(), [cell('추가토핑', 30, 100)], coffee(140, name='카페라테')),
-            (header(), coffee(), coffee(110, name='카페라테', a='8000')),
             (header(), coffee(), [cell('카페라테', 0, 110), cell('2', 240, 110),
                                   cell('4500', 340, 110), cell('9000', 460, 110)]),
-            (header(), coffee(), [cell('카페라테', 0, 100), cell('2', 200, 115),
-                                  cell('4500', 300, 115), cell('9000', 420, 115)]),
         ]
         for rows in layouts:
             with self.subTest(rows=rows):
@@ -201,6 +198,100 @@ class ItemGroundingTests(unittest.TestCase):
                 trace = ground_items(items, text, [page])
                 self.assertFalse(trace['table_detected'])
                 self.assertEqual(items[:2], before)
+
+    def test_table_detection_does_not_require_all_rows_to_pass_arithmetic(self):
+        text, page = page_of(header(), coffee(), coffee(110, name='카페라테', a='8000'))
+        items = [model_item(), model_item('카페라테', 1, 100, 100)]
+        trace = ground_items(items, text, [page])
+        self.assertEqual(trace['item_layout_type'], 'COLUMN_TABLE')
+        self.assertEqual(items[0], model_item(q=2, u=4500, a=9000))
+        self.assertEqual(items[1], model_item('카페라테', 1, 100, 100))
+        self.assertEqual(trace['items'][1]['reason'], 'row_arithmetic_conflict')
+
+    def test_three_column_header_repairs_only_observed_values_and_adds_complete_row(self):
+        text, page = page_of(
+            [cell('메 뉴명', 0, 30), cell('수량', 240, 30), cell('금액', 420, 30)],
+            [cell('레몬에이드', 0, 70), cell('2', 250, 70), cell('8000', 410, 70)],
+            [cell('아이스티', 0, 110), cell('3', 250, 110), cell('9000', 410, 110)])
+        for unit in (None, 100):
+            with self.subTest(unit=unit):
+                items = [model_item('레몬에이드', 1, unit, 100)]
+                trace = ground_items(items, text, [page])
+                self.assertEqual(trace['item_layout_type'], 'COLUMN_TABLE')
+                self.assertEqual(trace['table_schema'][0]['schema'], '3_COLUMN')
+                self.assertEqual(items[0], model_item('레몬에이드', 2, unit, 8000))
+                self.assertEqual(items[1]['quantity'], 3)
+                self.assertIsNone(items[1].get('unit_price'))
+                self.assertEqual(len(trace['added_items']), 1)
+
+    def test_merged_headers_skew_scale_and_indented_names_still_form_table(self):
+        for name_header in ('상품명', '품명', '제품명', '상품', '메뉴'):
+            for scale, slope in ((1, -.06), (3, .04)):
+                with self.subTest(header=name_header, scale=scale, slope=slope):
+                    def box(text, x, y, width=60):
+                        return cell(text, x * scale, (y + slope * x) * scale,
+                                    width=width * scale, height=20 * scale)
+                    rows = [[box(name_header, 0, 30), box('단 가 수량', 200, 30, 160), box('금액', 420, 30)]]
+                    expected = []
+                    for j, name in enumerate(('명란바게트', '호롱소세지', '크림치즈빵')):
+                        price = 3500 + j * 700
+                        rows.append([box(name, j * 17, 80 + j * 45, 130), box(str(price), 210, 80 + j * 45),
+                                     box('2', 290, 80 + j * 45), box(str(price * 2), 425, 80 + j * 45)])
+                        expected.append(model_item(name, 2, price, price * 2))
+                    rows[0][-1]['confidence'] = .76  # Clear label with weaker OCR score.
+                    text, page = page_of(*rows)
+                    items = [model_item(i['name'], 1, 100, 100) for i in expected]
+                    trace = ground_items(items, text, [page])
+                    self.assertEqual(trace['item_layout_type'], 'COLUMN_TABLE')
+                    self.assertEqual(items, expected)
+                    self.assertEqual(len(trace['logical_rows']), 3)
+                    self.assertEqual(len(trace['corrected_items']), 3)
+
+    def test_missing_names_and_quantity_do_not_prevent_table_detection_or_invent_items(self):
+        text, page = page_of(
+            [cell('품명', 0, 30), cell('단가 수량', 200, 25, 160), cell('금액', 420, 20)],
+            [cell('5000', 210, 70), cell('10000', 420, 65)],
+            [cell('8000', 210, 110), cell('16000', 420, 105)],
+            [cell('냉삼', 30, 150), cell('6500', 210, 150), cell('32500', 420, 145)])
+        items = [model_item('냉삼', 1, 100, 100)]
+        before = copy.deepcopy(items)
+        trace = ground_items(items, text, [page])
+        self.assertEqual(trace['item_layout_type'], 'COLUMN_TABLE')
+        self.assertEqual(items, before)
+        self.assertEqual(trace['added_items'], [])
+        self.assertTrue(all(not r['repairable'] for r in trace['logical_rows']))
+
+    def test_table_fuzzy_name_and_order_match_preserve_llm_spelling(self):
+        names = ['처음메뉴', '아메리카노', '마지막메뉴', '아메리카노']
+        text, page = page_of(header(), *(coffee(70 + j * 40, name=name) for j, name in enumerate(names)))
+        items = [model_item('처음메뉴'), model_item('아메리카너'), model_item('마지막메뉴')]
+        trace = ground_items(items, text, [page])
+        self.assertEqual(items[1], model_item('아메리카너', 2, 4500, 9000))
+        self.assertEqual(trace['row_matching'][1]['row_index'], 1)
+
+    def test_leading_name_and_trailing_price_guard_prevents_whole_row_shift(self):
+        text, page = page_of(header(), [cell('명란바게트', 0, 70)],
+                             coffee(110, name='호롱소세지', q='1', u='5500', a='5500'),
+                             [cell('1', 200, 150), cell('5000', 300, 150), cell('5000', 420, 150)])
+        items = [model_item('명란바게트', 1, 5500, 5500), model_item('호롱소세지', 1, 5000, 5000)]
+        before = copy.deepcopy(items)
+        trace = ground_items(items, text, [page])
+        self.assertEqual(trace['item_layout_type'], 'COLUMN_TABLE')
+        self.assertEqual(items, before)
+        self.assertEqual(trace['added_items'], [])
+        self.assertTrue(all(r['reason'] == 'unresolved_name_numeric_row_offset' for r in trace['logical_rows']))
+
+    def test_explicit_zero_price_child_rows_do_not_enable_table_additions(self):
+        rows = [header(), coffee(), coffee(110, name='카페라테')]
+        for y, name in ((150, '추가 소스'), (190, '사이드 옵션')):
+            rows.append([cell(name, 40, y, 130), cell('1', 200, y), cell('0', 300, y), cell('0', 420, y)])
+        text, page = page_of(*rows)
+        items = [model_item()]
+        before = copy.deepcopy(items)
+        trace = ground_items(items, text, [page])
+        self.assertIn(trace['item_layout_type'], ('HIERARCHICAL', 'UNKNOWN'))
+        self.assertEqual(trace['applied_postprocessor'], 'preserve_llm_items')
+        self.assertEqual(items, before)
 
     def test_table_duplicate_names_and_shared_rows_are_preserved(self):
         for duplicate_ocr in (True, False):

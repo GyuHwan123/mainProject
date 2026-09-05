@@ -14,7 +14,6 @@ from typing import Any
 from app.api.routes.chatbot import generate
 from app.constants.finance_taxonomy import (
     ALLOWED_EXPENSE_CATEGORIES,
-    CATEGORY_TO_DOCUMENT_TYPE,
     CATEGORY_CLASSIFICATION_POLICIES,
     CATEGORY_DECISION_RULES,
     refine_expense_category,
@@ -22,10 +21,11 @@ from app.constants.finance_taxonomy import (
 from app.core.config import settings
 from app.services.finance_normalization import normalize_date
 from app.services.receipt_item_grounding import ground_items
+from app.services.receipt_document_classifier import classify_document_type
 
 
 FINANCE_PROMPT_VERSION = "receipt-simple-v1.3-compact-category-decision-rules"
-RECEIPT_PIPELINE_VERSION = "receipt-simple-v3.1-post-llm-grounding"
+RECEIPT_PIPELINE_VERSION = "receipt-simple-v3.2-document-classifier"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
 RECEIPT_LLM_TIMEOUT_SECONDS = settings.RECEIPTS_LLM_TIMEOUT_SECONDS
@@ -147,7 +147,7 @@ def _simple_receipt_prompt(
     category_lines = "\n".join(
         f"- {value}: {CATEGORY_CLASSIFICATION_POLICIES[value]}" for value in EXPENSE_CATEGORIES
     )
-    compact_amounts = {key: value for key, value in amount_evidence.items() if key != "labels"}
+    compact_amounts = {key: value for key, value in amount_evidence.items() if key not in {"labels", "resolution_context"}}
     prompt = f"""한국 영수증 OCR을 JSON 객체 하나로 구조화하세요. 설명·마크다운 없이 간결하게 출력하세요.
 OCR에 직접 나타나야 하는 추출값이 없으면 null, 품목 근거가 없으면 items=[]입니다.
 반환 키: merchant, transaction_date, expense_category, supply_amount, tax_amount, discount_amount, total_amount, items
@@ -243,7 +243,7 @@ def _labeled_amount(text: str, label_pattern: str) -> int | None:
     return None
 
 
-def _extract_amount_evidence(text: str) -> dict[str, Any]:
+def _extract_amount_evidence(text: str, *, include_context: bool = False) -> dict[str, Any]:
     compact_text = "\n".join(re.sub(r"\s+", "", line) for line in str(text or "").splitlines())
     taxable_pattern = r"(?<!부가세)과세(?:물품|상품)?(?:가액|금액|합계|매출|액)"
     exempt_pattern = r"면세(?:물품|상품)?(?:가액|금액|합계|매출|액)"
@@ -260,7 +260,7 @@ def _extract_amount_evidence(text: str) -> dict[str, Any]:
         if tax_included_pair:
             total_amount = _receipt_number(tax_included_pair.group(1))
             tax_amount = _receipt_number(tax_included_pair.group(2))
-    return {
+    evidence = {
         "supply_amount": _labeled_amount(text, r"공급(?:가액|액)"),
         "taxable_supply_amount": _labeled_amount(text, taxable_pattern),
         "tax_exempt_amount": _labeled_amount(text, exempt_pattern),
@@ -276,72 +276,155 @@ def _extract_amount_evidence(text: str) -> dict[str, Any]:
             "total": bool(re.search(r"(?:(?:총)?결제(?:금액|요금|액)|승인금액|받을금액|구매금액)", compact_text, re.IGNORECASE)),
         },
     }
+    if include_context:
+        patterns = {
+            "supply_amount": r"공급(?:가액|액)",
+            "taxable_supply_amount": taxable_pattern,
+            "tax_exempt_amount": exempt_pattern,
+            "tax_amount": tax_pattern,
+            "total_amount": r"(?:(?:최종)?카드(?:결제|승인)(?:금액|액)?|(?:최종|총)?결제(?:금액|요금|액)?|승인금액|받을금액|구매금액|총액|합계금액)",
+        }
+        # Select a final payment section only with an explicit payment anchor.
+        rows = compact_text.splitlines()
+        anchors = [i for i, row in enumerate(rows) if re.search(r"최종카드|최종결제|카드전표|신용카드매출전표", row)]
+        final_text = "\n".join(rows[anchors[0]:]) if anchors else ""
+        final_total = _labeled_amount(final_text, patterns["total_amount"])
+        final_tax = _labeled_amount(final_text, tax_pattern)
+        final_selected = final_total is not None
+        scope = final_text if final_selected else compact_text
+        conflicts = []
+        for field, pattern in patterns.items():
+            values = []
+            token_pattern = re.compile(rf"(?:{pattern})[()\[\]:：]*(-?\d{{1,3}}(?:[,.]\d{{3}})+|-?\d{{1,8}})(?:원)?(?![\d*xX])", re.I)
+            for match in token_pattern.finditer(scope):
+                values.append(_receipt_number(match.group(1)) * (-1 if match.group(1).startswith('-') else 1))
+            unique = list(dict.fromkeys(values))
+            if len(unique) > 1:
+                conflicts.append(field)
+            if final_selected or unique:
+                evidence[field] = unique[0] if len(unique) == 1 else None
+        evidence["resolution_context"] = {
+            "conflicts": conflicts,
+            "final_payment_selected": final_selected,
+            "final_payment_tax": final_tax if final_selected else None,
+        }
+        if final_selected:
+            evidence["labels"] = {
+                key: bool(re.search(patterns[field], scope, re.I))
+                for key, field in (("supply", "supply_amount"), ("taxable_supply", "taxable_supply_amount"),
+                                   ("tax_exempt", "tax_exempt_amount"), ("tax", "tax_amount"), ("total", "total_amount"))
+            }
+    return evidence
+
 
 
 def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
-    """Prefer explicit receipt evidence and use arithmetic only when it is unambiguous."""
-    evidence = _extract_amount_evidence(text)
+    """Resolve taxes from OCR first, then guarded deterministic arithmetic."""
+    evidence = _extract_amount_evidence(text, include_context=True)
+    context = evidence["resolution_context"]
+    compact = re.sub(r"\s+", "", text).upper()
     explicit_supply = evidence["supply_amount"]
-    taxable_supply = evidence["taxable_supply_amount"]
-    exempt_supply = evidence["tax_exempt_amount"]
+    taxable = evidence["taxable_supply_amount"]
+    exempt = evidence["tax_exempt_amount"]
     explicit_tax = evidence["tax_amount"]
-    explicit_total = evidence["total_amount"]
-    rounding = evidence["rounding_adjustment"]
     labels = evidence["labels"]
-
+    reasons: list[str] = []
     trace: dict[str, Any] = {
         "policy": "explicit_ocr_then_components_then_guarded_arithmetic",
-        "explicit": evidence,
-        "changes": [],
+        "explicit": evidence, "changes": [], "review_reason": reasons,
+        "tax_treatment": "UNKNOWN", "supply_source": "UNKNOWN", "tax_source": "UNKNOWN",
     }
-
-    tax_supported = explicit_tax is not None and any(
-        value is not None for value in (explicit_total, explicit_supply, taxable_supply, exempt_supply)
-    )
-    if tax_supported:
-        result["tax_amount"] = explicit_tax
-        trace["changes"].append("tax_from_explicit_ocr")
-    elif explicit_tax is not None:
-        trace["rejected_tax_amount"] = {
-            "value": explicit_tax,
-            "reason": "missing_total_or_supply_cross_check",
-        }
-    if explicit_total is not None:
-        result["total_amount"] = explicit_total
+    if evidence["total_amount"] is not None:
+        result["total_amount"] = evidence["total_amount"]
         trace["changes"].append("total_from_explicit_ocr")
-
-    resolved_supply = explicit_supply
-    supply_source = "explicit_ocr"
-    if resolved_supply is None and taxable_supply is not None and (exempt_supply is not None or not labels["tax_exempt"]):
-        resolved_supply = taxable_supply + (exempt_supply or 0)
-        supply_source = "taxable_plus_exempt_ocr"
-    elif resolved_supply is None and exempt_supply is not None and not labels["taxable_supply"]:
-        resolved_supply = exempt_supply
-        supply_source = "tax_exempt_ocr"
-        if explicit_tax is None:
-            result["tax_amount"] = 0
-            trace["changes"].append("tax_zero_from_exempt_only_ocr")
-
-    if resolved_supply is not None:
-        result["supply_amount"] = resolved_supply
-        trace["changes"].append(f"supply_from_{supply_source}")
-    else:
-        total = _as_number(result.get("total_amount"))
-        tax = _as_number(result.get("tax_amount"))
-        model_supply = _as_number(result.get("supply_amount"))
-        components_incomplete = (
-            (labels["taxable_supply"] and taxable_supply is None)
-            or (labels["tax_exempt"] and exempt_supply is None)
-        )
-        if explicit_total is not None and tax_supported and not components_incomplete:
-            calculated = float(total) - float(tax) - float(rounding or 0)
-            calculated = int(calculated) if calculated.is_integer() else calculated
-            if calculated >= 0 and (model_supply is None or abs(float(model_supply) + float(tax) + float(rounding or 0) - float(total)) > 10):
-                result["supply_amount"] = calculated
+    total = _as_number(result.get("total_amount"))
+    total_confirmed = total is not None and total >= 0 and (
+        evidence["total_amount"] is not None or {_receipt_number(v) for v in _MONEY_RE.findall(text)} == {total}
+    ) and "total_amount" not in context["conflicts"]
+    mixed = ((taxable is not None and taxable > 0 and exempt is not None and exempt > 0)
+             or bool(re.search(r"과세.{0,8}면세|면세.{0,8}과세", compact)))
+    if taxable is not None and exempt is not None:
+        mixed = taxable > 0 and exempt > 0
+    incomplete = ((labels["taxable_supply"] and taxable is None)
+                  or (labels["tax_exempt"] and exempt is None))
+    extras = bool(re.search(r"교육세|봉사료|관광진흥기금|기금|수수료", compact))
+    discount = bool(re.search(r"할인|쿠폰", compact))
+    ambiguous_bus = bool(re.search(r"시외[/·ㆍ,또는]+고속|고속[/·ㆍ,또는]+시외", compact))
+    taxable_transport = bool(re.search(r"택시|(?<![A-Z])(?:KTX|SRT)(?![A-Z])|고속철도|시외(?:우등|고급)고속|고속버스|우등고속|항공(?:기|권|운임)|전세버스", compact))
+    exempt_only = bool(re.search(r"(?:도서|책|면세상품)(?:만구매|단독|만결제)", compact))
+    exempt_only = exempt_only or (exempt is not None and exempt == total and not (taxable or explicit_tax))
+    exempt_only = exempt_only or bool(re.search(r"전액면세|면세전용|도서.*면세|면세.*도서", compact))
+    if re.search(r"문구|볼펜|노트|완구|음료|커피|잡화", compact):
+        exempt_only = False
+    treatment = "UNKNOWN"
+    if not mixed and not incomplete:
+        if exempt_only and not (explicit_tax or taxable or taxable_transport):
+            treatment = "EXEMPT"
+        elif (explicit_tax is not None and explicit_tax > 0) or (taxable is not None and taxable > 0) or (taxable_transport and not ambiguous_bus):
+            treatment = "TAXABLE"
+    trace["tax_treatment"] = treatment
+    result["supply_amount"] = explicit_supply
+    result["tax_amount"] = explicit_tax
+    if explicit_supply is not None:
+        trace["supply_source"] = "EXPLICIT_OCR"
+        trace["changes"].append("supply_from_explicit_ocr")
+    if explicit_tax is not None:
+        trace["tax_source"] = "EXPLICIT_OCR"
+        trace["changes"].append("tax_from_explicit_ocr")
+    if explicit_supply is None and taxable is not None and not incomplete:
+        result["supply_amount"] = taxable + (exempt or 0)
+        trace["supply_source"] = "TAXABLE_PLUS_EXEMPT_OCR"
+        trace["changes"].append("supply_from_taxable_plus_exempt_ocr")
+    elif explicit_supply is None and exempt is not None and not labels["taxable_supply"]:
+        result["supply_amount"] = exempt
+        trace["supply_source"] = "EXPLICIT_OCR"
+    if context["conflicts"]:
+        reasons.append("OCR_AMOUNT_CONFLICT")
+    if not total_confirmed:
+        reasons.append("TOTAL_AMOUNT_UNCONFIRMED")
+    if extras:
+        reasons.append("ADDITIONAL_TAX_COMPONENTS")
+    if incomplete or (mixed and (taxable is None or exempt is None)):
+        reasons.append("MIXED_TAX_COMPONENTS_UNRESOLVED")
+    # A discount summary is insufficient to infer the final taxable base.
+    discount_blocked = discount and context["final_payment_tax"] is None
+    if discount_blocked:
+        reasons.append("DISCOUNT_TAX_BASIS_UNCLEAR")
+    guarded = total_confirmed and not (extras or incomplete or context["conflicts"] or discount_blocked)
+    if guarded and not mixed:
+        if treatment == "TAXABLE" and result["supply_amount"] is None:
+            if explicit_tax is not None and 0 <= explicit_tax <= total:
+                result["supply_amount"] = total - explicit_tax
+                trace["supply_source"] = "DERIVED_TAXABLE_TOTAL"
                 trace["changes"].append("supply_from_guarded_arithmetic")
-
+            elif explicit_tax is None and not labels["tax"] and not re.search(r"VAT별도|부가세별도|세금별도", compact):
+                result["tax_amount"] = round(total / 11)
+                result["supply_amount"] = total - result["tax_amount"]
+                trace["supply_source"] = trace["tax_source"] = "DERIVED_TAXABLE_TOTAL"
+                trace["changes"].append("tax_and_supply_from_taxable_total")
+        elif treatment == "EXEMPT":
+            if result["supply_amount"] is None:
+                result["supply_amount"] = total
+                trace["supply_source"] = "DERIVED_EXEMPT_TOTAL"
+                trace["changes"].append("supply_from_exempt_total")
+            if explicit_tax is None:
+                result["tax_amount"] = 0
+                trace["tax_source"] = "EXEMPT_ZERO"
+                trace["changes"].append("tax_zero_from_exempt_only_ocr")
+    if treatment == "UNKNOWN" and not (result["supply_amount"] is not None and explicit_tax is not None):
+        reasons.append("TAX_TREATMENT_UNKNOWN")
+    if result["supply_amount"] is None or result["tax_amount"] is None:
+        reasons.append("TAX_AMOUNTS_UNRESOLVED")
+    if explicit_tax is not None and not any(evidence[f] is not None for f in ("total_amount", "supply_amount", "taxable_supply_amount", "tax_exempt_amount")):
+        trace["rejected_tax_amount"] = {"value": explicit_tax, "reason": "missing_total_or_supply_cross_check"}
+        reasons.append("TAX_EVIDENCE_UNCORROBORATED")
+    supply, tax = result["supply_amount"], result["tax_amount"]
+    if total is not None and supply is not None and tax is not None:
+        if supply < 0 or tax < 0 or abs(supply + tax - total) > AMOUNT_ROUNDING_TOLERANCE:
+            reasons.append("AMOUNT_RELATION_MISMATCH")
     result["amount_resolution"] = trace
     return trace
+
 
 
 def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
@@ -387,6 +470,8 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
     if labels["tax"] and tax is None:
         reasons.append("TAX_AMOUNT_UNRESOLVED")
     amount_resolution = result.get("amount_resolution")
+    if isinstance(amount_resolution, dict):
+        reasons.extend(amount_resolution.get("review_reason", []))
     if isinstance(amount_resolution, dict) and amount_resolution.get("rejected_tax_amount"):
         reasons.append("TAX_EVIDENCE_UNCORROBORATED")
     if supply is not None and tax is not None and total is not None:
@@ -576,8 +661,22 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
         validation = _simple_validation(result, text)
         result["automation_validation"] = validation
     category = _normalize_expense_category(result.get("expense_category"), text)
-    document_type = CATEGORY_TO_DOCUMENT_TYPE.get(category)
     items = _clean_model_items(result.get("items"))
+    classification = classify_document_type({
+        "expense_category": category,
+        "merchant": result.get("merchant"),
+        "items": items,
+        "transaction_description": result.get("transaction_description"),
+    })
+    document_type = classification["selected_document_type"]
+    result["classification_decision"] = classification
+    # Preserve extraction failures and append routing review reasons before DB save.
+    if classification["status"] == "REVIEW":
+        validation["decision"] = "REVIEW"
+        validation["reasons"] = list(dict.fromkeys([
+            *(validation.get("reasons") or []), *classification["reasons"],
+        ]))
+    validation.setdefault("checks", {})["document_classification"] = classification["status"]
     total_quantity = None
     if items and all(item.get("quantity") is not None for item in items):
         total_quantity = sum(float(item["quantity"]) for item in items)

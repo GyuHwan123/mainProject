@@ -67,7 +67,9 @@ def semantic_normalized_value(field: str, value: Any) -> str | None:
         canonical = normalize_expense_category(value)
         return _compact(canonical) if canonical else compact
     if field == "merchant":
-        return MERCHANT_ALIASES.get(compact, compact)
+        canonical = MERCHANT_ALIASES.get(compact, compact)
+        # OCR can omit the terminal branch marker; retain the branch name itself.
+        return canonical[:-1] if len(canonical) > 1 and canonical.endswith("점") else canonical
     if field == "name":
         ktx = re.search(r"ktx0*(\d+)", compact)
         if ktx:

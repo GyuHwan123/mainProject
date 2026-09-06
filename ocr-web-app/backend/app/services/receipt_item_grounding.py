@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import Any
 
 
-VERSION = 'bbox-item-grounding-v5-global-layout'
+VERSION = 'bbox-item-grounding-v5.6-strong-matched-row-repair'
 FIELDS = ('quantity', 'unit_price', 'total_amount')
 _NUMBER = re.compile(r'^[₩￦]?(?P<n>-?(?:\d{1,3}(?:[,.]\d{3})+|\d+)(?:\.\d+)?)(?P<unit>개|ea|원)?$', re.I)
 _EXCLUDE = re.compile(r'할인|쿠폰|취소|반품|환불|공급가액|부가세|과세|면세|합계|소계|결제|승인|사업자|카드|현금|subtotal|total', re.I)
@@ -58,6 +58,10 @@ class Cell:
     index: int
 
     @property
+    def x(self) -> float:
+        return (self.box[0] + self.box[2]) / 2
+
+    @property
     def y(self) -> float:
         return (self.box[1] + self.box[3]) / 2
 
@@ -83,20 +87,45 @@ def _number(cell: Cell) -> tuple[int | float, bool] | None:
     return (int(n) if n.is_integer() else n, match['unit'] in ('개', 'ea'))
 
 
-def _rows(cells: list[Cell]) -> list[list[Cell]]:
+def _corrected_y(cell: Cell, slope: float = 0.0, origin_x: float = 0.0) -> float:
+    return cell.y - slope * (cell.x - origin_x)
+
+
+def _rows(cells: list[Cell], slope: float = 0.0, origin_x: float = 0.0) -> list[list[Cell]]:
+    """Group cells into visual rows after optional skew correction."""
     rows: list[list[Cell]] = []
-    for cell in sorted(cells, key=lambda c: (c.y, c.box[0])):
+    key_y = lambda c: _corrected_y(c, slope, origin_x)
+    for cell in sorted(cells, key=lambda c: (key_y(c), c.box[0])):
         for row in reversed(rows[-3:]):
-            tolerance = min(cell.height, median(c.height for c in row)) * .65
-            if abs(cell.y - median(c.y for c in row)) > tolerance:
+            tolerance = min(cell.height, median(c.height for c in row)) * .75
+            if abs(key_y(cell) - median(key_y(c) for c in row)) > tolerance:
                 continue
-            if any(min(cell.box[2], c.box[2]) - max(cell.box[0], c.box[0]) > min(cell.box[2] - cell.box[0], c.box[2] - c.box[0]) * .25 for c in row):
+            if any(min(cell.box[2], c.box[2]) - max(cell.box[0], c.box[0])
+                   > min(cell.box[2] - cell.box[0], c.box[2] - c.box[0]) * .25 for c in row):
                 continue
             row.append(cell)
             break
         else:
             rows.append([cell])
     return [sorted(row, key=lambda c: c.box[0]) for row in rows]
+
+
+def _header_slope(cells: list[Cell]) -> tuple[float, float]:
+    """Estimate page skew from explicit table headers before row grouping."""
+    hits = []
+    for c in cells:
+        role = next((k for k, p in _HEADERS.items() if p.fullmatch(_compact(c.text))), None)
+        if role:
+            hits.append((role, c))
+    names = [c for role, c in hits if role == 'name']
+    if not names:
+        return 0.0, 0.0
+    name = names[0]
+    peers = [c for role, c in hits if role != 'name' and c.x > name.x
+             and abs(c.y - name.y) <= max(c.height, name.height) * 3]
+    slopes = [(c.y - name.y) / (c.x - name.x) for c in peers if c.x != name.x]
+    slope = median(slopes) if slopes else 0.0
+    return (slope if abs(slope) <= .2 else 0.0), name.x
 
 
 def _page_index(text: str, pages: Any) -> list[dict[str, Any]]:
@@ -126,9 +155,10 @@ def _page_index(text: str, pages: Any) -> list[dict[str, Any]]:
                 cells.append(Cell(value, box, confidence, i))
         if not cells:
             continue
+        page_slope, row_origin_x = _header_slope(cells)
         anchors = {}
         header_y = None
-        for row in _rows(cells):
+        for row in _rows(cells, page_slope, row_origin_x):
             found = {key: (c.box[0] + c.box[2]) / 2 for c in row for key, pattern in _HEADERS.items() if pattern.fullmatch(_compact(c.text))}
             if 'name' in found and len(found) >= 2:
                 anchors = found
@@ -154,11 +184,22 @@ def _page_index(text: str, pages: Any) -> list[dict[str, Any]]:
                 detected = nearby
                 anchors = {h['role']: h['x'] for h in nearby}
                 header_y = median(h['cell'].y for h in nearby)
+                left_h, right_h = min(nearby, key=lambda h: h['x']), max(nearby, key=lambda h: h['x'])
+                dx = right_h['x'] - left_h['x']
+                if dx:
+                    refined = (right_h['cell'].y - left_h['cell'].y) / dx
+                    if abs(refined) <= .2:
+                        page_slope, row_origin_x = refined, anchors.get('name', left_h['x'])
                 break
         named = [c for c in cells if _number(c) is None and len(re.findall(r'[a-z가-힣]', c.text.lower())) >= 2 and not _EXCLUDE.search(_compact(c.text))]
-        indexed.append(dict(page=page_index + 1, cells=cells, names=_rows(named),
-                            numbers=_rows([c for c in cells if _number(c) is not None]),
-                            anchors=anchors, header_y=header_y, headers=detected, height=median(c.height for c in cells)))
+        indexed.append(dict(
+            page=page_index + 1, cells=cells,
+            names=_rows(named, page_slope, row_origin_x),
+            numbers=_rows([c for c in cells if _number(c) is not None], page_slope, row_origin_x),
+            anchors=anchors, header_y=header_y, headers=detected,
+            height=median(c.height for c in cells),
+            row_slope=page_slope, row_origin_x=row_origin_x,
+        ))
     return indexed
 
 
@@ -180,8 +221,10 @@ def _match_name(name: str, pages: list[dict[str, Any]]) -> tuple[dict[str, Any] 
                     score = 1.0 if key == candidate_key else SequenceMatcher(None, key, candidate_key).ratio()
                     if score < .88 or (score < 1 and min(len(key), len(candidate_key)) < 4):
                         continue
-                    matches.append(dict(page_data=page, cells=cells, text=value, score=score,
-                                        y=median(c.y for c in cells)))
+                    matches.append(dict(
+                        page_data=page, cells=cells, text=value, score=score,
+                        y=median(_corrected_y(c, page.get('row_slope', 0.0),
+                                             page.get('row_origin_x', 0.0)) for c in cells)))
     matches.sort(key=lambda m: m['score'], reverse=True)
     if not matches:
         return None, 'name_not_grounded'
@@ -197,9 +240,10 @@ def _match_name(name: str, pages: list[dict[str, Any]]) -> tuple[dict[str, Any] 
 def _nearby_numbers(match: dict[str, Any]) -> tuple[list[Cell] | None, str]:
     page, y = match['page_data'], match['y']
     height = median(c.height for c in match['cells'])
+    slope, origin = page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)
     options = []
     for row in page['numbers']:
-        delta = median(c.y for c in row) - y
+        delta = median(_corrected_y(c, slope, origin) for c in row) - y
         if -height * .55 <= delta <= height * 1.4:
             options.append((abs(delta), row))
     options.sort(key=lambda pair: pair[0])
@@ -208,12 +252,12 @@ def _nearby_numbers(match: dict[str, Any]) -> tuple[list[Cell] | None, str]:
     if len(options) > 1 and options[1][0] - options[0][0] < height * .35:
         return None, 'ambiguous_numeric_row'
     row = options[0][1]
-    row_y = median(c.y for c in row)
+    row_y = median(_corrected_y(c, slope, origin) for c in row)
     if any(c.confidence < .85 for c in row):
         return None, 'low_numeric_confidence'
     # Discounts/cancellations and summary labels near this row invalidate repair.
     for c in page['cells']:
-        if _EXCLUDE.search(_compact(c.text)) and abs(c.y - row_y) <= height * .75:
+        if _EXCLUDE.search(_compact(c.text)) and abs(_corrected_y(c, slope, origin) - row_y) <= height * .75:
             if not any(pattern.fullmatch(_compact(c.text)) for pattern in _HEADERS.values()):
                 return None, 'summary_or_discount_row'
     return row, 'matched'
@@ -275,7 +319,7 @@ def _logical_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             cells = [c for c in cells if not any(p.fullmatch(_compact(c.text)) for p in _HEADERS.values())]
             if not cells:
                 continue
-            match = dict(page_data=page, cells=cells, y=median(c.y for c in cells))
+            match = dict(page_data=page, cells=cells, y=median(_corrected_y(c, page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)) for c in cells))
             numbers, _ = _nearby_numbers(match)
             if numbers is None or max(c.box[2] for c in cells) > min(c.box[0] for c in numbers):
                 continue
@@ -346,34 +390,62 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             tolerance = min(gap * .46, max(height * 1.3, (c.box[2] - c.box[0]) * .65, width * .025))
             if distance <= tolerance and (len(distances) == 1 or distances[1][0] - distance > gap * .12):
                 columns[role].append(c)
-        seeds = sorted(columns['total_amount'], key=row_y)
-        if len(seeds) < 2:
-            page['table_reason'] = 'insufficient_repeated_amount_rows'
+        ordered_columns = {role: sorted(values, key=row_y) for role, values in columns.items()}
+        zero_amount_cells = [c for c in ordered_columns['total_amount'] if _number(c)[0] == 0]
+        seeds = [c for c in ordered_columns['total_amount'] if _number(c)[0] > 0]
+        if not seeds:
+            page['table_reason'] = 'no_paid_amount_rows'
             continue
+        single_row_schema = len(seeds) == 1 and {'name', 'quantity', 'total_amount'} <= set(anchors)
         ys = [row_y(c) for c in seeds]
         rows = [dict(page_data=page, cells=[], numbers=[c], fields={'total_amount': _number(c)[0]},
                      columns={'total_amount': c}, ambiguous=False) for c in seeds]
-        def attach(c):
+
+        # Paid amount cells define row bands. Other columns may skip rows, but
+        # cannot jump across the midpoint between neighboring paid rows.
+        def attach(c, *, name_cell=False):
             y = row_y(c)
             pos = bisect_left(ys, y)
-            options = sorted((abs(y - ys[i] - (rows[i].get('slope', slope) - slope)
-                                 * ((c.box[0] + c.box[2] - seeds[i].box[0] - seeds[i].box[2]) / 2)), i)
-                             for i in (pos - 2, pos - 1, pos, pos + 1) if 0 <= i < len(ys))
-            delta, index = options[0]
-            neighbors = [abs(ys[index] - ys[j]) for j in (index - 1, index + 1) if 0 <= j < len(ys)]
-            tolerance = min(max(height, c.height) * .85, min(neighbors) * .46)
-            if delta > tolerance or (len(options) > 1 and options[1][0] - delta < height * .15):
+            options = []
+            for i in (pos - 1, pos):
+                if not 0 <= i < len(ys):
+                    continue
+                low = (ys[i - 1] + ys[i]) / 2 if i else float('-inf')
+                high = (ys[i] + ys[i + 1]) / 2 if i + 1 < len(ys) else float('inf')
+                if not low <= y <= high:
+                    continue
+                projected = ys[i] + (rows[i].get('slope', slope) - slope) * (c.x - seeds[i].x)
+                delta = abs(y - projected)
+                neighbors = [abs(ys[i] - ys[j]) for j in (i - 1, i + 1) if 0 <= j < len(ys)]
+                neighbor_gap = min(neighbors) if neighbors else height * 3
+                tolerance = min(max(height, c.height) * (1.05 if name_cell else .95), neighbor_gap * .45)
+                if delta <= tolerance:
+                    options.append((delta, i))
+            if not options:
                 return None
-            return rows[index]
+            options.sort()
+            if len(options) > 1 and options[1][0] - options[0][0] < height * .1:
+                return None
+            return options[0]
+
+        # Assign each numeric column monotonically: at most one cell per paid row.
+        # Extra option/zero rows therefore cannot shift every following item down.
         for role in numeric_roles:
             if role == 'total_amount':
                 continue
-            for c in columns[role]:
-                row = attach(c)
-                if row is None:
+            candidates = {}
+            for c in ordered_columns[role]:
+                matched = attach(c)
+                if matched is not None:
+                    delta, row_index = matched
+                    candidates.setdefault(row_index, []).append((delta, c))
+            for row_index, options in candidates.items():
+                options.sort(key=lambda pair: pair[0])
+                if len(options) > 1 and options[1][0] - options[0][0] < height * .12:
+                    rows[row_index]['ambiguous'] = True
                     continue
-                if role in row['columns']:
-                    row['ambiguous'] = True
+                c = options[0][1]
+                row = rows[row_index]
                 row['columns'][role] = c
                 row['numbers'].append(c)
                 row['fields'][role] = _number(c)[0]
@@ -389,24 +461,79 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     row['slope'] = local_slope
         unattached = []
         for c in names:
-            row = attach(c)
-            if row is None:
+            matched = attach(c, name_cell=True)
+            if matched is None:
                 unattached.append(c)
             else:
-                row['cells'].append(c)
+                _, row_index = matched
+                rows[row_index]['cells'].append(c)
+
+        # Multi-line receipt blocks are common:
+        #   ITEM NAME
+        #   optional product code
+        #   unit / qty / amount
+        # If normal same-band matching fails, attach the orphan name to the first
+        # paid numeric row below it, provided no other plausible item name lies between.
+        if unattached:
+            still_unattached = []
+            for c in sorted(unattached, key=row_y):
+                cy = row_y(c)
+                choices = []
+                for i, seed in enumerate(seeds):
+                    sy = ys[i]
+                    if sy <= cy or sy - cy > height * 3.2 or rows[i]['cells']:
+                        continue
+                    between_names = [
+                        other for other in names
+                        if other.index != c.index and cy < row_y(other) < sy
+                    ]
+                    if between_names:
+                        continue
+                    between_cells = [
+                        other for other in body
+                        if cy < row_y(other) < sy and other.index != c.index
+                    ]
+                    # Only product-code-like tokens may appear between name and numbers.
+                    if any(
+                        _number(other) is not None
+                        or (
+                            _number(other) is None
+                            and not re.fullmatch(r'0\d{4,}', _compact(other.text))
+                            and other not in names
+                        )
+                        for other in between_cells
+                    ):
+                        continue
+                    choices.append((sy - cy, i))
+                if len(choices) == 1:
+                    rows[choices[0][1]]['cells'].append(c)
+                else:
+                    still_unattached.append(c)
+            unattached = still_unattached
+        # One-row tables sometimes have a one-character/digit item name that the
+        # normal name filter intentionally excludes. Recover it only when the table
+        # has exactly one strong paid row and exactly one left-column orphan token.
+        if single_row_schema and len(rows) == 1 and not rows[0]['cells']:
+            left_tokens = [
+                c for c in body
+                if c.box[2] < anchors[numeric_roles[0]]
+                and c not in names
+                and not any(p.fullmatch(_compact(c.text)) for p in _HEADERS.values())
+                and not _EXCLUDE.search(_compact(c.text))
+                and re.fullmatch(r'[0-9a-z가-힣]{1,3}', _compact(c.text), re.I)
+                and abs(row_y(c) - ys[0]) <= height * 1.8
+            ]
+            if len(left_tokens) == 1:
+                rows[0]['cells'].append(left_tokens[0])
+
         repeated = sum(len(r['columns']) >= 2 and not r['ambiguous'] for r in rows)
-        if repeated < 2:
+        if repeated < (1 if single_row_schema else 2):
             page['table_reason'] = 'insufficient_repeated_numeric_columns'
             continue
         # Child rows must be real option evidence, not minor shifts of product x.
         children = [c for c in unattached if re.search(r'옵션|소스|토핑|사이드|추가|구성', c.text)
                     and c.box[0] > min((n.box[0] for n in names), default=0) + height]
-        children.extend(c for r in rows if r['fields']['total_amount'] == 0 for c in r['cells']
-                        if re.search(r'옵션|소스|토핑|사이드|추가|구성', c.text)
-                        and c.box[0] > min((n.box[0] for n in names), default=0) + height)
-        if children:
-            page['table_reason'] = 'unresolved_child_rows'
-            continue
+        has_children = bool(children or zero_amount_cells)
         # A leading orphan name plus a trailing orphan price is evidence of a
         # multi-line/offset item block, even if the intervening rows look regular.
         # Do not silently attach each price to the next product in that block.
@@ -418,8 +545,11 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             row['identity'] = (page['page'], tuple(sorted(c.index for c in row['numbers'])))
             row['row_index'] = index
             all_cells = row['cells'] + row['numbers']
-            complete = bool(row['cells']) and set(row['fields']) == set(numeric_roles) and not row['ambiguous']
+            numeric_complete = set(row['fields']) == set(numeric_roles) and not row['ambiguous']
+            complete = numeric_complete and (bool(row['cells']) or single_row_schema)
             excluded = bool(_EXCLUDE.search(_compact(row['text'])))
+            numeric_confidence = min((c.confidence for c in row['numbers']), default=0.0)
+            name_confidence = min((c.confidence for c in row['cells']), default=0.0)
             # Adjacent discount text invalidates repair of its product, never
             # substitutes the discount or final price for a quantity.
             discount_pos = bisect_left(discount_ys, ys[index])
@@ -428,12 +558,15 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             q, u, amount = (row['fields'].get(k) for k in FIELDS)
             arithmetic = (q is not None and 0 < q <= 100 and int(q) == q and amount >= 0
                           and (u is None or u >= 0 and abs(q * u - amount) <= 1))
-            row['row_confidence'] = min(c.confidence for c in all_cells) if complete and not excluded and not discounted and not row_offset else 0.0
-            row['repairable'] = row['row_confidence'] >= .9 and arithmetic
+            row['numeric_confidence'] = numeric_confidence
+            row['name_confidence'] = name_confidence
+            row['row_confidence'] = numeric_confidence if complete and not excluded and not discounted and not row_offset else 0.0
+            row['repairable'] = row['row_confidence'] >= .88 and arithmetic
             row['reason'] = ('unresolved_name_numeric_row_offset' if row_offset else
+                             'strong_numeric_row_geometry' if row['repairable'] and name_confidence < .9 else
                              'strong_same_row_table_geometry' if row['repairable'] else
-                             'incomplete_or_low_confidence_row' if row['row_confidence'] < .9 else 'row_arithmetic_conflict')
-        page['table_reason'] = 'header_schema_and_repeated_numeric_columns'
+                             'incomplete_or_low_confidence_row' if row['row_confidence'] < .88 else 'row_arithmetic_conflict')
+        page['table_reason'] = 'header_schema_with_child_rows' if has_children else 'header_schema_and_repeated_numeric_columns'
         page['table_schema'] = '4_COLUMN' if 'unit_price' in anchors else '3_COLUMN'
         page['table_complete'] = all(r['repairable'] for r in rows) and not unattached
         tables.extend(rows)
@@ -451,11 +584,11 @@ def _item_layout(pages: list[dict[str, Any]], table_rows: list[dict[str, Any]]) 
     layouts = []
     for page in pages:
         if any(r['identity'][0] == page['page'] for r in table_rows):
-            layouts.append(('COLUMN_TABLE', .95, 'header_schema_and_repeated_numeric_columns'))
+            layouts.append(('COLUMN_TABLE', .95, page.get('table_reason') or 'header_schema_and_repeated_numeric_columns'))
             continue
         height = page['height']
         bands = []
-        for row in _rows(page['cells']):
+        for row in _rows(page['cells'], page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)):
             if page['header_y'] is not None and min(c.y for c in row) <= page['header_y']:
                 continue
             label = _compact(' '.join(c.text for c in row if _number(c) is None))
@@ -606,6 +739,8 @@ def _match_table_items(items: list, rows: list[dict[str, Any]]) -> dict[int, tup
             best = max(score for _, score in scores)
             candidates[i] = [(j, score) for j, score in scores if best - score < .12]
     matched = {i: options[0] for i, options in candidates.items() if len(options) == 1 and options[0][1] >= .88}
+    if len(items) == 1 and len(rows) == 1 and rows[0].get('repairable') and 0 not in matched:
+        matched[0] = (0, 1.0)
     # Do not guess duplicate names from order alone. Require two unique bracketing
     # matches, an unused row, and agreement on page identity.
     usage = Counter(j for j, _ in matched.values())
@@ -628,7 +763,7 @@ def _match_table_items(items: list, rows: list[dict[str, Any]]) -> dict[int, tup
 def _reserve_summary_numbers(pages: list, trace: dict) -> None:
     for page in pages:
         reserved = set()
-        for row in _rows(page['cells']):
+        for row in _rows(page['cells'], page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)):
             labels = [c for c in row if re.search(
                 r'총액|총금액|합계|소계|공급가액|부가세|세액|할인|결제|과세|면세|total|subtotal|vat|tax|discount',
                 _compact(c.text), re.I)]
@@ -652,7 +787,7 @@ def _headerless_rows(pages: list, existing: list, trace: dict) -> list:
             continue
         candidates = []
         possible_rows = []
-        for row in _rows(page['cells']):
+        for row in _rows(page['cells'], page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)):
             numbers = [c for c in row if _number(c) is not None]
             names = [c for c in row if _number(c) is None]
             if (not numbers or not names or any(c.index in page['reserved_numbers'] for c in numbers)
@@ -711,7 +846,7 @@ def _collapse_hierarchy(items: list, pages: list, trace: dict) -> None:
     children, paid_names = [], set()
     for page in pages:
         parent = None
-        for row in _rows(page['cells']):
+        for row in _rows(page['cells'], page.get('row_slope', 0.0), page.get('row_origin_x', 0.0)):
             names = [c for c in row if _number(c) is None]
             numbers = [c for c in row if _number(c) is not None]
             if not names:
@@ -721,11 +856,26 @@ def _collapse_hierarchy(items: list, pages: list, trace: dict) -> None:
                 parent = None
                 continue
             x, y = min(c.box[0] for c in names), median(c.y for c in names)
-            if any(_number(c)[0] > 0 for c in numbers):
+            values = [_number(c)[0] for c in numbers]
+
+            if any(n > 0 for n in values):
                 parent = (x, y)
                 paid_names.add(_name_key(label))
+
             elif parent and y > parent[1]:
-                if min(c.confidence for c in row) >= .9:
+                # Free option rows are valid OCR evidence. Keep 0 distinct from None,
+                # and collapse only rows that are structurally option-like.
+                zero_option = bool(values) and all(n == 0 for n in values)
+                option_name = bool(re.search(
+                    r'^\s*[+＋]|추천|옵션|소스|드레싱|토핑|사이드|추가|선택',
+                    label,
+                    re.I,
+                ))
+
+                if (
+                    min(c.confidence for c in row) >= .9
+                    and (zero_option or option_name)
+                ):
                     children.append(label)
     removed = []
     for i, item in enumerate(items):
@@ -777,7 +927,10 @@ def ground_items(items: Any, text: str, pages: Any, *, receipt_total: Any = None
     for r in table_rows:
         trace['logical_rows'].append(dict(page=r['identity'][0], row_index=r['row_index'], name=r['text'],
             **r['fields'], source_bbox=[list(c.box) for c in r['cells'] + r['numbers']],
-            row_confidence=round(r['row_confidence'], 4), reason=r['reason'], repairable=r['repairable']))
+            row_confidence=round(r['row_confidence'], 4),
+            numeric_confidence=round(r.get('numeric_confidence', r['row_confidence']), 4),
+            name_confidence=round(r.get('name_confidence', 0.0), 4),
+            reason=r['reason'], repairable=r['repairable']))
     trace['row_confidence'] = [r['row_confidence'] for r in trace['logical_rows']]
     kind, confidence, reason = _item_layout(indexed, table_rows)
     preserve = kind in ('HIERARCHICAL', 'DISCOUNT_BLOCK') or (kind == 'UNKNOWN' and reason != 'insufficient_layout_evidence')
@@ -831,6 +984,45 @@ def ground_items(items: Any, text: str, pages: Any, *, receipt_total: Any = None
                                              row_index=r['row_index'], name_score=score))
             if r['repairable']:
                 proposals.append((item, entry, r['fields'], r['identity']))
+                continue
+
+            # A strong name match may still identify the correct OCR row even when
+            # one numeric column is missing. Do not throw away an observed paid
+            # amount only because the full row is incomplete.
+            fields = dict(r.get('fields') or {})
+            numeric_conf = r.get('numeric_confidence', 0.0)
+            amount = fields.get('total_amount')
+            try:
+                model_q = float(item.get('quantity'))
+                receipt_limit = float(receipt_total) if receipt_total is not None else None
+            except (TypeError, ValueError, OverflowError):
+                model_q, receipt_limit = 0.0, None
+
+            strong_partial = (
+                score >= .95
+                and numeric_conf >= .95
+                and amount is not None
+                and amount >= 0
+                and (receipt_limit is None or amount <= receipt_limit + 1)
+            )
+            if strong_partial:
+                # If OCR independently observes unit==amount or the model quantity
+                # is exactly one, a one-unit row is safe to complete without using
+                # a neighboring row's number.
+                if 'unit_price' in fields and 'quantity' not in fields and fields['unit_price'] == amount:
+                    fields['quantity'] = 1
+                elif 'unit_price' not in fields and model_q == 1:
+                    fields['quantity'] = 1
+                    fields['unit_price'] = amount
+
+                q, u, a = (fields.get(k) for k in FIELDS)
+                if (
+                    q is not None and u is not None and a is not None
+                    and 0 < q <= 100 and int(q) == q
+                    and u >= 0 and a >= 0 and abs(q * u - a) <= 1
+                ):
+                    entry['reason'] = 'strong_name_partial_row_repair'
+                    proposals.append((item, entry, fields, r['identity']))
             continue
         # Strong table geometry takes precedence; other layouts retain the
         # existing conservative arithmetic-consistency fallback.

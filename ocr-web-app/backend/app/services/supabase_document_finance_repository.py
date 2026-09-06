@@ -7,6 +7,22 @@ from app.services.supabase_base import *
 def _legacy_httpx():
     return sys.modules["app.services.supabase_service"].httpx
 
+def _legacy_extraction_score(rubric: dict[str, Any]) -> float | None:
+    score = rubric.get("extraction_score")
+    if score is None:
+        return None
+    # Preserve the original score in the rubric, and the legacy column's scale.
+    maximum = float(rubric.get("max_extraction_score") or 95)
+    return float(score) * 95 / maximum
+
+
+def _extraction_score(row: dict[str, Any]) -> float | None:
+    score = (row.get("selection_rubric") or {}).get("extraction_score")
+    if score is None:
+        score = row.get("extraction_score_95")
+    return float(score) if score is not None else None
+
+
 class DocumentFinanceMixin:
     def save_ocr_document(
         self,
@@ -156,9 +172,7 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "재무 문서 저장 실패")
         return response.json()[0]
 
-    def list_finance_records(self, user_email: str, *, limit: int | None = 200, record_ids: list[str] | None = None, columns: str = "*") -> list[dict[str, Any]]:
-        if record_ids == []:
-            return []
+    def list_finance_records(self, user_email: str, *, limit: int | None = 200) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
         rows: list[dict[str, Any]] = []
         page_size = 1000
@@ -166,7 +180,7 @@ class DocumentFinanceMixin:
             request_size = page_size if limit is None else min(page_size, limit - len(rows))
             response = _legacy_httpx().get(
                 f"{self.url}/rest/v1/finance_records",
-                params={"select": columns, "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(request_size), "offset": str(len(rows)), **({"id": f"in.({','.join(record_ids)})"} if record_ids else {})},
+                params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(request_size), "offset": str(len(rows))},
                 headers=self._service_headers(), timeout=20,
             )
             self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
@@ -210,36 +224,7 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "영수증 보관함 저장 실패")
         return response.json()[0]
 
-    def get_finance_record(self, user_email: str, record_id: str, *, columns: str) -> dict[str, Any] | None:
-        user_id = self.get_public_user_id(user_email)
-        response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/finance_records",
-            params={"select": columns, "id": f"eq.{record_id}", "user_id": f"eq.{user_id}", "limit": "1"},
-            headers=self._service_headers(), timeout=20,
-        )
-        self._raise_for_supabase(response, "재무 기록 조회 실패")
-        rows = response.json()
-        return rows[0] if rows else None
-
-    def get_receipt_archive_image_url(self, user_email: str, archive_id: str) -> str:
-        user_id = self.get_public_user_id(user_email)
-        response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/receipt_archive",
-            params={"select": "source_storage_path,ocr_documents(file_url)", "id": f"eq.{archive_id}", "user_id": f"eq.{user_id}", "deleted_at": "is.null", "limit": "1"},
-            headers=self._service_headers(), timeout=15,
-        )
-        self._raise_for_supabase(response, "영수증 보관 기록 조회 실패")
-        rows = response.json()
-        item = rows[0] if rows else {}
-        document = item.get("ocr_documents") or {}
-        if isinstance(document, list):
-            document = document[0] if document else {}
-        storage_path = item.get("source_storage_path") or document.get("file_url")
-        if not storage_path:
-            raise HTTPException(status_code=404, detail="영수증 원본을 찾을 수 없습니다.")
-        return self.create_document_signed_url(storage_path)
-
-    def list_receipt_archive(self, user_email: str, *, category: str | None = None, limit: int = 300, document_id: str | None = None) -> list[dict[str, Any]]:
+    def list_receipt_archive(self, user_email: str, *, category: str | None = None, limit: int = 300) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
         params = {
             "select": "*,finance_records!inner(*),ocr_documents(file_name,file_url)",
@@ -248,9 +233,6 @@ class DocumentFinanceMixin:
             "order": "created_at.desc",
             "limit": str(limit),
         }
-        if document_id:
-            params["document_id"] = f"eq.{document_id}"
-            params["limit"] = "1"
         if category == "UNCLASSIFIED":
             params["finance_records.expense_category"] = "is.null"
         elif category:
@@ -451,7 +433,7 @@ class DocumentFinanceMixin:
                     "complete_match": bool(score.get("complete_match")),
                     "selection_rubric": selection_rubric or None,
                     "score_version": selection_rubric.get("version"),
-                    "extraction_score_95": selection_rubric.get("extraction_score"),
+                    "extraction_score_95": _legacy_extraction_score(selection_rubric),
                     "json_schema_rate": selection_rubric.get("schema_rate"),
                     "total_amount_correct": selection_rubric.get("total_amount_correct"),
                     "hallucination_count": selection_rubric.get("hallucination_count"),
@@ -566,15 +548,9 @@ class DocumentFinanceMixin:
         )
         json_schema_rate = sum(schema_rates) / len(schema_rates) if schema_rates else 0
         extraction_scores = [
-            float(row["extraction_score_95"])
-            for row in completed if row.get("extraction_score_95") is not None
+            score for row in completed
+            if (score := _extraction_score(row)) is not None
         ]
-        if not extraction_scores:
-            extraction_scores = [
-                float((row.get("selection_rubric") or {}).get("extraction_score"))
-                for row in completed
-                if (row.get("selection_rubric") or {}).get("extraction_score") is not None
-            ]
         extraction_score_95 = sum(extraction_scores) / len(extraction_scores) if extraction_scores else 0
         latencies = sorted(int(row.get("latency_ms") or 0) for row in completed if int(row.get("latency_ms") or 0) > 0)
         average_latency_ms = round(sum(latencies) / len(latencies)) if latencies else 0
@@ -671,7 +647,7 @@ class DocumentFinanceMixin:
         # PostgREST needs separate keys for the lower and upper bound. Passing
         # them as a list preserves both filters through _legacy_httpx().
         evaluation_params = [
-            ("select", "id,item_id,field_accuracy,complete_match,latency_ms,status,field_scores,error_tags,error_message,evaluated_at,model_name,batch_id"),
+            ("select", "id,item_id,field_accuracy,complete_match,latency_ms,status,field_scores,error_tags,error_message,evaluated_at,model_name,batch_id,validation:pipeline_trace->validation"),
             ("user_id", f"eq.{user_id}"),
             ("evaluated_at", f"gte.{start_at}"),
             ("evaluated_at", f"lt.{end_at}"),

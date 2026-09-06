@@ -287,6 +287,23 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
         self.assertEqual(score["correct_fields"], 0)
         self.assertFalse(score["complete_match"])
 
+    def test_normalizes_merchant_spacing_and_terminal_branch_marker(self):
+        for actual, expected in (
+            ("맥도날드신도림디큐브", "맥도날드 신도림 디큐브점"),
+            ("맥도날드 신도림 디큐브점", "맥도날드신도림디큐브"),
+        ):
+            with self.subTest(actual=actual):
+                self.assertTrue(score_fields(
+                    {"merchant": actual}, {"merchant": expected},
+                )["complete_match"])
+
+    def test_terminal_branch_marker_normalization_preserves_branch_name(self):
+        for actual in ("맥도날드", "맥도날드강남", "맥도날드신도림디큐브점점"):
+            with self.subTest(actual=actual):
+                self.assertFalse(score_fields(
+                    {"merchant": actual}, {"merchant": "맥도날드 신도림 디큐브점"},
+                )["complete_match"])
+
     def test_treats_aladin_used_bookstore_name_as_same_merchant(self):
         score = score_fields(
             {"merchant": "알라딘 합정점"},

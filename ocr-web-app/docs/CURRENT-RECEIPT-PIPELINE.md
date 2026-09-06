@@ -1,357 +1,214 @@
 # 현재 영수증 처리 파이프라인
 
-이 문서는 현재 코드 기준으로 영수증 업로드부터 OCR, 품목 추출, 재무 분류, 사용자 검토, 저장 및 Excel 생성까지의 흐름을 설명한다.
+작성일: 2026-09-06. 저장소의 현재 구현을 기준으로 OCR 입력부터 영수증 구조화, 검증, 저장, 평가까지 설명한다. 실행 환경의 모델 설정이나 최근 평가 결과를 검증한 문서는 아니다.
 
 ## 1. 전체 흐름
 
-```text
-영수증 파일 업로드
-  ↓
-OCR 서비스 호출 (processing_mode=receipt)
-  ↓
-OCR 문서 저장
-  - extracted_text
-  - pages / bounding_boxes
-  - 원본 파일 정보
-  ↓
-규칙 기반 deterministic hints 생성
-  - 거래일
-  - 공급가액 / 부가세 / 합계 / 할인
-  - 결제수단
-  - 명시된 품목 수량
-  - 파일명 기반 문서 유형·카테고리 힌트
-  ↓
-LLM 1차 호출: 영수증 요약·재무 분류
-  - document_type
-  - expense_category
-  - merchant
-  - 금액·결제 정보
-  ↓
-OCR 구조에서 품목 candidate 생성 및 필터링
-  - candidates
-  - rejected_candidates
-  - structured_evidence
-  - item_structure
-  ↓
-grounded fast path 가능 여부 판단
-  ├─ 가능: candidate로 품목 확정, 품목 LLM 호출 생략
-  └─ 불가능: LLM 2차 호출로 품목 추출
-                 ↓ 실패 시 compact retry
-  ↓
-candidate와 model item 조정·복구
-  ↓
-정규화 및 validator
-  - OCR 근거 없는 품목·메타데이터 제거
-  - 날짜·금액·카드번호 grounding
-  - 분류 contract 검증
-  ↓
-중복 영수증 검사
-  ↓
-finance record 저장 (status=REVIEW)
-  ↓
-사용자 검토·수정·확정
-  ↓
-재무팀 전달
-  ↓
-Excel workbook 생성
+```mermaid
+flowchart TD
+    A[파일 업로드 / processing_mode] --> B[OCR 전처리 및 인식]
+    B --> C[박스를 행과 페이지 텍스트로 구성]
+    C --> D[OCR 문서 저장: extracted_text / bounding_boxes]
+    D --> E[영수증 분류 요청]
+    E --> F[OCR 행 정리 / 금액 근거 추출 / 프롬프트 구성]
+    F --> G[LLM JSON 생성 1회]
+    G --> H[금액 보정 / 결제수단 추출]
+    H --> I[품목 grounding]
+    I --> J[카테고리 보정 / 자동화 검증]
+    J --> K[정규화 / 별도 문서 유형 분류]
+    K --> L[중복 표시 / 재무 레코드 저장]
+    K --> M[평가 경로: 정답 비교 / 오류 분석]
 ```
 
-## 2. 업로드와 OCR
+운영 분류는 저장된 OCR 결과를 읽는다. 분류 요청 자체가 원본 이미지의 OCR을 다시 실행하는 구조는 아니다. 평가도 저장된 OCR 텍스트와 페이지 정보를 입력으로 사용할 수 있다.
 
-프런트엔드는 영수증을 다음 endpoint로 업로드한다.
+## 2. OCR 입력 생성과 저장
 
-```http
-POST /ocr/upload?processing_mode=receipt
-```
+관련 파일:
 
-백엔드는 별도 OCR 서비스에 파일을 전달하고 결과를 검증한 뒤 OCR 문서로 저장한다. 이후 프런트엔드는 저장된 `document_id`를 사용해 재무 분류를 요청한다.
+- [backend/app/api/routes/ocr.py](../backend/app/api/routes/ocr.py): OCR 서비스로 파일과 `processing_mode` 전달. 기본값은 `document`.
+- [ocr/app/services/ocr/ocr_service.py](../ocr/app/services/ocr/ocr_service.py): 파일 처리, 전처리 선택, OCR 실행 및 결과 구성.
+- [ocr/app/services/preprocess_service.py](../ocr/app/services/preprocess_service.py): 일반 이미지 전처리.
+- [ocr/app/services/receipt_preprocess_service.py](../ocr/app/services/receipt_preprocess_service.py): 영수증 전용 전처리와 기하 변환 정보 관리.
+- [ocr/app/services/ocr/ocr_parser.py](../ocr/app/services/ocr/ocr_parser.py): 인식 박스를 행으로 묶고 페이지 텍스트 생성.
+- [ocr/app/services/receipt_table_service.py](../ocr/app/services/receipt_table_service.py): 영수증 영역 및 표 탐지.
+- [backend/app/services/supabase_document_finance_repository.py](../backend/app/services/supabase_document_finance_repository.py): OCR 결과 저장.
 
-```http
-POST /finance/records/classify
+이미지 처리 분기에서 `processing_mode == "receipt"`이면 `preprocess_receipt_image()`를 사용하고, 그렇지 않으면 `preprocess_image()`를 사용한다. 파일 형식별 경로가 있으므로 모든 입력이 동일한 전처리를 거친다고 가정하면 안 된다.
 
-{
-  "document_id": "..."
-}
-```
+페이지 텍스트는 빈 줄 두 개로 연결되어 `extracted_text`에 저장된다. 페이지의 박스·구조 정보는 후속 처리에 전달된다. 라벨과 숫자가 다른 행으로 분리되거나 읽기 순서가 바뀌면, 이후 금액 정규식과 품목 판정의 입력도 달라진다.
 
-분류 입력에는 저장된 OCR 문서의 다음 값이 사용된다.
+## 3. 운영 분류 진입점
 
-- `extracted_text`: 전체 OCR 텍스트
-- `bounding_boxes`: 행·영역·표 구조를 포함한 페이지 evidence
-- `file_name`: 일부 deterministic hint에 사용하는 파일명
+[backend/app/api/routes/finance.py](../backend/app/api/routes/finance.py)의 `POST /records/classify`가 담당한다. 경로는 라우터 내부 기준이다.
 
-OCR 텍스트가 없거나 영수증 LLM 모델이 설정되지 않았으면 분류 요청은 실패한다.
+1. 영수증 모델 설정과 저장된 OCR 텍스트 유무를 확인한다.
+2. 기존 재무 기록을 조회하고 영수증 지문·식별 키로 중복 후보를 찾는다.
+3. `_classify_receipt_serialized()`가 프로세스 내부 `asyncio.Lock`으로 분류 요청을 직렬화한다.
+4. `_classify_receipt()`에 텍스트, 파일명, `bounding_boxes`를 전달한다.
+5. `_normalize()`로 저장 형태를 만든다.
+6. 중복 정보, 프롬프트 버전, 처리 시각을 붙이고 재무 기록을 저장한다.
+7. 요청의 `save_to_archive`가 참이고 중복이 아니면 아카이브에도 저장한다.
 
-## 3. deterministic hints
+중복은 기존 결과를 그대로 반환하는 캐시가 아니다. 현재 모델로 분석한 기록에 이전 기록과의 관계를 표시한다. 분류 제한 시간에는 잠금 대기도 포함된다.
 
-`_receipt_hints()`는 LLM 호출 전후에 사용할 규칙 기반 근거를 만든다.
+## 4. LLM 추출과 후처리의 정확한 순서
 
-주요 추출 대상은 다음과 같다.
-
-- 라벨 근처의 거래·결제·승인 날짜
-- 공급가액, 부가세, 최종 결제액
-- 할인 전 금액, 할인액, 결제액의 산술 관계
-- 카드·현금 결제 근거
-- 영수증에 명시된 품목 수와 총수량
-- 파일명에 포함된 출장·교통·복지·구매 관련 힌트
-
-이 값은 최종 답을 무조건 결정하는 별도 classifier라기보다 LLM 결과를 검증하고 명백한 OCR 근거를 우선하는 데 사용한다. 다만 라벨이 명확한 날짜와 최종 결제액 등 일부 evidence는 충돌하는 LLM 값보다 우선한다.
-
-## 4. LLM 처리
-
-### 4.1 요약·분류 호출
-
-첫 번째 LLM 호출은 전체 영수증 수준의 필드를 생성한다.
-
-- 문서 유형
-- 비용 카테고리
-- 상호
-- 거래일
-- 공급가액·부가세·합계금액
-- 결제수단과 카드번호
-- 설명 등
-
-이 호출에서 반환된 `items`는 사용하지 않는다. 품목은 OCR 구조와 candidate를 사용하는 별도 단계에서 처리한다.
-
-### 4.2 품목 candidate 생성
-
-OCR 페이지 구조에서 품목으로 볼 수 있는 행과 블록을 생성한 뒤 신뢰 가능한 후보와 거절 후보를 분리한다.
-
-진단 정보에는 다음 값이 보존된다.
-
-```json
-{
-  "item_extraction_diagnostics": {
-    "structure": {},
-    "structured_evidence": {},
-    "candidates": [],
-    "rejected_candidates": [],
-    "model_items": [],
-    "resolved_items": [],
-    "fallback_used": null
-  }
-}
-```
-
-현재 `structure`는 candidate 해석을 보조하는 내부 품목 구조 프로필이며, 영수증 업종을 고정 분류하는 별도 taxonomy는 아니다.
-
-### 4.3 grounded fast path
-
-OCR candidate만으로 품목이 충분히 확정되고 합계·개수 등의 검증 조건을 만족하면 두 번째 LLM 호출을 생략한다.
-
-이 경우:
-
-- candidate에서 품목을 확정한다.
-- `model_items`는 빈 배열이다.
-- `items_call_status`는 `skipped_grounded_fast_path`가 된다.
-- 생략 이유가 trace에 저장된다.
-
-### 4.4 품목 LLM 호출과 retry
-
-fast path를 사용할 수 없으면 품목 전용 prompt로 두 번째 LLM 호출을 수행한다.
-
-1. 전체 품목 prompt인 `full` 시도
-2. 실패하면 candidate 중심의 `compact_retry` 시도
-
-성공한 model item은 중복을 제거한 뒤 OCR candidate와 reconcile한다. model item이 candidate보다 부족하거나 단일 서비스 추론과 충돌하면, OCR 근거가 충분한 경우 candidate 기반 복구를 시도한다.
-
-두 호출이 모두 실패해도 전체 영수증 처리를 즉시 중단하지 않는다. grounded candidate로 복구할 수 있는 품목을 저장하고 실패 유형과 fallback 이유를 진단 정보에 남긴다.
-
-## 5. 정규화와 검증
-
-`_normalize()`는 LLM 및 candidate 결과를 실제 finance record 형식으로 바꾼다.
-
-주요 처리 내용은 다음과 같다.
-
-- 합계, 할인, 승인번호 등 비품목 행 제거
-- 할인·쿠폰·캐시백 행을 독립 품목으로 저장하지 않도록 제거
-- 품목명의 옵션·메타데이터 분리
-- 수량·단가·공급가액·세액·품목금액 정규화
-- 카드 매출표에 OCR 품목 candidate가 없으면 모델이 만든 품목 제거
-- OCR에 존재하는 마스킹 카드번호만 허용
-- 결제수단의 정책·안내 문구 오인 방지
-- 명확한 OCR 날짜와 금액 evidence 우선
-- 품목 수량 합산 및 영수증 표기 수량 보존
-
-정규화 결과는 기본적으로 다음 상태로 저장된다.
-
-```json
-{
-  "status": "REVIEW",
-  "document_type": "...",
-  "expense_category": "...",
-  "structured_data": {
-    "items": [],
-    "semantic_evidence": {},
-    "item_extraction_diagnostics": {},
-    "llm_trace": {},
-    "validator_trace": {}
-  }
-}
-```
-
-## 6. 재무 문서 유형과 카테고리
-
-### 6.1 문서 유형
-
-허용되는 문서 유형은 네 가지다.
-
-| 코드 | Excel 양식 |
-|---|---|
-| `EXPENSE_REPORT` | 경비지출결의서 |
-| `PURCHASE_REQUEST` | 구매품의요청서 |
-| `TRAVEL_EXPENSE` | 출장여비교통비정산서 |
-| `WELFARE_BENEFIT` | 복리후생비신청서 |
-
-### 6.2 현재 카테고리 매핑
-
-| 카테고리 | 기본 문서 유형 |
-|---|---|
-| 취미/쇼핑 | `PURCHASE_REQUEST` |
-| 전자제품/문구 | `PURCHASE_REQUEST` |
-| 전자제품 | `PURCHASE_REQUEST` |
-| 교통 | `TRAVEL_EXPENSE` |
-| 주유/교통 | `EXPENSE_REPORT` |
-| 미용 | `WELFARE_BENEFIT` |
-| 도서 | `WELFARE_BENEFIT` |
-| 미용/생활 | `WELFARE_BENEFIT` |
-| 식비 | `WELFARE_BENEFIT` |
-| 레저 | `WELFARE_BENEFIT` |
-| 식비/주류 | `WELFARE_BENEFIT` |
-| 의료 | `WELFARE_BENEFIT` |
-| 문화 | `WELFARE_BENEFIT` |
-
-### 6.3 분류 검증 규칙
-
-분류 contract는 다음 순서로 적용된다.
-
-1. 카테고리는 canonical label 또는 안전한 legacy alias로 정규화한다.
-2. LLM의 카테고리를 주 분류로 사용하고 deterministic 카테고리는 fallback으로만 사용한다.
-3. 유효한 카테고리에서 기본 `document_type`을 계산한다.
-4. LLM의 `document_type`과 파일명 기반 deterministic 문서 힌트를 독립 신호로 비교한다.
-5. 세 신호가 일치하면 채택하고, 충돌하면 `needs_review=true`와 `classification_decision` trace를 남긴다.
-6. 명시적인 출장·여비 등 강한 파일명 업무 문맥은 문서 유형을 선택할 수 있지만 카테고리 충돌은 검토 대상으로 유지한다.
-7. 카테고리가 유효하지 않으면 자동 확정하지 않고 검토 대상으로 둔다.
-8. 사용자가 검토 화면에서 저장한 문서 유형·카테고리 조합은 명시적 업무 결정으로 허용한다.
-
-따라서 다음 입력은 `TRAVEL_EXPENSE`로 유도된다.
-
-```json
-{
-  "document_type": null,
-  "expense_category": "교통"
-}
-```
-
-판단 근거는 `classification_decision`에 카테고리 기본값, 모델 의견, deterministic 힌트, 최종 선택 및 충돌 사유로 보존된다.
-
-## 7. 중복 검사와 저장
-
-분류 전후에 기존 finance record와 비교한다.
-
-- OCR 전체 텍스트 fingerprint
-- 거래를 식별할 수 있는 identity key
-- 기존 데이터와 호환하기 위한 legacy key
-
-중복으로 판단되어도 새 모델 결과의 저장 자체를 막지는 않는다. 새 record에 이전 record ID와 중복 진단 정보를 기록한다.
-
-저장되는 주요 추적 정보는 다음과 같다.
-
-- `prompt_version`
-- `model_name`
-- `processed_at`
-- `receipt_fingerprint`
-- `receipt_identity_key`
-- `duplicate_detection`
-- `llm_trace`
-- `validator_trace`
-
-## 8. 사용자 검토 UI
-
-사용자는 `REVIEW` 상태의 결과에서 문서 유형, 카테고리, 상호, 날짜, 금액 및 결제수단을 수정할 수 있다.
-
-검토 UI는 `/finance/taxonomy`의 다음 정보를 사용한다.
-
-```json
-{
-  "document_types": [],
-  "expense_categories": [],
-  "category_to_document_type": {}
-}
-```
-
-카테고리 선택 목록은 모든 canonical 카테고리를 표시한다. 현재 문서 유형의 기본 매핑과 다른 카테고리에는 별도 검토 안내가 표시되므로, 출장 중 식비처럼 category와 document type이 의도적으로 다른 업무 조합도 사용자가 확정할 수 있다.
-
-문서 유형을 바꾸면 기존 카테고리는 비워지며, 새 문서 유형에 맞는 카테고리를 다시 선택해야 한다. 두 값은 저장과 최종 확정 시 모두 필수다.
-
-사용자 흐름은 다음과 같다.
+핵심 구현은 [finance_receipt_simple.py](../backend/app/services/finance_receipt_simple.py)에 있다.
 
 ```text
-AI 분석 결과 저장 (REVIEW)
-  ↓
-사용자 수정 저장
-  ↓
-사용자 최종 확정 (CONFIRMED)
-  ↓
-재무팀 전달 (submitted_at 기록)
-  ↓
-재무팀 확인 (finance_confirmed_at 기록)
+_classify_receipt_with_model()
+  → _simple_receipt_prompt()
+  → _generate_receipt_json()                 # LLM 호출
+  → json.loads() / 객체 여부 검사
+  → _reconcile_amounts()                    # 공급가액·세액·총액 보정
+  → _payment_from_ocr()                     # 결제수단 추출
+  → ground_items()                         # 품목 근거 확인 및 보정
+  → _simple_validation()                   # 카테고리 보정과 검증
+  → llm_trace 구성
+
+_normalize()
+  → 카테고리 재정규화 / 품목 정리
+  → classify_document_type()               # 문서 유형 분류
+  → 검토 사유 병합 / 수량·카드번호·결제수단 처리
+  → 저장용 필드와 structured_data 구성
 ```
 
-## 9. Excel 생성
+정상 추출 경로는 JSON 생성 1회이며, 검증을 위한 두 번째 LLM 호출은 없다. 운영용 `_classify_receipt()`는 추출 예외를 잡아 `LLM_CALL_FAILED`와 `REVIEW` 결과를 만든다. 평가 경로는 `_classify_receipt_with_model()`을 직접 호출하므로 예외 처리 경계가 다르다.
 
-Excel 생성기는 카테고리가 아니라 최종 `document_type`을 기준으로 데이터를 배치한다.
+### 프롬프트 입력
 
-하나의 workbook에는 항상 다음 시트가 생성된다.
+- 모델은 이미지가 아닌 OCR 텍스트를 받는다. `pages`는 생성 이후 처리에 사용된다.
+- OCR 행을 정리하고 행 ID를 부여한다.
+- OCR 본문 제한은 `MAX_OCR_PROMPT_CHARS = 8000`이다. 전체 프롬프트 길이 제한과는 다르다.
+- 긴 입력에서는 앞부분, 뒷부분, 금액 포함 행을 우선 후보로 삼는다. 원래 행 순서로 예산을 채우므로 끝부분이 반드시 모두 보존되는 것은 아니다.
+- 규칙으로 추출한 금액 근거와 14개 카테고리 정책을 프롬프트에 포함한다.
+- 반환 필드는 상호, 날짜, 카테고리, 공급가액, 세액, 할인액, 총액, 품목이다.
 
-1. 경비지출결의서
-2. 출장여비교통비정산서
-3. 구매품의요청서
-4. 복리후생비신청서
-5. 영수증요약
+## 5. 카테고리와 문서 유형
 
-각 record는 자신의 `document_type`과 일치하는 시트에 들어간다. 첫 번째 record의 문서 유형에 해당하는 시트가 Excel을 열었을 때 활성 시트가 된다.
+### 지출 카테고리
 
-문서 유형에 따라 품목을 행으로 변환하는 방법도 달라진다.
+[finance_taxonomy.py](../backend/app/constants/finance_taxonomy.py)는 허용 카테고리, 정책 문구, 레거시 별칭, 문맥 보정 규칙을 정의한다.
 
-- `EXPENSE_REPORT`: 결제일시, 상호, 지출용도, 공급가액, 부가세, 합계 중심
-- `TRAVEL_EXPENSE`: 구분, 일자, 출발·도착지, 교통·숙박 수단, 금액 중심
-- `PURCHASE_REQUEST`: 품목명, 옵션, 수량, 단위, 단가, 공급가액, 부가세 중심
-- `WELFARE_BENEFIT`: 지원 항목, 결제일자, 내용, 결제처, 신청 금액 중심
+`normalize_expense_category()`는 표기와 별칭을 정규화하고, 알 수 없는 값은 `None`으로 반환한다. `refine_expense_category()`는 정규화된 결과에 문맥 규칙을 적용한다.
 
-단건, 선택한 복수 record, 전체 확정 record를 각각 export할 수 있다.
+- 식사·장보기·카페 세 범주 사이에서는 음식점 POS, 메뉴, 마트, 카페 신호의 점수를 비교한다.
+- `취미/쇼핑`, `교통` 같은 일부 레거시 입력에는 별도 문맥 보정이 있다.
+- 모든 카테고리를 임의의 다른 카테고리로 재분류하는 범용 규칙은 아니다.
 
-## 10. 장애 및 fallback
+보정 근거는 `_category_evidence_text()`가 만든 **OCR 전체 텍스트 + 상호 + 현재 품목명**이다. 동일 단어가 OCR과 추출 품목에 반복될 수 있으므로, 단순 키워드 출현 횟수가 보정 점수에 영향을 줄 수 있다.
 
-| 상황 | 현재 동작 |
+### 문서 유형
+
+[receipt_document_classifier.py](../backend/app/services/receipt_document_classifier.py)의 `classify_document_type()`이 담당한다. 운영 `_normalize()`는 이 함수를 호출하므로 카테고리 매핑만으로 문서 유형을 확정하지 않는다.
+
+- 강한 문맥 규칙과 카테고리 매핑으로 대체값을 준비한다.
+- 분류기 아티팩트가 있으면 특징 텍스트로 `predict_proba()`를 실행한다.
+- 유형별 신뢰도 기준을 충족하면 모델 예측을 선택한다.
+- 아티팩트 부재, 낮은 신뢰도, 강한 규칙과의 충돌, 운영 검증 미완료 등은 검토 사유가 된다.
+- 결과는 `classification_decision`에 기록된다.
+
+`finance_taxonomy.py`의 `validate_classification()`과 이 경로를 혼동하지 않아야 한다. 수동 수정 API 등은 별도 검증 경로를 사용한다.
+
+## 6. 공급가액·부가세 처리
+
+`_extract_amount_evidence()`가 공급가액, 과세 공급액, 면세액, 부가세, 결제금액 등의 OCR 라벨과 숫자를 읽고, `_reconcile_amounts()`가 모델 결과를 보정한다. 모델이 출력한 숫자가 그대로 저장되는 구조는 아니다.
+
+주요 동작은 다음과 같다.
+
+- 명시적 OCR 공급가액·세액을 우선 적용한다.
+- 조건을 충족하면 과세 공급액과 면세액을 합쳐 공급가액을 구성한다.
+- 총액이 확인되고 충돌·추가 세금·불완전 근거·할인 기준 불명확 등의 차단 조건이 없으면 총액에서 명시적 세액 또는 공급가액을 빼는 산술 보정을 허용한다.
+- 과세로 판단되고 추가 조건을 충족하면 `round(total / 11)`로 세액을 계산하는 분기가 있다. 모든 거래에 적용하는 공식은 아니다.
+- 불확실한 값은 미해결 상태로 남기고 검토 사유를 기록한다.
+- 금액 합 관계 검증의 허용 오차 상수는 10이다.
+
+진단 결과는 `amount_resolution`에 저장된다. `tax_treatment`, `supply_source`, `tax_source`, `amount_sources`, `changes`를 확인하면 값의 출처와 변경 경로를 추적할 수 있다.
+
+대표 검토 사유는 `OCR_AMOUNT_CONFLICT`, `TOTAL_AMOUNT_UNCONFIRMED`, `MIXED_TAX_COMPONENTS_UNRESOLVED`, `DISCOUNT_TAX_BASIS_UNCLEAR`, `TAX_AMOUNTS_UNRESOLVED`, `AMOUNT_RELATION_MISMATCH`이다.
+
+현재 구현에서 주의할 점: `treatment == "EXEMPT"` 분기가 바깥의 `treatment == "TAXABLE"` 조건 안에 중첩되어 있다. 이 중첩 위치에서는 면세 분기에 도달할 수 없으므로, 면세 총액을 공급가액으로 보완하고 세액을 0으로 설정하는 동작이 항상 수행된다고 문서상 가정하면 안 된다. 이는 코드 관찰이며 최근 평가 실패 원인으로 확정한 것은 아니다.
+
+## 7. 품목 grounding과 자동화 검증
+
+[receipt_item_grounding.py](../backend/app/services/receipt_item_grounding.py)의 `ground_items()`는 모델 품목을 OCR 텍스트·페이지 구조·영수증 총액과 대조한다. 품목명과 수량·단가·금액의 근거, 산술 관계, 누락·추가 품목 등의 보정 및 진단을 담당한다. 결과 추적 정보는 `item_grounding`에 저장된다.
+
+`_simple_validation()`은 필수값, 카테고리, 날짜·숫자 형식, 금액 관계, 품목 및 grounding 검토 사유 등을 모아 `automation_validation`을 만든다. 문서 유형 분류의 검토 사유는 `_normalize()`에서 추가된다.
+
+상태 필드는 구분해서 읽어야 한다.
+
+| 필드 | 의미 |
 |---|---|
-| OCR 서비스 장애 | 업로드 실패 응답 |
-| OCR 텍스트 없음 | 분류 요청 거부 |
-| 영수증 LLM 미설정 | 분류 요청 거부 |
-| 요약 LLM 호출 실패 | deterministic hints로 record 생성 시도 |
-| 품목 LLM 호출 실패 | grounded candidate 복구 시도 |
-| 카테고리 불명확 | `needs_review=true` 및 사용자 검토 |
-| 문서 유형 누락 + 유효 카테고리 | 카테고리에서 문서 유형 유도 |
-| 중복 영수증 | 새 분석은 저장하고 이전 record를 참조 |
+| `automation_validation.decision` | 자동화 검증의 `PASS` / `REVIEW` |
+| `extraction_validation` | 문서 분류 사유가 섞이지 않은 추출 검증 결과 |
+| `classification_validation` | 문서 유형 분류의 `decision` 및 검토 `reasons` |
+| `structured_data.needs_review` | 검증 결과가 `PASS`가 아닌지 여부 |
+| 저장용 최상위 `status` | 현재 `_normalize()`는 `REVIEW`로 반환 |
 
-## 11. 주요 코드 위치
+따라서 검증 `PASS`가 곧 저장 레코드의 승인 상태를 뜻하지 않는다.
 
-| 역할 | 파일 |
+추출 판정은 문서 분류 판정과 별도로 보존한다. 최종 `automation_validation`은 두 단계가 모두 통과해야 `PASS`이며, 내부에도 `extraction_validation`과 `classification_validation`을 포함해 평가 API와 JSON 내보내기에 전달한다. 일괄 평가 화면은 추출 검증 통과 비율, 문서 분류 통과 비율, 최종 자동처리 가능 비율 및 단계별 검토 사유 건수를 표시한다. 단계별 비율의 분모는 해당 판정이 기록된 결과 수이며, 분리된 판정이 없는 이전 결과는 미측정으로 취급한다. 기존 결과에 단계별 수치를 얻으려면 재평가해야 한다. 검토 사유는 영수증당 같은 사유를 한 번만 집계하며 여러 사유가 중복될 수 있다. 추출 검증 통과는 정답 일치를 보장하는 정확도 지표가 아니다.
+
+## 8. 평가 경로와 추적 정보
+
+관련 파일:
+
+- [finance_evaluations.py](../backend/app/api/routes/finance_evaluations.py): 평가 API와 저장된 OCR 데이터 연결.
+- [finance_evaluation_runner.py](../backend/app/services/finance_evaluation_runner.py): 모델별 실행, 정규화, 채점 및 오류 분석 연결.
+- [finance_evaluation_scoring.py](../backend/app/services/finance_evaluation_scoring.py): 정답 정규화, 필드·품목 비교, 평가 지표.
+- [finance_error_analysis_service.py](../backend/app/services/finance_error_analysis_service.py): 평가 실패 분석.
+
+```text
+normalize_ground_truth(truth)
+  → 모델별 _classify_receipt_with_model(text, filename, model, pages)
+  → _normalize(dict(pure), filename, text)
+  → system_prediction 구성
+  → score_fields()
+  → 오류 분석 / OCR 영향 추정 / 결과 반환
+```
+
+`pure`라는 변수명과 달리 이 값에는 이미 금액 보정, 품목 grounding, 카테고리 검증이 적용되어 있다.
+
+| 추적 필드 | 실제 내용 |
 |---|---|
-| OCR 업로드·저장 | `backend/app/api/routes/ocr.py` |
-| 재무 API와 저장 흐름 | `backend/app/api/routes/finance.py` |
-| LLM 요약·품목 처리 orchestration | `backend/app/services/finance_receipt_pipeline.py` |
-| candidate·품목 reconcile·fallback | `backend/app/services/finance_receipt_items.py` |
-| deterministic hints·정규화·validator | `backend/app/services/finance_receipt_evidence.py` |
-| 카테고리와 문서 유형 taxonomy | `backend/app/constants/finance_taxonomy.py` |
-| Excel workbook 생성 | `backend/app/services/finance_workbook_service.py` |
-| 사용자 검토·다운로드 UI | `frontend/src/pages/OCRPage.jsx` |
+| `llm_trace.response_text` | 모델이 반환한 원본 응답 문자열 |
+| `llm_trace.raw_output` | 후처리 후 `parsed` 객체의 복사본. 순수 모델 응답이 아님 |
+| `llm_trace.input_diagnostics` | OCR 행 수, 입력 잘림 여부, 금액 근거 등 |
+| `amount_resolution` | 금액 출처와 보정 내역 |
+| `item_grounding` | 품목 근거와 보정 진단 |
+| `classification_decision` | 문서 유형 선택, 확률, 기준값, 검토 사유 |
+| `automation_validation` | 최종 자동화 검증과 사유 |
 
-## 12. 현재 구조의 주의점
+추적 필드는 운영 결과의 `structured_data` 및 평가 결과의 prediction/trace 구성에 따라 위치가 다르다. 평가의 `pipeline_trace`에는 LLM 및 검증 정보가 담기므로 저장된 전체 구조와 동일하다고 가정하지 않는다.
 
-- 카테고리 하나는 기본적으로 문서 유형 하나에만 매핑된다.
-- `교통`은 현재 `TRAVEL_EXPENSE`, `주유/교통`은 `EXPENSE_REPORT`로 연결된다.
-- 일반 교통비와 출장 교통비를 카테고리만으로 구분하지는 않는다.
-- 모델의 `document_type`은 보조 신호로 비교하고, 사용자가 검토 화면에서 직접 지정한 조합만 명시적 업무 결정으로 우선한다.
-- workbook은 양식 파일 하나를 선택하는 방식이 아니라 네 재무 시트를 모두 만들고 record를 해당 시트에 배치하는 방식이다.
-- `item_extraction_diagnostics`와 trace는 보존되지만 candidate 단계별 정답 precision/recall 평가는 별도의 평가 데이터와 평가기가 필요하다.
+정답 JSON은 `normalize_ground_truth()`를 거친다. 카테고리 별칭과 필드명, 공급가액·세액의 `null`과 0, 명시 금액과 계산 금액의 정답 기준을 함께 확인해야 한다. OCR 영향 추정은 문자열 근거 기반의 추정이며 원본 이미지 판독을 대신하지 않는다.
+
+## 9. 설정과 버전
+
+설정 정의: [backend/app/core/config.py](../backend/app/core/config.py). 실제 실행 값은 환경 설정에 따라 달라진다.
+
+| 항목 | 코드 정의 |
+|---|---|
+| `RECEIPTS_LLM_MODEL` | 환경에서 지정할 영수증 모델. 기본값은 빈 문자열 |
+| `RECEIPTS_LLM_NUM_CTX` | 기본 4096 |
+| `RECEIPTS_LLM_KEEP_ALIVE` | 기본 `0s` |
+| `RECEIPTS_LLM_TIMEOUT_SECONDS` | 기본 600초 |
+| `RECEIPTS_CLASSIFICATION_BUDGET_SECONDS` | 기본 630초 |
+| `RECEIPT_LLM_NUM_PREDICT` | 800 |
+| `FINANCE_PROMPT_VERSION` | `receipt-simple-v1.4-category-context-refine` |
+| `RECEIPT_PIPELINE_VERSION` | `receipt-simple-v3.2-document-classifier` |
+
+[finance_pipeline.py](../backend/app/services/finance_pipeline.py)의 `FINANCE_PIPELINE_VERSION = "v2.5"`는 별도 메타데이터다. LLM trace의 파이프라인 버전과 같은 상수로 취급하면 안 된다.
+
+## 10. 실패 사례 조사 순서
+
+1. 평가에 사용한 파일, 모델, 프롬프트 버전, OCR 모드, 정답 JSON을 특정한다.
+2. 원본 이미지와 저장된 OCR 텍스트·박스를 비교한다. 세금 라벨, 숫자, 상호, 품목, 행 순서를 확인한다.
+3. `input_diagnostics`로 잘림과 규칙 기반 금액 근거를 확인한다.
+4. `response_text`와 후처리 결과를 비교해 모델 오류와 보정 오류를 구분한다.
+5. 카테고리는 OCR·상호·품목명과 taxonomy 점수를, 세금은 `amount_resolution`의 출처·변경·검토 사유를 확인한다.
+6. 문서 유형 오류는 `classification_decision`을 별도로 확인한다.
+7. 최종 prediction과 정규화된 정답을 비교해 정답 기준 및 채점 문제를 분리한다.
+
+관련 회귀 테스트는 `backend/tests/test_finance_taxonomy.py`, `test_finance_classification.py`, `test_receipt_tax_policy.py`, `test_receipt_item_grounding.py`, `test_receipt_document_classifier.py`, `test_finance_evaluation_service.py`와 `ocr/tests/test_receipt_preprocess_service.py`, `test_receipt_table_service.py`에 있다. 이 문서 작성 과정에서는 테스트나 모델 재평가를 실행하지 않았다.

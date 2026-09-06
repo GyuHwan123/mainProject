@@ -820,6 +820,49 @@
     font-size: 11px;
   }
 }
+.automation-monitoring-card {
+  header { justify-content: space-between; gap: 8px; }
+  header > span { color: #8794a5; font-size: 11px; }
+}
+.automation-monitoring {
+  padding: 12px 13px;
+  color: #526887;
+  font-size: 11px;
+  .automation-stage-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    button {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
+      min-width: 0; padding: 10px; border: 1px solid #e2eaf5; border-radius: 7px;
+      background: #fff; color: #526887; font: inherit; text-align: left; cursor: pointer;
+      strong { color: #2464c5; font-size: 20px; }
+      small { color: #7d8eaa; font-size: 10px; }
+      &.active { border-color: #82b0ff; background: #f2f7ff; }
+      &:focus-visible { outline: 2px solid #176bff; outline-offset: 2px; }
+    }
+  }
+  .automation-review-heading {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin: 14px 0 9px;
+    strong { color: #263a55; } span { color: #8794a5; }
+  }
+  .automation-reason-list { max-height: 145px; overflow-y: auto; }
+  .automation-reason {
+    display: grid; grid-template-columns: minmax(0, 1fr) 75px 38px; align-items: center; gap: 9px; padding: 6px 0;
+    > span { overflow-wrap: anywhere; } b { text-align: right; color: #354d70; }
+  }
+  .automation-reason-track { height: 4px; border-radius: 4px; background: #eaf0f8;
+    i { display: block; height: 100%; border-radius: inherit; background: #2872f0; }
+  }
+  .automation-monitoring-note { margin: 10px 0 0; font-size: 10px; line-height: 1.6; color: #7d8eaa; }
+}
+@media (max-width: 480px) {
+  .automation-monitoring .automation-stage-grid { gap: 4px; button { padding: 7px; } }
+  .automation-monitoring .automation-reason { grid-template-columns: minmax(0, 1fr) 45px 32px; }
+}
+@media print {
+  .automation-monitoring .automation-reason-list { max-height: none; overflow: visible; }
+}
 .recent-runs-card header {
   justify-content: space-between;
   span {

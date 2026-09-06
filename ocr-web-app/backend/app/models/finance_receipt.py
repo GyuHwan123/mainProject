@@ -29,7 +29,7 @@ class FinanceRecordUpdate(BaseModel):
     payment_method: PaymentMethod | None = None
     description: str | None = Field(default=None, max_length=1000)
     items: list[dict[str, Any]] | None = Field(default=None, max_length=200)
-    status: Literal["REVIEW", "CONFIRMED"] = "CONFIRMED"
+    status: Literal["REVIEW", "CONFIRMED"] = "REVIEW"
 
 
 class FinanceRecord(BaseModel):

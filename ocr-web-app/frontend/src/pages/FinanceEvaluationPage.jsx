@@ -496,6 +496,20 @@ function summarize(runs, model) {
   const totalAmountRate = rubrics.length ? rubrics.filter((rubric) => rubric.total_amount_correct).length / rubrics.length : 0;
   const autoApproved = rows.filter((row) => row.system?.automation?.auto_approved).length;
   const autoApprovedCorrect = rows.filter((row) => row.system?.automation?.auto_approved_correct).length;
+  const stageSummary = (key) => {
+    const validations = rows.map((row) => row.system?.automation?.[key])
+      .filter((value) => ['PASS', 'REVIEW'].includes(value?.decision));
+    const passed = validations.filter((value) => value.decision === 'PASS').length;
+    const reasons = {};
+    validations.forEach((value) => {
+      if (value.decision === 'REVIEW') {
+        [...new Set(value.reasons || [])].forEach((reason) => { reasons[reason] = (reasons[reason] || 0) + 1; });
+      }
+    });
+    return { measured: validations.length, passed,
+      coverage: validations.length ? passed / validations.length : null,
+      reasons: Object.fromEntries(Object.entries(reasons).sort((a, b) => b[1] - a[1])) };
+  };
   const latencies = measuredRows.map((row) => Number(row.latency_ms));
   return {
     documents: rows.length,
@@ -513,6 +527,8 @@ function summarize(runs, model) {
     schemaRate,
     totalAmountRate,
     autoApproved,
+    extractionValidation: stageSummary('extraction_validation'),
+    classificationValidation: stageSummary('classification_validation'),
     autoCoverage: rows.length ? autoApproved / rows.length : 0,
     autoAccuracy: autoApproved ? autoApprovedCorrect / autoApproved : 0,
   };
@@ -993,6 +1009,8 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
         speed_measured_documents: summary.measuredDocuments,
         auto_approval_coverage: summary.autoCoverage,
         auto_approval_accuracy: summary.autoAccuracy,
+        extraction_validation: summary.extractionValidation,
+        classification_validation: summary.classificationValidation,
         final_score_100: summary.finalScore ?? null, quality_gate_passed: summary.qualityGate ?? null,
       }));
     const payload = {
@@ -1031,12 +1049,21 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
           <h2 title={summary.model}>{summary.model}</h2><strong>{summary.finalScore.toFixed(1)}점</strong><p>{summary.documents}건 평가 · {summary.qualityGate ? '자동 승인 게이트 통과' : '자동 승인 게이트 재검토'}</p>
           <dl>
             <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 100</dd></div>
-            <div><dt>자동 처리 비율</dt><dd>{(summary.autoCoverage * 100).toFixed(1)}%</dd></div>
+            <div><dt>추출 검증 통과 비율</dt><dd>{summary.extractionValidation.coverage == null ? '미측정' : `${(summary.extractionValidation.coverage * 100).toFixed(1)}%`} ({summary.extractionValidation.measured}건 측정)</dd></div>
+            <div><dt>문서 분류 통과 비율</dt><dd>{summary.classificationValidation.coverage == null ? '미측정' : `${(summary.classificationValidation.coverage * 100).toFixed(1)}%`} ({summary.classificationValidation.measured}건 측정)</dd></div>
+            <div><dt>최종 자동처리 가능 비율</dt><dd>{(summary.autoCoverage * 100).toFixed(1)}%</dd></div>
             <div><dt>단일 JSON 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
             <div><dt>총 결제액 정확도</dt><dd>{(summary.totalAmountRate * 100).toFixed(1)}%</dd></div>
             <div><dt>평균 응답시간</dt><dd>{summary.latency == null ? '미측정' : `${(summary.latency / 1000).toFixed(1)}초`}</dd></div>
             <div><dt>P95 응답시간</dt><dd>{summary.p95Latency == null ? '미측정' : `${(summary.p95Latency / 1000).toFixed(1)}초`}</dd></div>
           </dl>
+          <details><summary>단계별 검토 사유</summary>
+            <p>단계별 비율은 해당 판정이 기록된 결과 기준입니다. 이전 결과는 재평가가 필요합니다. 한 영수증에 여러 사유가 있을 수 있습니다.</p>
+            {[['추출 검증', summary.extractionValidation], ['문서 분류', summary.classificationValidation]].map(([label, stage]) => <div key={label}>
+              <strong>{label}</strong>
+              {Object.keys(stage.reasons).length ? <ul>{Object.entries(stage.reasons).map(([reason, count]) => <li key={reason}>{reason}: {count}건</li>)}</ul> : <p>{stage.measured ? '검토 사유 없음' : '미측정'}</p>}
+            </div>)}
+          </details>
         </article>)}</section>
         <article className="batch-error-chart"><header><div><h2>오류 유형 분포</h2><p>이번 다중 이미지 평가의 오류 태그 기준</p></div><span>{batchErrorDistribution.total}건</span></header><div><div className="error-donut" style={{ background: batchErrorDistribution.background }}><i><strong>{batchErrorDistribution.total}</strong><small>총 오류</small></i></div><ul>{batchErrorDistribution.items.map((item) => <li key={item.category}><i style={{ background: item.color }} /><span>{ERROR_CATEGORY_LABELS[item.category] || item.category}</span><b>{item.count} ({item.percent.toFixed(1)}%)</b></li>)}</ul></div></article>
         <article className="batch-field-chart"><header><div><h2>평균 필드별 매칭도</h2><p>이번 다중 이미지 평가 전체 기준</p></div><span>{batchFieldAccuracy.length}필드</span></header><div>{batchFieldAccuracy.map((field) => <section key={field.label}><span title={field.label}>{field.label}</span><i><b style={{ width: `${field.rate * 100}%` }} /></i><strong>{(field.rate * 100).toFixed(1)}%</strong></section>)}</div></article>

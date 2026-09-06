@@ -143,6 +143,31 @@ def _monitoring_metrics(evaluations: list[dict[str, Any]], items: list[dict[str,
     }
 
 
+def _monitoring_automation(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
+    stages = {}
+    for name in ("extraction_validation", "classification_validation", "final"):
+        measured = passed = 0
+        reasons: Counter[str] = Counter()
+        for row in evaluations:
+            validation = row.get("validation") or (row.get("pipeline_trace") or {}).get("validation") or {}
+            stage = validation if name == "final" else validation.get(name)
+            if not isinstance(stage, dict) or stage.get("decision") not in {"PASS", "REVIEW"}:
+                continue
+            measured += 1
+            passed += stage["decision"] == "PASS"
+            if stage["decision"] == "REVIEW":
+                # Two validators report the same item sum issue. Count once per receipt.
+                reasons.update({"ITEM_SUM_TOTAL_MISMATCH" if code == "ITEM_SUM_MISMATCH" else code
+                                for code in stage.get("reasons", []) if isinstance(code, str)})
+        stages[name] = {
+            "measured": measured, "passed": passed, "review": measured - passed,
+            "unmeasured": len(evaluations) - measured,
+            "rate": passed / measured if measured else None,
+            "reasons": [{"code": code, "count": count} for code, count in reasons.most_common()],
+        }
+    return {"total": len(evaluations), "stages": stages}
+
+
 def _monitoring_details(evaluations: list[dict[str, Any]], items: list[dict[str, Any]]) -> dict[str, Any]:
     completed = [row for row in evaluations if row.get("status") == "COMPLETED"]
     errors: Counter[str] = Counter()
@@ -189,6 +214,7 @@ def _monitoring_details(evaluations: list[dict[str, Any]], items: list[dict[str,
             for category, count in errors.most_common()
         ],
         "total_errors": total_errors,
+        "automation": _monitoring_automation(evaluations),
         "field_accuracy": [
             {"field": field, "accuracy": sum(values) / len(values), "count": len(values)}
             for field, values in sorted(fields.items(), key=lambda item: (-sum(item[1]) / len(item[1]), item[0]))
@@ -305,13 +331,19 @@ def evaluate_existing_finance_record(
     evaluation reflects the values that were actually written to Excel.
     """
     document = supabase_service.get_ocr_document(user.email, payload.document_id)
-    record = supabase_service.get_finance_record(user.email, payload.record_id, columns="id,document_id,document_type,expense_category,merchant,transaction_date,supply_amount,tax_amount,total_amount,payment_method,description,structured_data,model_name,prompt_version")
+    record = next(
+        (
+            item for item in supabase_service.list_finance_records(user.email, limit=1000)
+            if str(item.get("id")) == payload.record_id
+        ),
+        None,
+    )
     if record is None:
         raise HTTPException(status_code=404, detail="평가할 재무 기록을 찾을 수 없습니다.")
 
     # Duplicate detection can intentionally return an existing finance record
     # whose original document_id differs from the newly uploaded OCR document.
-    # Ownership is already enforced by get_finance_record(user.email, ...), so use
+    # Ownership is already enforced by list_finance_records(user.email), so use
     # the requested record with the current upload's OCR evidence for scoring.
     text = (document.get("extracted_text") or "").strip()
     truth = normalize_ground_truth(payload.ground_truth)

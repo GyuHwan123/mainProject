@@ -64,6 +64,20 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    @field_validator("RAG_EMBEDDING_MODEL")
+    @classmethod
+    def resolve_embedding_model(cls, value: str) -> str:
+        model = value.strip() or "BAAI/bge-m3"
+        if model == "BAAI/bge-m3":
+            return model
+        checkpoint = Path(model).expanduser()
+        if not checkpoint.is_absolute():
+            checkpoint = PROJECT_ROOT / checkpoint
+        checkpoint = checkpoint.resolve()
+        if not checkpoint.is_dir():
+            raise ValueError(f"RAG embedding checkpoint directory not found: {checkpoint}")
+        return str(checkpoint)
+
     @field_validator("SECRET_KEY")
     @classmethod
     def validate_secret_key(cls, value: str) -> str:

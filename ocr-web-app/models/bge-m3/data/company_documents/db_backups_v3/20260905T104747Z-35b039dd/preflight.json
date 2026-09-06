@@ -1,0 +1,154 @@
+{
+  "preflight": "PASS",
+  "validation": {
+    "document_count": 18,
+    "chunk_count": 115,
+    "missing_or_empty_text": 0,
+    "duplicate_keys": 0,
+    "chunk_fingerprint_sha256": "4cd335078424292478a5a57493b4472b29434fb88e533bfd718809fb5681b15d"
+  },
+  "query_model": {
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_dimensions": 1024
+  },
+  "existing_documents": 18,
+  "existing_chunks": 37,
+  "old_baseline_matches": 37,
+  "delete_count": 37,
+  "insert_count": 115,
+  "document_mapping": {
+    "HR-002": "01ff4d25-615d-4622-bf28-4377c2be9d59",
+    "GA-002": "1977e618-d467-4582-bbaf-120f348d4c0f",
+    "HR-001": "1b66878e-24a4-488f-a907-b7907e6e1a8a",
+    "GA-004": "2dc74095-dc49-4c1d-a070-114982deef70",
+    "ER-003": "4c8b0281-f67b-4f7f-ae51-e5c8182e9eb3",
+    "IS-001": "5081cee9-6da7-46cc-b63e-79626a80beb7",
+    "IS-002": "56974603-d13f-4285-a2e8-94bcd91c088e",
+    "SH-002": "5e2ced91-000f-459a-8b6f-498e8f4b11c0",
+    "ER-002": "6432e39c-ef90-4408-9440-a50efda9bada",
+    "ER-001": "7cef536d-a6c6-4200-9135-2145f853aa4f",
+    "SH-003": "8208c0a5-4a27-46a1-8a85-431cd3405320",
+    "HR-003": "91210a2d-de3e-4ad2-af2f-db50c7817d9e",
+    "SH-001": "9f808d38-4898-4c3b-b4e9-a3321c58e652",
+    "SH-004": "a51a1ec3-1f04-4dbc-9822-73761b7bf1f4",
+    "HR-004": "c3e7a661-3a42-4960-b6a5-669770336dda",
+    "GA-003": "ceb20c15-e3c6-422d-9b6a-282471495761",
+    "HR-005": "d8949473-45fb-4518-8105-26529023c6ec",
+    "GA-001": "fabe4c45-ec63-466f-8e67-119db79d344b"
+  },
+  "schema": {
+    "required": [
+      "id",
+      "document_id",
+      "chunk_index",
+      "page_number",
+      "content",
+      "embedding",
+      "created_at",
+      "document_title",
+      "section_path"
+    ],
+    "properties": {
+      "id": {
+        "default": "gen_random_uuid()",
+        "description": "Note:\nThis is a Primary Key.<pk/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "document_id": {
+        "description": "Note:\nThis is a Foreign Key to `rag_documents.id`.<fk table='rag_documents' column='id'/>",
+        "format": "uuid",
+        "type": "string"
+      },
+      "chunk_index": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "page_number": {
+        "format": "integer",
+        "type": "integer"
+      },
+      "content": {
+        "format": "text",
+        "type": "string"
+      },
+      "embedding": {
+        "format": "public.vector(1024)",
+        "type": "string"
+      },
+      "created_at": {
+        "default": "now()",
+        "format": "timestamp with time zone",
+        "type": "string"
+      },
+      "document_title": {
+        "format": "text",
+        "type": "string"
+      },
+      "section_title": {
+        "format": "text",
+        "type": "string"
+      },
+      "section_path": {
+        "format": "text[]",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "heading_level": {
+        "format": "smallint",
+        "type": "integer"
+      },
+      "bbox": {
+        "format": "jsonb"
+      }
+    },
+    "type": "object"
+  },
+  "backup_sha256": "a8f50e6b50ebd799019ed4a9cf103f4fc0c85500144dfb8dfa249f43de9fc6fc",
+  "payload_sha256": "ce5689ef8d4788db170ea450b14309576b5a7036b9c5c35795e05dd412fd460e",
+  "local_protected_hashes": {
+    "models/bge-m3/data/company_documents/embedding_variants/.gitkeep": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6",
+    "models/bge-m3/data/company_documents/embedding_variants/baseline_embeddings.pkl": "71369be9cb35a1da561497214955a7fc1abe8d125cbd9e2e5de027489c9c0d5a",
+    "models/bge-m3/data/company_documents/embedding_variants/baseline_metadata.json": "0ee61ad49ddd6c84d9534fc695306cdcb08d958541a45d6407dc0f2c7e05db91",
+    "models/bge-m3/data/company_documents/embedding_variants/finetuned-v1_embeddings.pkl": "b0ad17af493aa81737315c30a336aebc5609e5f0b6131b21f2730856b3a8d6cd",
+    "models/bge-m3/data/company_documents/embedding_variants/finetuned-v1_metadata.json": "4f817edd176a69d6fe2c6625df265b9c455084159338845899c21ccb37bcfedb",
+    "models/bge-m3/data/company_documents/processed/company_chunks.json": "f9f4ea0337adbf2b4c7695cf6c3cb760223d0cdf37388e26ebd286b75dd9855b",
+    "models/bge-m3/data/company_documents/processed/company_chunks.pkl": "99ec684ca8cbaa92c66fc4c3ca220ec3020ee395755ccd8815c0e99c06b9ad4a",
+    "models/bge-m3/data/company_documents/processed/company_embeddings.pkl": "71369be9cb35a1da561497214955a7fc1abe8d125cbd9e2e5de027489c9c0d5a",
+    "models/bge-m3/data/company_documents/processed/company_ingest_manifest.json": "36db0249955fdfe6fc9e0b87ae434ecc9fd245731d8261c949668d4447df834e",
+    "models/bge-m3/data/company_documents/processed_v2/company_chunks_v2.json": "a56de5d870c091f350ac5650e5e34b9034d4941afca463600c0be5bd8fbaa6e8",
+    "models/bge-m3/data/company_documents/processed_v2/company_chunks_v2.pkl": "81130e82b4ddd91fdbd402ef7652c69337d0d9550ba416ce29f126baac94ef98",
+    "models/bge-m3/data/company_documents/processed_v2/company_embeddings_v2.pkl": "9b010d7c94b3e39ff243891a3521503467eb33ff88b2b006bd68a4daf99cc24b",
+    "models/bge-m3/data/company_documents/processed_v3/company_blocks_v3.json": "6fea6b3d49eea1d83ac061d274b7b0a610bde396cd8c48da8361d93bc95b3e95",
+    "models/bge-m3/data/company_documents/processed_v3/company_chunks_v3.json": "b5480a8aad296ba34f2567e7dece5df4097999602a81f91ea3bcfcd2a4fff0ac",
+    "models/bge-m3/data/company_documents/processed_v3/company_chunks_v3.pkl": "05220c084aa502ba91cbcd77fce561e8cc6ea48c1a619d0ddea5e3f4a7e4ed41",
+    "models/bge-m3/data/company_documents/processed_v3/company_ingest_manifest_v3.json": "fd67f30f0507ac3edabd1bc192fb3c35305cceadc3a2df3d007f8f08a4e8ae48",
+    "models/bge-m3/finetuned/1_Pooling/config.json": "3025df12a1b175b53c881060f91cf18728671aeea841112a12e020c7540307b9",
+    "models/bge-m3/finetuned/config.json": "7235d71e287f7641bb72509fde44465d31b07fb5c686fde1cefcc96c72cebfbb",
+    "models/bge-m3/finetuned/config_sentence_transformers.json": "7bca36d592885e1aa48cc0bf249e5ce1e9a434e75895e3a71e28bb3b5678d826",
+    "models/bge-m3/finetuned/model.safetensors": "adcd9b626f0c9ab20d4d17cca7eb6b28792f8e01c8071b38a05a12f18136a2dc",
+    "models/bge-m3/finetuned/modules.json": "fa7d796a215e1b2416773062891923b191fc5a4849bc44e322997433c90f459c",
+    "models/bge-m3/finetuned/README.md": "4d7e05a74583b2e3599886d01a8a2052a26079bb201936371868dc5897e60e6a",
+    "models/bge-m3/finetuned/sentence_bert_config.json": "3084164002c0bca01b0259c5327123803fce32e660a57feb93184ffead186fc8",
+    "models/bge-m3/finetuned/tokenizer.json": "b24f63a6e3d15d7c6f848faf0081ac09c0db7d6b32c596f6f88647791f740bf0",
+    "models/bge-m3/finetuned/tokenizer_config.json": "c9a4470bf9205552ece02b99fd70eb02f595b9f1297c1e9bff8060d4dfb7b471",
+    "models/bge-m3/finetuned/training_info.json": "5727cd87768369f8197ab73b1003427105811dd14bea8ae2e1bfb7e235748f55",
+    "models/bge-m3/model_checkpoints/.gitkeep": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6",
+    "models/bge-m3/scripts/company_ingest.py": "0998e14f4432617d3694fc3e1394f1183fda46f2359d29a6d59b0fe1b79022ad",
+    "models/bge-m3/scripts/company_ingest_v2.py": "d72e93bb42d146afa0e63c442dda5757a840744173c81e96ac0c0d8474b0f231",
+    "models/bge-m3/scripts/company_ingest_v3.py": "d566a7403bda3d1925cd9d2bcf9d598c77a311858eb00d138c6a174f044c5fc1",
+    "models/bge-m3/worker/generate_embeddings.py": "4280973c9cb8c18e65cb49ac6083d76768031202a3e29073829e1604db97fa0d",
+    "models/bge-m3/worker/sync_supabase.py": "1dc9fd46af2f468078821a3825742fb78695b330b76cf6d0d60f5e0e250b3ffc"
+  },
+  "local_v3_embedding_sha256": "32ea2f25651923c3e2a3482325399f69144ef39dfd8c7bbb62bae9ad2035f0fd",
+  "unstored_local_metadata": [
+    "chunk_type",
+    "start_page",
+    "end_page",
+    "article_title",
+    "table_id",
+    "source_spans"
+  ]
+}

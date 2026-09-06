@@ -1,0 +1,811 @@
+{
+  "chunking_version": "v3",
+  "embedding_generated": false,
+  "parameters": {
+    "target_chars": 380,
+    "max_chars": 600,
+    "overlap_chars": 0,
+    "length_includes_context": true,
+    "oversized_table_row_policy": "preserve_and_flag"
+  },
+  "extractors": {
+    "pymupdf": "1.28.2",
+    "pypdf": "6.0.0"
+  },
+  "stats": {
+    "document_count": 18,
+    "chunk_count": 115,
+    "text_chunk_count": 89,
+    "table_chunk_count": 26,
+    "min_length": 69,
+    "max_length": 389,
+    "mean_length": 129.1391304347826,
+    "median_length": 113,
+    "over_380": 1,
+    "over_500": 0,
+    "over_600": 0
+  },
+  "documents": [
+    {
+      "doc_id": "HR-001",
+      "title": "취업규칙",
+      "pdf_sha256": "7755a91e622c6235560d30cb534353f94bef45e087c2d45d7c313eb4b6f3d86e",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 10,
+        "text_chunk_count": 9,
+        "table_chunk_count": 1,
+        "min_length": 80,
+        "max_length": 158,
+        "mean_length": 114.6,
+        "median_length": 113.5,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 687,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        },
+        {
+          "page_number": 2,
+          "non_whitespace_characters": 189,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 0
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 HR-001 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "HR-002",
+      "title": "인사관리규정",
+      "pdf_sha256": "a9ecb00b178c8c55d89ffd0a1a995c6af1b909c8af74505a06be261bc023bb66",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 8,
+        "text_chunk_count": 6,
+        "table_chunk_count": 2,
+        "min_length": 92,
+        "max_length": 260,
+        "mean_length": 129.625,
+        "median_length": 107.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 660,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.1 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 HR-002 | 버전 v1.1"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "HR-003",
+      "title": "근태관리규정",
+      "pdf_sha256": "d2a8d77e9ca6e07f59a0b9df1af8adf43666f612bc862f6597ccf65dfac25613",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 7,
+        "text_chunk_count": 6,
+        "table_chunk_count": 1,
+        "min_length": 87,
+        "max_length": 160,
+        "mean_length": 111.71428571428571,
+        "median_length": 109,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 593,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 HR-003 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "HR-004",
+      "title": "휴가·휴직 규정",
+      "pdf_sha256": "a871bfe8abe3e8aefeecea64272e4b50752d3d7e39d767ad51ce6f29aeccc266",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 4,
+        "table_chunk_count": 2,
+        "min_length": 90,
+        "max_length": 269,
+        "mean_length": 139.33333333333334,
+        "median_length": 108.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 518,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.2 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 HR-004 | 버전 v1.2"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "HR-005",
+      "title": "급여 및 상여금 규정",
+      "pdf_sha256": "1b0b15a266ea824a299d1d34af232c368b435bc387129d5c72951ed7838ce0b5",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 5,
+        "text_chunk_count": 4,
+        "table_chunk_count": 1,
+        "min_length": 80,
+        "max_length": 164,
+        "mean_length": 112.4,
+        "median_length": 111,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 440,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 HR-005 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "GA-001",
+      "title": "출장비 및 여비 규정",
+      "pdf_sha256": "d563b0df51b7b30568045c8b971a16f4116886c5a8c6f00086ff182951a2ab53",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 4,
+        "table_chunk_count": 2,
+        "min_length": 98,
+        "max_length": 330,
+        "mean_length": 155.66666666666666,
+        "median_length": 120.5,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 590,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.3 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 GA-001 | 버전 v1.3"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "GA-002",
+      "title": "법인카드 사용규정",
+      "pdf_sha256": "fcc02ddac9f070bf213235d89a81205e566718f838ec94387426698ca7f4bce7",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 7,
+        "text_chunk_count": 6,
+        "table_chunk_count": 1,
+        "min_length": 89,
+        "max_length": 163,
+        "mean_length": 119,
+        "median_length": 114,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 627,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.2 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 GA-002 | 버전 v1.2"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "GA-003",
+      "title": "구매·계약 관리규정",
+      "pdf_sha256": "61ec3c8752b6bce836d6416675c7953feb00f310b23f9929b2a4f54377fbfd97",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 4,
+        "table_chunk_count": 2,
+        "min_length": 81,
+        "max_length": 311,
+        "mean_length": 146.66666666666666,
+        "median_length": 118.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 550,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.1 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 GA-003 | 버전 v1.1"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "GA-004",
+      "title": "위임전결 규정",
+      "pdf_sha256": "109a36a48ca0f8d7a2550b8a7400a22f60587fdd29d0dc774a59d2c7e451da71",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 5,
+        "text_chunk_count": 3,
+        "table_chunk_count": 2,
+        "min_length": 69,
+        "max_length": 389,
+        "mean_length": 162.6,
+        "median_length": 107,
+        "over_380": 1,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 492,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 GA-004 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "IS-001",
+      "title": "정보보안 규정",
+      "pdf_sha256": "66ec6246e828e91f0be9700127206a212a7d4e6302a4e9703941bf86d7ab1451",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 8,
+        "text_chunk_count": 7,
+        "table_chunk_count": 1,
+        "min_length": 80,
+        "max_length": 162,
+        "mean_length": 111.875,
+        "median_length": 109.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 674,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v2.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 IS-001 | 버전 v2.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "IS-002",
+      "title": "개인정보 보호지침",
+      "pdf_sha256": "793b95c26f096524b530c92f9b16208babb1a25a1964ed9cd51e85559147780e",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 5,
+        "table_chunk_count": 1,
+        "min_length": 92,
+        "max_length": 169,
+        "mean_length": 119,
+        "median_length": 106.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 558,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.4 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 IS-002 | 버전 v1.4"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "SH-001",
+      "title": "안전보건관리규정",
+      "pdf_sha256": "493cd9959ebc01b85a337ab2829421c6843e48f1f876e227879ffbbf9cc4e9c8",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 8,
+        "text_chunk_count": 7,
+        "table_chunk_count": 1,
+        "min_length": 88,
+        "max_length": 164,
+        "mean_length": 107,
+        "median_length": 100.5,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 635,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.5 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 SH-001 | 버전 v1.5"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "SH-002",
+      "title": "작업장 안전수칙",
+      "pdf_sha256": "4354d878793100168d647f34096bd5f3c1517d3e7bbc025a5d808c95708b19be",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 4,
+        "text_chunk_count": 2,
+        "table_chunk_count": 2,
+        "min_length": 164,
+        "max_length": 217,
+        "mean_length": 188.25,
+        "median_length": 186.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 533,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.2 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 SH-002 | 버전 v1.2"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "SH-003",
+      "title": "산업재해·사고 대응 매뉴얼",
+      "pdf_sha256": "5c012056771c09662c3058fd5d733911ff1f0811c8824501336e9ac4d562404c",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 5,
+        "text_chunk_count": 3,
+        "table_chunk_count": 2,
+        "min_length": 76,
+        "max_length": 252,
+        "mean_length": 157.8,
+        "median_length": 160,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 525,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 SH-003 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "SH-004",
+      "title": "화재 및 비상대응 매뉴얼",
+      "pdf_sha256": "bcceed5c1e79d6e09cbf95633541946debfc432b2bc86c8cfcb88cb077276703",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 5,
+        "text_chunk_count": 3,
+        "table_chunk_count": 2,
+        "min_length": 84,
+        "max_length": 258,
+        "mean_length": 153.4,
+        "median_length": 152,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 498,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 2
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.1 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 SH-004 | 버전 v1.1"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "ER-001",
+      "title": "직장 내 괴롭힘 예방 및 처리지침",
+      "pdf_sha256": "5477aabc84078c69c3484ee3ae9c7c9593d148f7b83fe88cce37d83d83dde20e",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 5,
+        "table_chunk_count": 1,
+        "min_length": 94,
+        "max_length": 172,
+        "mean_length": 121.16666666666667,
+        "median_length": 117.0,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 519,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 ER-001 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "ER-002",
+      "title": "직장 내 성희롱 예방 및 처리지침",
+      "pdf_sha256": "c30a930ea3cf01b5f652989d36a1c5b2335f7b89be00099a42e1e1d5de086951",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 7,
+        "text_chunk_count": 6,
+        "table_chunk_count": 1,
+        "min_length": 77,
+        "max_length": 172,
+        "mean_length": 111.14285714285714,
+        "median_length": 98,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 523,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.1 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 ER-002 | 버전 v1.1"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    },
+    {
+      "doc_id": "ER-003",
+      "title": "윤리강령 및 이해상충 지침",
+      "pdf_sha256": "2190dcda41209e05e18c6376fba7359bd637a99ecb34ed29904b83513151fa83",
+      "stats": {
+        "document_count": 1,
+        "chunk_count": 6,
+        "text_chunk_count": 5,
+        "table_chunk_count": 1,
+        "min_length": 91,
+        "max_length": 172,
+        "mean_length": 124.83333333333333,
+        "median_length": 121.5,
+        "over_380": 0,
+        "over_500": 0,
+        "over_600": 0
+      },
+      "page_audits": [
+        {
+          "page_number": 1,
+          "non_whitespace_characters": 565,
+          "pypdf_vs_pymupdf_equal": true,
+          "spatial_assignment_equal": true,
+          "table_count": 1
+        }
+      ],
+      "document_info": {
+        "revision_history": [
+          "제정/개정 이력: v1.0 (2026-07-01) - RAG 테스트 데이터셋용 최초 제정"
+        ],
+        "source_headers": [
+          "네오웍스테크 주식회사 | 문서번호 ER-003 | 버전 v1.0"
+        ],
+        "notices": [
+          "※ 본 문서는 RAG/OCR/검색 성능평가를 위해 작성한 가상기업 테스트 문서입니다. 실제 회사 규정이나 법률 자문으로 사용하지 마십시오."
+        ]
+      }
+    }
+  ],
+  "validation": {
+    "mixed_article_text_chunks": 0,
+    "broken_table_row_chunks": 0,
+    "table_chunks_without_headers": 0,
+    "empty_chunks": 0,
+    "duplicate_chunks": 0,
+    "source_coverage_errors": 0,
+    "table_row_coverage_errors": 0,
+    "page_metadata_errors": 0,
+    "rendered_content_errors": 0,
+    "text_chunks_over_max": 0,
+    "table_rows_in_text_chunks": 0,
+    "oversized_atomic_table_chunks": 0
+  },
+  "source_block_count": 427,
+  "source_page_count": 19,
+  "source_non_whitespace_characters": 10376,
+  "source_table_count": 26,
+  "source_table_row_count": 107,
+  "metadata_block_count": 128,
+  "comparison": {
+    "current_37": {
+      "document_count": 18,
+      "chunk_count": 37,
+      "text_chunk_count": null,
+      "table_chunk_count": null,
+      "min_length": 153,
+      "max_length": 600,
+      "mean_length": 471.2162162162162,
+      "median_length": 535,
+      "over_380": 25,
+      "over_500": 19,
+      "over_600": 0
+    },
+    "v2_99": {
+      "document_count": 18,
+      "chunk_count": 99,
+      "text_chunk_count": null,
+      "table_chunk_count": null,
+      "min_length": 55,
+      "max_length": 681,
+      "mean_length": 131.63636363636363,
+      "median_length": 101,
+      "over_380": 3,
+      "over_500": 3,
+      "over_600": 3
+    },
+    "v3": {
+      "document_count": 18,
+      "chunk_count": 115,
+      "text_chunk_count": 89,
+      "table_chunk_count": 26,
+      "min_length": 69,
+      "max_length": 389,
+      "mean_length": 129.1391304347826,
+      "median_length": 113,
+      "over_380": 1,
+      "over_500": 0,
+      "over_600": 0
+    }
+  },
+  "protected_artifacts_unchanged": true,
+  "protected_artifact_sha256": {
+    "data\\company_documents\\processed\\company_chunks.json": "f9f4ea0337adbf2b4c7695cf6c3cb760223d0cdf37388e26ebd286b75dd9855b",
+    "data\\company_documents\\processed\\company_chunks.pkl": "99ec684ca8cbaa92c66fc4c3ca220ec3020ee395755ccd8815c0e99c06b9ad4a",
+    "data\\company_documents\\processed\\company_embeddings.pkl": "71369be9cb35a1da561497214955a7fc1abe8d125cbd9e2e5de027489c9c0d5a",
+    "data\\company_documents\\processed\\company_ingest_manifest.json": "36db0249955fdfe6fc9e0b87ae434ecc9fd245731d8261c949668d4447df834e",
+    "data\\company_documents\\processed_v2\\company_chunks_v2.json": "a56de5d870c091f350ac5650e5e34b9034d4941afca463600c0be5bd8fbaa6e8",
+    "data\\company_documents\\processed_v2\\company_chunks_v2.pkl": "81130e82b4ddd91fdbd402ef7652c69337d0d9550ba416ce29f126baac94ef98",
+    "data\\company_documents\\processed_v2\\company_embeddings_v2.pkl": "9b010d7c94b3e39ff243891a3521503467eb33ff88b2b006bd68a4daf99cc24b",
+    "data\\company_documents\\embedding_variants\\.gitkeep": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6",
+    "data\\company_documents\\embedding_variants\\baseline_embeddings.pkl": "71369be9cb35a1da561497214955a7fc1abe8d125cbd9e2e5de027489c9c0d5a",
+    "data\\company_documents\\embedding_variants\\baseline_metadata.json": "0ee61ad49ddd6c84d9534fc695306cdcb08d958541a45d6407dc0f2c7e05db91",
+    "data\\company_documents\\embedding_variants\\finetuned-v1_embeddings.pkl": "b0ad17af493aa81737315c30a336aebc5609e5f0b6131b21f2730856b3a8d6cd",
+    "data\\company_documents\\embedding_variants\\finetuned-v1_metadata.json": "4f817edd176a69d6fe2c6625df265b9c455084159338845899c21ccb37bcfedb",
+    "finetuned\\1_Pooling\\config.json": "3025df12a1b175b53c881060f91cf18728671aeea841112a12e020c7540307b9",
+    "finetuned\\config.json": "7235d71e287f7641bb72509fde44465d31b07fb5c686fde1cefcc96c72cebfbb",
+    "finetuned\\config_sentence_transformers.json": "7bca36d592885e1aa48cc0bf249e5ce1e9a434e75895e3a71e28bb3b5678d826",
+    "finetuned\\model.safetensors": "adcd9b626f0c9ab20d4d17cca7eb6b28792f8e01c8071b38a05a12f18136a2dc",
+    "finetuned\\modules.json": "fa7d796a215e1b2416773062891923b191fc5a4849bc44e322997433c90f459c",
+    "finetuned\\README.md": "4d7e05a74583b2e3599886d01a8a2052a26079bb201936371868dc5897e60e6a",
+    "finetuned\\sentence_bert_config.json": "3084164002c0bca01b0259c5327123803fce32e660a57feb93184ffead186fc8",
+    "finetuned\\tokenizer.json": "b24f63a6e3d15d7c6f848faf0081ac09c0db7d6b32c596f6f88647791f740bf0",
+    "finetuned\\tokenizer_config.json": "c9a4470bf9205552ece02b99fd70eb02f595b9f1297c1e9bff8060d4dfb7b471",
+    "finetuned\\training_info.json": "5727cd87768369f8197ab73b1003427105811dd14bea8ae2e1bfb7e235748f55",
+    "model_checkpoints\\.gitkeep": "7eb70257593da06f682a3ddda54a9d260d4fc514f645237f5ca74b08f8da61a6"
+  },
+  "chunk_fingerprint_sha256": "4cd335078424292478a5a57493b4472b29434fb88e533bfd718809fb5681b15d",
+  "embedding_input": "company_chunks_v3.pkl",
+  "embedding_text_field": "text"
+}

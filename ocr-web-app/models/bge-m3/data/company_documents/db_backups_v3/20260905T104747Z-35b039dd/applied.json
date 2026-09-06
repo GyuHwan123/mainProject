@@ -1,0 +1,81 @@
+{
+  "result": "PASS",
+  "documents": 18,
+  "chunks": 115,
+  "key_matches": 115,
+  "content_matches": 115,
+  "page_matches": 115,
+  "embedding_matches_atol_1e_6_rtol_0": 115,
+  "embedding_shape": [
+    115,
+    1024
+  ],
+  "max_abs_diff": 7.419776903994091e-09,
+  "cosine_min": 0.9999999999999996,
+  "cosine_avg": 1.0,
+  "cosine_max": 1.0000000000000002,
+  "empty_content": 0,
+  "duplicate_keys": 0,
+  "stale_keys": 0,
+  "old_chunk_ids_remaining": 0,
+  "company_orphans": 0,
+  "rag_documents_unchanged": true,
+  "other_user_chunks_unchanged": true,
+  "stored_metadata_matches": true,
+  "query": {
+    "embedding_model": "BAAI/bge-m3",
+    "embedding_dimensions": 1024
+  },
+  "samples": [
+    {
+      "doc_id": "HR-001",
+      "id": "3715c6c1-8cc8-4e43-81ef-70adb59bc92b",
+      "chunk_index": 3,
+      "page_number": 1,
+      "content": "[문서] 취업규칙\n제2장 근로시간 및 휴게\n제6조 (근로시간)\n기본 근무시간은 09:00부터 18:00까지로 하며, 휴게시간은 12:00부터 13:00까지 1시간으로 한다. 선택적 근로시간제\n대상자는 부서 운영기준에 따른다.",
+      "section_title": "제2장 근로시간 및 휴게"
+    },
+    {
+      "doc_id": "HR-001",
+      "id": "4a80f58c-468e-4627-bb9d-b134075ebf9c",
+      "chunk_index": 4,
+      "page_number": 1,
+      "content": "[문서] 취업규칙\n제2장 근로시간 및 휴게\n제7조 (지각·조퇴·외출)\n지각, 조퇴 및 업무 외 외출이 필요한 경우 사전에 팀장 승인을 받아야 한다. 불가피한 사유로 사전승인이 어려운 경우 당일 중\n사후보고한다.",
+      "section_title": "제2장 근로시간 및 휴게"
+    },
+    {
+      "doc_id": "HR-001",
+      "id": "df392668-3d2a-4184-a66d-24b1fe68c490",
+      "chunk_index": 0,
+      "page_number": 1,
+      "content": "[문서] 취업규칙\n[표 제목] 문서 정보\n[표 헤더] 구분 | 내용\n[표 행] 구분: 시행일 | 내용: 2026-07-01\n[표 행] 구분: 주관부서 | 내용: 인사팀\n[표 행] 구분: 보안등급 | 내용: 사내공개\n[표 행] 구분: 문서상태 | 내용: 교육·RAG 테스트용 가상 문서",
+      "section_title": null
+    },
+    {
+      "doc_id": "GA-001",
+      "id": "67d7a347-a449-45f7-9e5c-4718c4112bea",
+      "chunk_index": 1,
+      "page_number": 1,
+      "content": "[문서] 출장비 및 여비 규정\n제1장 출장 승인\n제1조 (출장신청)\n국내외 출장은 출장 전 그룹웨어에 목적, 기간, 방문처, 예상비용을 등록하고 위임전결규정에 따른 승인권자의 승인을 받아야\n한다.",
+      "section_title": "제1장 출장 승인"
+    },
+    {
+      "doc_id": "GA-001",
+      "id": "436194c7-2751-44d0-935d-2ff4876f4721",
+      "chunk_index": 2,
+      "page_number": 1,
+      "content": "[문서] 출장비 및 여비 규정\n제2장 국내출장비\n[표 제목] 제2장 국내출장비\n[표 헤더] 항목 | 일반직원 | 팀장 이상 | 비고\n[표 행] 항목: 교통비 | 일반직원: 실비 | 팀장 이상: 실비 | 비고: 합리적 경로 기준\n[표 행] 항목: 숙박비 | 일반직원: 1박 150,000원 한도 | 팀장 이상: 1박 180,000원 한도 | 비고: 세금·봉사료 포함\n[표 행] 항목: 일비 | 일반직원: 1일 30,000원 | 팀장 이상: 1일 35,000원 | 비고: 식비·현지교통 일부\n[표 행] 항목: 주차·통행료 | 일반직원: 실비 | 팀장 이상: 실비 | 비고: 업무 관련 증빙 필요",
+      "section_title": "제2장 국내출장비"
+    },
+    {
+      "doc_id": "GA-001",
+      "id": "b50ed895-011d-427b-ab2b-1060356bc49b",
+      "chunk_index": 3,
+      "page_number": 1,
+      "content": "[문서] 출장비 및 여비 규정\n제2장 국내출장비\n제5조 (숙박비 초과)\n전시회 기간, 성수기 또는 지정숙소 이용 등 불가피한 사유로 한도를 초과하는 경우 사전에 본부장 승인을 받아야 한다.\n사전승인이 없으면 한도액까지만 정산할 수 있다.",
+      "section_title": "제2장 국내출장비"
+    }
+  ],
+  "backup": "C:\\Users\\user\\Desktop\\thedaol\\main\\mainProject\\ocr-web-app\\models\\bge-m3\\data\\company_documents\\db_backups_v3\\20260905T104747Z-35b039dd\\before_company_chunks_full.json",
+  "backup_sha256": "a8f50e6b50ebd799019ed4a9cf103f4fc0c85500144dfb8dfa249f43de9fc6fc"
+}

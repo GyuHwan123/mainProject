@@ -31,7 +31,7 @@ BM25_CANDIDATE_COUNT = settings.RAG_BM25_CANDIDATE_COUNT
 QUERY_REWRITING_ENABLED = settings.RAG_QUERY_REWRITING
 QUERY_REWRITE_MODEL = settings.RAG_QUERY_REWRITE_MODEL or settings.RAG_LLM_MODEL
 
-_EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v1"
+_EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v2-question-endings"
 _EMBEDDING_CACHE_MAX_SIZE = 2048
 _embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
 _embedding_cache_lock = Lock()
@@ -43,9 +43,9 @@ def can_access_company_rag(user_role: str, subscription_tier: str) -> bool:
 
 @lru_cache(maxsize=1)
 def _get_embedding_model() -> Any:
-    from sentence_transformers import SentenceTransformer
+    from app.services.embedding_model import load_embedding_model
 
-    return SentenceTransformer(EMBEDDING_MODEL)
+    return load_embedding_model()
 
 
 @lru_cache(maxsize=1)
@@ -837,6 +837,26 @@ _KOREAN_DURATION_NORMALIZATION = {
 _EVIDENCE_SEMANTIC_THRESHOLD = 0.55
 
 
+_QUESTION_ENDING = re.compile(
+    r"(?P<ending>알려주세요|알려줄래|알려줘|무엇이야|뭔가요|뭐야|인가요|"
+    r"어떻게\s*하나요|어떻게\s*해)(?P<punctuation>[?!？！.。]*)\s*$"
+)
+
+
+def _normalize_query_question_ending(query: str) -> str:
+    """Separate terminal question expressions without changing the original query.
+
+    Keep the expression for sentence embeddings, but allow facet tokenization to
+    discard it. Evidence prose and expressions inside a sentence are untouched.
+    """
+    match = _QUESTION_ENDING.search(query)
+    if not match:
+        return query
+    prefix = query[:match.start()].rstrip()
+    ending = re.sub(r"^어떻게\s*", "어떻게 ", match["ending"])
+    return f"{prefix + ' ' if prefix else ''}{ending}{match['punctuation']}"
+
+
 def _normalize_evidence_text(value: str) -> str:
     normalized = str(value or "").lower()
     for source, replacement in _KOREAN_DURATION_NORMALIZATION.items():
@@ -872,6 +892,9 @@ def _strip_korean_particle(token: str) -> str:
 
 
 def _normalize_evidence_token(raw_token: str) -> str:
+    ending = _QUESTION_ENDING.search(raw_token)
+    if ending:
+        raw_token = raw_token[:ending.start()].rstrip()
     has_object_particle = bool(re.search(r"(을|를)$", raw_token))
     token = _strip_korean_particle(raw_token)
     for suffix in _EVIDENCE_STEM_ENDINGS:
@@ -889,8 +912,20 @@ def _normalize_evidence_token(raw_token: str) -> str:
 
 
 def _extract_evidence_facets(query: str) -> dict[str, Any]:
-    normalized = _normalize_evidence_text(query)
-    raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", normalized)
+    normalized = _normalize_evidence_text(_normalize_query_question_ending(query))
+    # Quantity interrogatives request a value, not the literal question word.
+    # Retain their units as required evidence instead of dropping the facet.
+    requested_units = []
+
+    def quantity_question(match: re.Match[str]) -> str:
+        requested_units.append(match.group(1) or "일")
+        return " "
+
+    token_text = re.sub(
+        r"(?:며칠|몇\s*(원|일|개월|시간|퍼센트|%))(?:까지|이나|이|을|은)?(?=\s|[?!.]|$)",
+        quantity_question, normalized,
+    )
+    raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", token_text)
     tokens = []
     for raw_token in raw_tokens:
         token = _normalize_evidence_token(raw_token)
@@ -908,6 +943,7 @@ def _extract_evidence_facets(query: str) -> dict[str, Any]:
         "query": normalized,
         "tokens": tokens,
         "conditions": conditions,
+        "requested_units": list(dict.fromkeys(requested_units)),
         "strong_subjects": strong_subjects,
     }
 
@@ -972,11 +1008,31 @@ async def _has_facet_evidence(
     if not candidates:
         return False
     facets = facets or _extract_evidence_facets(query)
-    units = _evidence_sentences(candidates)
+    quantitative = bool(facets.get("requested_units")) or bool(re.search(
+        r"얼마|몇|며칠|일수|금액|한도|수량|횟수|비율|비중|퍼센트|%|\d+\s*(?:시|분|회)", query
+    ))
+    if quantitative:
+        # Preserve each table row, including its labelled cells, as one unit.
+        units = []
+        for candidate in candidates:
+            for part in re.split(r"(?=\[표 행\])|\n", str(candidate.get("content") or "")):
+                spans = [part] if part.lstrip().startswith("[표 행]") else re.split(
+                    r"[;!?]|(?<!\d)\.|\.(?!\d)", part
+                )
+                units.extend(_normalize_evidence_text(span) for span in spans if span.strip())
+            # A weight distribution may share its topic in a heading and put
+            # percentages on separate rows. Retain that original evidence unit
+            # for the existing topic/semantic/value checks; never join candidates.
+            if "비중" in query:
+                content = _normalize_evidence_text(str(candidate.get("content") or ""))
+                if len(re.findall(r"\d+(?:[,.]\d+)*\s*(?:%|퍼센트)", content)) > 1:
+                    units.append(content)
+        units = list(dict.fromkeys(units))
+    else:
+        units = _evidence_sentences(candidates)
     if not units:
         return False
     combined_evidence = "\n".join(units)
-    lexical_hits = [token for token in facets["tokens"] if token in combined_evidence]
     strong_subjects = facets["strong_subjects"]
 
     asks_for_table_structure = _is_table_structure_query(query)
@@ -994,31 +1050,207 @@ async def _has_facet_evidence(
     if not query_scores or max(query_scores) < _EVIDENCE_SEMANTIC_THRESHOLD:
         return False
 
-    if strong_subjects:
-        subject_supported = any(
-            subject in combined_evidence
-            or max(
-                sum(left * right for left, right in zip(subject_vector, unit_vector))
-                for unit_vector in unit_vectors
-            ) >= 0.60
-            for subject, subject_vector in zip(strong_subjects, facet_vectors[1:])
-        )
-        if not subject_supported:
-            return False
-
     conditions = facets["conditions"]
-    if conditions:
-        linked = False
-        for unit, score in zip(units, query_scores):
-            if score < _EVIDENCE_SEMANTIC_THRESHOLD:
-                continue
-            if all(_condition_supported(condition, unit) for condition in conditions):
-                linked = True
-                break
-        if not linked:
+    requested_units = facets.get("requested_units", [])
+    # Prose scaffolding is not an independently required subject/attribute.
+    generic_facets = {
+        "관련", "대해", "대한", "대해서", "경우", "내용", "설명", "안내", "확인",
+        "궁금", "알려", "알고", "어떤", "어느", "정도", "얼마나", "가능",
+    }
+    core_facets = [
+        (subject, vector)
+        for subject, vector in zip(strong_subjects, facet_vectors[1:])
+        if subject not in _EVIDENCE_STOP_WORDS | _EVIDENCE_INTERROGATIVES
+        and subject not in generic_facets
+        and not re.search(
+            r"(?:나요|까요|니?까|인가|인지|할|하는|하려는|해주세요|주세요|습니다)$",
+            subject,
+        )
+    ]
+    if not core_facets:
+        return False
+    if quantitative:
+        # Interrogatives ask for a value; they are neither attributes nor
+        # numeric conditions. Keep units even with attached question endings.
+        requested_units = list(dict.fromkeys([
+            *requested_units,
+            *re.findall(r"몇\s*(개월|시간|퍼센트|시|분|일|월|원|개|회|명|%)", query),
+            *(["일"] if "며칠" in query or "일수" in query else []),
+            *(["%"] if re.search(r"비중|비율|퍼센트|%", query) else []),
+            *(["원"] if re.search(r"금액|비용|숙박비|결제|사용한도", query) else []),
+        ]))
+        core_facets = [
+            (subject, vector) for subject, vector in core_facets
+            if not re.search(r"^(?:몇|며칠|얼마)|(?:하면|해야|까지|이후|이내|안에)$", subject)
+            and subject not in {"일수", "금액", "수량", "횟수", "비율", "비중", "퍼센트", "사용"}
+            # Distribution wording requests per-item percentages, not a
+            # literal attribute that must also appear in the evidence.
+            and not ("비중" in query and re.fullmatch(r"(?:요소|항목)별", subject))
+            and not re.fullmatch(r"\d+.*", subject)
+        ]
+        if not core_facets:
             return False
+        numeric_query = re.sub(r"\s+", "", facets["query"])
+        condition_query = numeric_query
+        if "시간" in requested_units:
+            # Daily framing is not an explicit one-day duration condition.
+            # Remove it before normalization, preserving literal numeric limits.
+            condition_text = re.sub(
+                r"(?<![가-힣])하루(?:에|당)?\s+(?!이상|이하|초과|미만|동안|이내|이후|이전|만에)",
+                "", query,
+            )
+            condition_query = re.sub(r"\s+", "", _normalize_evidence_text(condition_text))
+        conditions = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%|회|개|명)", condition_query)
+    # These modifiers change which value answers the question. Synonymous
+    # wording is allowed, but an unrelated amount or per-item limit is not.
+    scope_patterns = (
+        (r"월간|월별|매월", r"월간|월별|매월|월\s*(?:총|한도|최대|사용)"),
+        (r"연간|연별|매년", r"연간|연별|매년|연\s*(?:총|한도|최대|사용)"),
+        (r"총|전체|합계", r"총|전체|합계|합산"),
+        (r"최대|상한|한도", r"최대|상한|한도|이내|이하|넘을\s*수\s*없"),
+    )
+    for unit, unit_vector, score in zip(units, unit_vectors, query_scores):
+        if score < _EVIDENCE_SEMANTIC_THRESHOLD:
+            continue
 
-    return bool(lexical_hits or conditions)
+        matched_lodging_rate = False
+        if quantitative and "원" in requested_units and unit.startswith("[표 행]"):
+            cells = unit.removeprefix("[표 행]").split("|")
+            selected_cells = []
+            for cell in cells[1:]:
+                pair = re.split(r"[:：=]", cell, maxsplit=1)
+                if len(pair) != 2:
+                    continue
+                header = re.sub(r"^\s*\d+열\((.*)\)\s*$", r"\1", pair[0]).strip()
+                # Match the complete column name, allowing whitespace only.
+                # Word boundaries prevent a shorter role matching a larger one.
+                name = re.sub(r"\s+", "", header)
+                if name and re.search(
+                    r"(?<![가-힣a-zA-Z])" + r"\s*".join(map(re.escape, name))
+                    + r"(?=$|[^가-힣a-zA-Z]|은|는|이|가|의|을|를|에게)", query,
+                ):
+                    selected_cells.append(cell)
+            if selected_cells:
+                row_value = re.split(r"[:：=]", cells[0], maxsplit=1)[-1]
+                if not any(subject in re.sub(r"\s+", "", row_value)
+                           for subject, _ in core_facets):
+                    continue
+                # Keep the row attribute and requested column only. All later
+                # quantity, scope and condition checks see this same evidence.
+                unit = "[표 행] " + " | ".join([cells[0], *selected_cells])
+                matched_lodging_rate = (
+                    "숙박비" in numeric_query and "숙박비" in re.sub(r"\s+", "", row_value)
+                    and any(re.search(r"(?<!\d)1\s*박\s*\d+(?:[,.]\d+)*\s*원\s*한도", cell)
+                            for cell in selected_cells)
+                )
+
+        supported = [
+            subject in unit
+            or sum(left * right for left, right in zip(subject_vector, unit_vector)) >= 0.60
+            for subject, subject_vector in core_facets
+        ]
+        if not any(supported):
+            continue
+        if not quantitative and not all(_condition_supported(condition, unit) for condition in conditions):
+            continue
+        if quantitative:
+            # OCR rows may put the unit in the column label rather than after
+            # the value. Only attach it within that same labelled cell.
+            if unit.startswith("[표 행]"):
+                for label, suffix in (("일수", "일"), ("금액", "원"), ("비중", "%"), ("비율", "%")):
+                    unit = re.sub(
+                        rf"({label}\s*[:：=]\s*)(\d+(?:[,.]\d+)*)(?=\s*(?:\||$))",
+                        lambda match, suffix=suffix: match.group(0) + suffix, unit,
+                    )
+                unit = re.sub(
+                    r"([^(|]*\(\s*(원|일|개월|시간|시|분|%|퍼센트)\s*\)\s*[:：=]\s*)(\d+(?:[,.]\d+)*)(?=\s*(?:\||$))",
+                    lambda match: match.group(0) + match.group(2), unit,
+                )
+            compact = re.sub(r"\s+", "", unit)
+            # A row's target can be explicit even when its table/category name
+            # is omitted. Prose actions can instead be expressed by the whole
+            # sentence (already checked semantically), not individual words.
+            row_target = re.sub(r"\s+", "", unit.removeprefix("[표 행]").split("|", 1)[0]).strip('" ')
+            if unit.startswith("[표 행]"):
+                # Compare the cell value, excluding its optional column label.
+                row_target = re.split(r"[:：=]", row_target, maxsplit=1)[-1].strip('" ')
+            row_target_matches = (
+                unit.startswith("[표 행]") and bool(row_target)
+                and row_target in numeric_query
+                and any(subject in row_target for subject, _ in core_facets)
+            )
+            require_all_facets = (
+                any(re.search(pattern, numeric_query) for pattern, _ in scope_patterns)
+                or (unit.startswith("[표 행]") and not row_target_matches)
+            )
+            # A recurring payday asks for a day, not a monthly amount. Resolve
+            # the pay synonym only when the same unit states the payment date.
+            matched_payday = (
+                "일" in requested_units and "매월" in numeric_query and "지급" in numeric_query
+                and bool(re.search(r"급여|월급", compact))
+                and bool(re.search(r"매월(?:[1-9]|[12]\d|3[01])일(?:에)?지급", compact))
+            )
+            if require_all_facets and not all(
+                hit or subject in compact
+                or any(re.fullmatch(pattern, subject) for pattern, _ in scope_patterns)
+                or (matched_payday and subject in {"월급", "급여"})
+                # A selected lodging-rate cell need not repeat its travel context.
+                or (matched_lodging_rate and subject == "출장")
+                for (subject, _), hit in zip(core_facets, supported)
+            ):
+                continue
+            attributes = [
+                subject for subject, _ in core_facets[1:]
+                if not any(re.fullmatch(pattern, subject) for pattern, _ in scope_patterns)
+            ]
+            if require_all_facets and attributes and not any(attribute in compact for attribute in attributes):
+                continue
+            quantity_pattern = r"\d+(?:[,.]\d+)*\s*(?:개월|시간|퍼센트|영업일|원|일|개|회|명|시|분|년|%)"
+            if "월" in requested_units:
+                quantity_pattern += r"|\d+\s*월"
+            if not re.search(quantity_pattern, unit) and not re.search(r"\d{1,2}:\d{2}", unit):
+                continue
+            unit_patterns = {"일": r"(?:영업\s*)?일", "%": r"(?:%|퍼센트)", "퍼센트": r"(?:%|퍼센트)", "시": r"(?:시(?!간)|:\d{2})"}
+            if not all(re.search(r"\d+(?:[,.]\d+)*\s*" + unit_patterns.get(u, re.escape(u)), unit) for u in requested_units):
+                continue
+            if not all(
+                not re.search(pattern, facets["query"]) or re.search(evidence_pattern, unit)
+                for pattern, evidence_pattern in scope_patterns
+            ):
+                continue
+            if not all(_condition_supported(condition, compact) for condition in conditions):
+                continue
+            # Explicit comparisons must retain their direction, even when the
+            # same numeric literal occurs with the opposite relation.
+            relations = re.findall(
+                r"(\d+(?:원|일|개월|시간|퍼센트|%|회|개|명))(초과|이상|이하|미만)", numeric_query
+            )
+            if not all(re.search(re.escape(value) + r"(?:을|를|이|가|은|는)?" + operator, compact)
+                       for value, operator in relations):
+                continue
+            clock_conditions = re.findall(r"(\d{1,2})시(?:(\d{1,2})분)?|(?<!\d)(\d{1,2}):(\d{2})", numeric_query)
+            if clock_conditions:
+                evidence_times = [
+                    (int(hour or colon_hour) * 60 + int(minute or colon_minute or 0), operator)
+                    for hour, minute, colon_hour, colon_minute, operator in re.findall(
+                        r"(?:(\d{1,2})시(?:(\d{1,2})분)?|(\d{1,2}):(\d{2}))(?:을|를)?(이후|이전|부터|까지|초과|이상|이하|미만)?",
+                        compact,
+                    )
+                ]
+                if not all(any(
+                    actual == expected
+                    or (operator in {"이후", "초과"} and expected > actual)
+                    or (operator in {"부터", "이상"} and expected >= actual)
+                    or (operator in {"이전", "미만"} and expected < actual)
+                    or (operator in {"까지", "이하"} and expected <= actual)
+                    for actual, operator in evidence_times
+                ) for expected in [
+                    int(hour or colon_hour) * 60 + int(minute or colon_minute or 0)
+                    for hour, minute, colon_hour, colon_minute in clock_conditions
+                ]):
+                    continue
+        return True
+    return False
 
 
 async def index_document(user_email: str, document_id: str) -> dict[str, Any]:
@@ -1076,12 +1308,13 @@ async def search(
     rewritten_query = str(rewrite_result.get("query") or query)
     use_rewritten_query = rewritten_query != query
 
+    search_query = _normalize_query_question_ending(query)
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
     facet_texts = [facets["query"], *strong_subjects]
-    query_texts = [query, *facet_texts]
+    query_texts = [search_query, *facet_texts]
     if use_rewritten_query:
-        query_texts.append(rewritten_query)
+        query_texts.append(_normalize_query_question_ending(rewritten_query))
     stage_started = time.perf_counter()
     query_vectors, _ = await _embed_texts_cached(query_texts)
     stage_latency_ms["embedding"] = (time.perf_counter() - stage_started) * 1000
@@ -1099,7 +1332,7 @@ async def search(
         user_email, rag_document_id,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
-    lexical_candidates = bm25_candidates(query, lexical_chunks, BM25_CANDIDATE_COUNT)
+    lexical_candidates = bm25_candidates(search_query, lexical_chunks, BM25_CANDIDATE_COUNT)
     bm25_original_elapsed = (time.perf_counter() - stage_started) * 1000
     stage_started = time.perf_counter()
     rewritten_dense_candidates = (
@@ -1112,7 +1345,7 @@ async def search(
     stage_latency_ms["dense"] = dense_original_elapsed + (time.perf_counter() - stage_started) * 1000
     stage_started = time.perf_counter()
     rewritten_lexical_candidates = (
-        bm25_candidates(rewritten_query, lexical_chunks, BM25_CANDIDATE_COUNT)
+        bm25_candidates(_normalize_query_question_ending(rewritten_query), lexical_chunks, BM25_CANDIDATE_COUNT)
         if use_rewritten_query else []
     )
     stage_latency_ms["bm25"] = bm25_original_elapsed + (time.perf_counter() - stage_started) * 1000
@@ -1123,7 +1356,7 @@ async def search(
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]
     query_terms = {
-        token for token in query.lower().replace("?", " ").replace(".", " ").split()
+        token for token in search_query.lower().replace("?", " ").replace(".", " ").split()
         if len(token) >= 2 and token not in {"어떻게", "알려줘", "알려주세요", "무엇", "뭐야", "지원자", "지원자의"}
     }
     for row in candidates:

@@ -209,6 +209,12 @@ def main() -> None:
     # Exactly one encode call over text, in source list order. content is not read.
     embeddings = np.asarray(model.encode(texts, normalize_embeddings=True, convert_to_numpy=True,
                                          show_progress_bar=True, batch_size=args.batch_size, precision="float32"))
+    if embeddings.dtype == np.float16:
+        embeddings = embeddings.astype(np.float32)
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        if np.any(norms == 0) or not np.isfinite(norms).all():
+            raise ValueError("Cannot L2-normalize embeddings with zero or non-finite norms")
+        embeddings = embeddings / norms
     stats = validate_vectors(embeddings)
     if before != protected_hashes():
         raise ValueError("Protected artifacts changed during encoding; refusing output")

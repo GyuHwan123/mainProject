@@ -40,3 +40,64 @@ immutable checkpoint. Restore both the previous model setting and matching DB
 vectors if rolling back. The existing `replace_supabase_v3.py` is a guarded
 37-to-115 Base migration, not an automatic fine-tuned vector switch; do not reuse
 it for this staging artifact. This preparation does not execute a DB cutover.
+
+## Embedding-only cutover
+
+Use `cutover_embeddings_v3.py` for the completed fine-tuned artifact. It does not
+import or reuse `replace_supabase_v3.py`. It PATCHes only `rag_chunks.embedding`,
+with exact row ID, document UUID and chunk index filters. Before any PATCH it
+verifies artifact/checkpoint hashes, float32/1024 dimensions, normalization,
+frozen row mapping, text hashes and pages, and a bijection with all 115 current
+company rows across the 18 canonical documents. No chunk is inserted or deleted.
+
+1. Stop the backend with Ctrl+C in its running terminal, and stop other ingestion
+   or DB writers. Keep them stopped through completion or rollback: REST PATCHes
+   are not a single transaction, so intermediate vectors must not serve traffic.
+2. From the repository root, optionally prepare a backup without DB writes:
+
+   ```powershell
+   .\ocr-web-app\backend\venv\Scripts\python.exe .\ocr-web-app\models\bge-m3\worker\cutover_embeddings_v3.py
+   ```
+
+3. Apply. This performs preflight again and creates a fresh, fsynced backup before
+   the first write; it does not rely on a stale prepare result:
+
+   ```powershell
+   .\ocr-web-app\backend\venv\Scripts\python.exe .\ocr-web-app\models\bge-m3\worker\cutover_embeddings_v3.py --apply
+   ```
+
+   A unique folder under `data/company_documents/embedding_cutover_backups` stores
+   `backup.json` and `backup.sha256`, including original rows, target vectors,
+   document mapping and artifact identity. Do not edit these files. Successful
+   completion prints `CUTOVER PASS` after rereading all rows and checking that
+   all non-embedding fields, including metadata, remain exactly unchanged.
+
+4. Only after PASS, set this value in `ocr-web-app/.env`:
+
+   ```dotenv
+   RAG_EMBEDDING_MODEL=models/bge-m3/finetuned
+   ```
+
+   Remove conflicting `RAG_EMBEDDING_MODEL` overrides in `backend/.env` or the
+   process environment. Start a fresh backend process from the repository root:
+
+   ```powershell
+   .\ocr-web-app\backend\venv\Scripts\python.exe -m uvicorn main:app --app-dir .\ocr-web-app\backend --host 127.0.0.1 --port 8000
+   ```
+
+On an update/verification failure, automatic rollback attempts to restore every
+changed vector, including a timed-out PATCH that may have committed. If the
+process is killed or the network remains unavailable, keep the backend stopped
+and use the printed backup path when connectivity is restored:
+
+```powershell
+.\ocr-web-app\backend\venv\Scripts\python.exe .\ocr-web-app\models\bge-m3\worker\cutover_embeddings_v3.py --rollback '<absolute path to backup.json>'
+```
+
+Rollback is repeatable and does not require the embedding artifact/checkpoint.
+It validates the backup checksum and endpoint, then checks all 115 rows before
+writing. It restores only vectors equal to this cutover's target and leaves
+already-restored vectors alone. Unexpected vectors or changed non-embedding
+fields stop restoration to avoid overwriting another writer's changes. If rollback
+does not print PASS, do not restart service. After successful rollback restore
+the previous model setting (Base for this cutover) before restarting the backend.

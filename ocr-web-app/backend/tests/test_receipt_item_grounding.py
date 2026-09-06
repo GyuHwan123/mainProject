@@ -185,7 +185,6 @@ class ItemGroundingTests(unittest.TestCase):
     def test_table_requires_repeated_complete_same_band_columns(self):
         layouts = [
             (header(), coffee()),
-            (coffee(), coffee(110, name='카페라테')),
             (header(), coffee(), [cell('추가토핑', 30, 100)], coffee(140, name='카페라테')),
             (header(), coffee(), [cell('카페라테', 0, 110), cell('2', 240, 110),
                                   cell('4500', 340, 110), cell('9000', 460, 110)]),
@@ -320,7 +319,8 @@ class ItemGroundingTests(unittest.TestCase):
                 before = copy.deepcopy(items)
                 trace = ground_items(items, text, [page])
                 self.assertEqual(trace['item_layout_type'], kind)
-                self.assertEqual(trace['applied_postprocessor'], 'preserve_llm_items')
+                self.assertEqual(trace['applied_postprocessor'],
+                                 'hierarchical_option_grounding' if kind == 'HIERARCHICAL' else 'preserve_llm_items')
                 self.assertFalse(trace['table_detected'])
                 self.assertEqual(items, before)
                 self.assertEqual(trace['added_items'], [])

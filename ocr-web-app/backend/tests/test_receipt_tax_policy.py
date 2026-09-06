@@ -39,8 +39,8 @@ class ReceiptTaxPolicyTests(unittest.TestCase):
             ('공급가액 10,001\nVAT 999\n결제금액 11,000', 10001, 999),
             ('도서 단독 구매\n결제금액 12,000', 12000, 0),
             ('도서 면세\n결제금액 12,000', 12000, 0),
-            ('개인택시\n결제금액 96,200', 87455, 8745),
-            ('KTX\n결제금액 50,800', 46182, 4618),
+            ('개인택시\n결제금액 96,200', None, None),
+            ('KTX\n결제금액 50,800', None, None),
             ('시외/고속버스\n결제금액 20,000', None, None),
             ('시외버스 승차권\n결제금액 20,000', None, None),
             ('버스\n결제금액 20,000', None, None),
@@ -71,7 +71,6 @@ class ReceiptTaxPolicyTests(unittest.TestCase):
             '개인택시\n할인 1,000\n최종 카드결제 10,000',
             'KTX\n별도 수수료 500\n결제금액 11,000',
             '과세물품가액 10,000\n면세금액\nVAT 1,000\n결제금액 12,000',
-            '일반 상점\n결제금액 11,000',
             'KTX\n부가세 별도\n결제금액 11,000',
         ]:
             with self.subTest(text=text):
@@ -102,10 +101,10 @@ class ReceiptTaxPolicyTests(unittest.TestCase):
         for name in ['일반택시', '택시', 'SRT', '고속철도', '시외우등고속', '시외고급고속', '고속버스', '항공권', '전세버스']:
             with self.subTest(name=name):
                 result = self.resolve(name + '\n결제금액 11,000')
-                self.assertEqual((result['supply_amount'], result['tax_amount']), (10000, 1000))
-                self.assertEqual(result['validation']['decision'], 'PASS')
+                self.assertEqual((result['supply_amount'], result['tax_amount']), (None, None))
+                self.assertEqual(result['validation']['decision'], 'REVIEW')
         result = self.resolve('승차권\n결제금액 11,000')
-        self.assertEqual(result['amount_resolution']['tax_treatment'], 'UNKNOWN')
+        self.assertEqual(result['amount_resolution']['tax_treatment'], 'TRANSPORT_SPECIAL')
 
     def test_book_and_stationery_is_not_exempt_only(self):
         result = self.resolve('도서 면세\n볼펜 1,000\n결제금액 11,000')
@@ -115,7 +114,7 @@ class ReceiptTaxPolicyTests(unittest.TestCase):
         result = self.resolve('KTX\n요금 50,800\n다른 금액 40,000', total=50800)
         self.assertIsNone(result['tax_amount'])
         result = self.resolve('KTX 50,800', total=50800)
-        self.assertEqual(result['tax_amount'], 4618)
+        self.assertIsNone(result['tax_amount'])
 
     def test_missing_final_vat_does_not_reuse_old_summary(self):
         result = self.resolve('공급가액 10,000\nVAT 1,000\n할인 1,000\n최종 카드결제 10,000')

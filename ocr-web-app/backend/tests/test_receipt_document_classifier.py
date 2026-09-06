@@ -139,7 +139,7 @@ class ExtractionCallTests(unittest.IsolatedAsyncioTestCase):
                      "_preflight_review_reasons": lambda text: [],
                      "_simple_receipt_prompt": lambda *args: ("extract receipt", {}),
                      "_generate_receipt_json": generator, "_reconcile_amounts": lambda *args: None,
-                     "_payment_from_ocr": lambda *args: (None, {}), "ground_items": lambda *args: {},
+                     "_payment_from_ocr": lambda *args: (None, {}), "ground_items": lambda *args, **kwargs: {},
                      "_simple_validation": lambda *args: {"decision": "PASS", "reasons": [], "checks": {}},
                      "_generation_metrics": lambda raw: {}, "RECEIPT_PIPELINE_VERSION": "test", "FINANCE_PROMPT_VERSION": "test",
                      "RECEIPT_LLM_NUM_PREDICT": 800, "RECEIPT_LLM_TIMEOUT_SECONDS": 60,

@@ -208,7 +208,7 @@ def _deduplicate(tags: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _evaluation_failed(ground_truth: dict[str, Any], prediction: dict[str, Any]) -> bool:
     for field, expected in ground_truth.items():
-        if field in {"items", "card_number"}:
+        if field in {"items", "card_number", "amount_sources"}:
             continue
         if not _value_equal(field, expected, prediction.get(field)):
             return True
@@ -243,7 +243,7 @@ def analyze_finance_evaluation_failure(
     truth_items = [row for row in ground_truth.get("items") or [] if isinstance(row, dict)]
     tags: list[dict[str, Any]] = []
     for field, expected in ground_truth.items():
-        if field in {"items", "card_number"}:
+        if field in {"items", "card_number", "amount_sources"}:
             continue
         actual = prediction.get(field)
         if (
@@ -311,7 +311,7 @@ def analyze_finance_evaluation_failure(
 
     # Summary OCR evidence: absence alone is uncertain because OCR can split tokens.
     for field, expected in ground_truth.items():
-        if field in {"items", "card_number"} or expected in (None, "", []):
+        if field in {"items", "card_number", "amount_sources"} or expected in (None, "", []):
             continue
         actual = prediction.get(field)
         if _value_equal(field, expected, actual):
@@ -337,6 +337,14 @@ def analyze_finance_evaluation_failure(
             ))
             continue
         if not _text_contains(ocr_text, field, expected):
+            sources = ground_truth.get('amount_sources') or {}
+            predicted_sources = (prediction.get('amount_resolution') or {}).get('amount_sources') or {}
+            source = sources.get(field, predicted_sources.get(field))
+            if field in ('supply_amount', 'tax_amount') and source == 'CALCULATED_TAXABLE':
+                tags.append(_tag('VALIDATION_ERROR', 'CALCULATED_AMOUNT_MISMATCH', field=field, confidence=0.9,
+                                 message='계산 금액이 정답과 다릅니다. OCR 원문 숫자 누락으로 분류하지 않습니다.',
+                                 evidence={'expected': expected, 'actual': actual, 'source': source}))
+                continue
             number_with_label = field in NUMBER_FIELDS and FIELD_LABEL_PATTERNS.get(field, re.compile(r"$^" )).search(ocr_text)
             tags.append(_tag(
                 "OCR_ERROR", "OCR_NUMBER_ERROR" if number_with_label else "OCR_TEXT_MISSING",
@@ -514,7 +522,7 @@ def analyze_finance_evaluation_failure(
     # This prevents UI rows from ending as "분류 없음" even when a specialized
     # heuristic has not been added yet.
     for field, expected in ground_truth.items():
-        if field in {"items", "card_number"} or _value_equal(field, expected, prediction.get(field)):
+        if field in {"items", "card_number", "amount_sources"} or _value_equal(field, expected, prediction.get(field)):
             continue
         if not any(tag.get("scope") == "sample" and tag.get("field") == field for tag in tags):
             tags.append(_tag(

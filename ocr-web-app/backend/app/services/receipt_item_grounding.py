@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import Any
 
 
-VERSION = 'bbox-item-grounding-v4-header-table'
+VERSION = 'bbox-item-grounding-v5-global-layout'
 FIELDS = ('quantity', 'unit_price', 'total_amount')
 _NUMBER = re.compile(r'^[₩￦]?(?P<n>-?(?:\d{1,3}(?:[,.]\d{3})+|\d+)(?:\.\d+)?)(?P<unit>개|ea|원)?$', re.I)
 _EXCLUDE = re.compile(r'할인|쿠폰|취소|반품|환불|공급가액|부가세|과세|면세|합계|소계|결제|승인|사업자|카드|현금|subtotal|total', re.I)
@@ -331,6 +331,8 @@ def _table_rows(pages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         names = []
         name_boundary = (anchors['name'] + anchors[numeric_roles[0]]) / 2
         for c in body:
+            if c.index in page.get('reserved_numbers', set()):
+                continue
             n = _number(c)
             if n is None:
                 if (c.box[0] < name_boundary and c.box[2] < anchors[numeric_roles[0]]
@@ -486,7 +488,7 @@ def _item_layout(pages: list[dict[str, Any]], table_rows: list[dict[str, Any]]) 
                     elif is_discount and (numbers or '%' in label):
                         discount_pending = True
                 continue
-            if (main and 0 < y - main[0] <= height * 5 and x - main[1] >= height
+            if (main and y > main[0]
                     and label and (not numbers or all(n == 0 for n in numbers))):
                 children += 1
                 suspicious = True
@@ -548,10 +550,17 @@ def _reconcile_count(items: list, logical: list[dict[str, Any]], pages: list[dic
                                             reason='strong_unmatched_logical_row'))
     if original:
         removals = []
+        authoritative = len(logical) >= 2 and all(
+            r.get('repairable') and r['row_confidence'] >= .95 and r['page_data'].get('table_complete')
+            for r in logical)
         for i, item in enumerate(original):
             if not isinstance(item, dict) or related.get(i):
                 continue
             name = _compact(str(item.get('name') or ''))
+            if authoritative and name and not _EXCLUDE.search(name) and not _SUMMARY_NAME.fullmatch(name):
+                trace['removed_items'].append(dict(index=i, item=dict(item), reason='not_in_complete_ocr_table'))
+                trace['removal_candidates'].append(dict(index=i, reason='not_in_complete_ocr_table', action='removed'))
+                continue
             if not _SUMMARY_NAME.fullmatch(name):
                 continue
             # Require a matching OCR summary label with a numeric value on its row.
@@ -616,11 +625,134 @@ def _match_table_items(items: list, rows: list[dict[str, Any]]) -> dict[int, tup
     return matched
 
 
-def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
+def _reserve_summary_numbers(pages: list, trace: dict) -> None:
+    for page in pages:
+        reserved = set()
+        for row in _rows(page['cells']):
+            labels = [c for c in row if re.search(
+                r'총액|총금액|합계|소계|공급가액|부가세|세액|할인|결제|과세|면세|total|subtotal|vat|tax|discount',
+                _compact(c.text), re.I)]
+            # A header itself has no numeric amounts to reserve.
+            if labels:
+                for c in row:
+                    if _number(c) is not None:
+                        reserved.add(c.index)
+                        trace['reserved_summary_amounts'].append(dict(
+                            page=page['page'], index=c.index, bbox=list(c.box), value=_number(c)[0]))
+        page['reserved_numbers'] = reserved
+        page['numbers'] = [[c for c in row if c.index not in reserved] for row in page['numbers']]
+        page['numbers'] = [row for row in page['numbers'] if row]
+    trace['reserved_summary_amount_count'] = len(trace['reserved_summary_amounts'])
+
+
+def _headerless_rows(pages: list, existing: list, trace: dict) -> list:
+    inferred = []
+    for page in pages:
+        if page['headers'] or any(r['identity'][0] == page['page'] for r in existing):
+            continue
+        candidates = []
+        possible_rows = []
+        for row in _rows(page['cells']):
+            numbers = [c for c in row if _number(c) is not None]
+            names = [c for c in row if _number(c) is None]
+            if (not numbers or not names or any(c.index in page['reserved_numbers'] for c in numbers)
+                    or any(_EXCLUDE.search(_compact(c.text)) for c in names)
+                    or max(c.box[2] for c in names) > min(c.box[0] for c in numbers)):
+                continue
+            possible_rows.append(median(c.y for c in row))
+            if len(numbers) != 3:
+                continue
+            fields, reason = _resolve_numbers(numbers, {}, page['height'])
+            if fields is None:
+                continue
+            candidates.append(dict(page_data=page, cells=names, numbers=numbers, fields=fields,
+                text=' '.join(c.text for c in names), reason=reason,
+                identity=(page['page'], tuple(c.index for c in numbers))))
+        if len(candidates) < 2:
+            continue
+        top = min(c.y for r in candidates for c in r['cells'])
+        summary_y = min((c.y for c in page['cells'] if c.index in page['reserved_numbers'] and c.y > top),
+                        default=float('inf'))
+        candidates = [r for r in candidates if max(c.y for c in r['numbers']) < summary_y]
+        if len(candidates) < 2:
+            continue
+        height = page['height']
+        centers = [median((r['numbers'][i].box[0] + r['numbers'][i].box[2]) / 2 for r in candidates) for i in range(3)]
+        aligned = all(abs((r['numbers'][i].box[0] + r['numbers'][i].box[2]) / 2 - centers[i]) <= height * .6
+                      for r in candidates for i in range(3))
+        name_aligned = max(r['cells'][0].box[0] for r in candidates) - min(r['cells'][0].box[0] for r in candidates) <= height
+        orders = []
+        for r in candidates:
+            possible = [roles for roles in permutations(FIELDS)
+                        if all(r['fields'][role] == _number(c)[0] for role, c in zip(roles, r['numbers']))]
+            orders.append(set(possible))
+        common = set.intersection(*orders)
+        if not aligned or not name_aligned or not common or min(c.confidence for r in candidates for c in r['cells'] + r['numbers']) < .95:
+            trace['review_reasons'].append('HEADERLESS_TABLE_LOW_CONFIDENCE')
+            continue
+        # Equal unit/total values can interchange; prefer the usual total-last order.
+        roles = sorted(common, key=lambda roles: (roles[-1] != 'total_amount', roles))[0]
+        page['anchors'] = dict(zip(roles, centers), name=median(r['cells'][0].box[0] for r in candidates))
+        page['header_y'] = min(c.y for r in candidates for c in r['cells']) - height
+        complete = len(candidates) == sum(top <= y < summary_y for y in possible_rows)
+        page.update(table_complete=complete, table_schema='HEADERLESS_COLUMN_TABLE',
+                    table_reason='repeated_aligned_arithmetic_columns')
+        if not complete:
+            trace['review_reasons'].append('HEADERLESS_TABLE_LOW_CONFIDENCE')
+        for i, r in enumerate(candidates):
+            r.update(row_index=i, row_confidence=min(c.confidence for c in r['cells'] + r['numbers']),
+                     repairable=True)
+        inferred.extend(candidates)
+        trace['headerless_table_detected'] = True
+    return inferred
+
+
+def _collapse_hierarchy(items: list, pages: list, trace: dict) -> None:
+    children, paid_names = [], set()
+    for page in pages:
+        parent = None
+        for row in _rows(page['cells']):
+            names = [c for c in row if _number(c) is None]
+            numbers = [c for c in row if _number(c) is not None]
+            if not names:
+                continue
+            label = ' '.join(c.text for c in names)
+            if _EXCLUDE.search(_compact(label)):
+                parent = None
+                continue
+            x, y = min(c.box[0] for c in names), median(c.y for c in names)
+            if any(_number(c)[0] > 0 for c in numbers):
+                parent = (x, y)
+                paid_names.add(_name_key(label))
+            elif parent and y > parent[1]:
+                if min(c.confidence for c in row) >= .9:
+                    children.append(label)
+    removed = []
+    for i, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get('name') or '')
+        if any(_name_key(name) == _name_key(child) for child in children):
+            candidate = dict(index=i, item=dict(item), reason='unpriced_hierarchical_option', action='kept')
+            trace['removal_candidates'].append(candidate)
+            if _name_key(name) not in paid_names:
+                removed.append(i)
+                candidate['action'] = 'removed'
+                trace['removed_items'].append(dict(index=i, item=dict(item), reason=candidate['reason']))
+            else:
+                trace['review_reasons'].append('HIERARCHICAL_ITEM_AMBIGUOUS')
+    items[:] = [item for i, item in enumerate(items) if i not in removed]
+    trace['hierarchical_collapsed_count'] = len(removed)
+
+
+def ground_items(items: Any, text: str, pages: Any, *, receipt_total: Any = None) -> dict[str, Any]:
     """Mutate fields and count only when independent OCR evidence is strong."""
     started = perf_counter()
     trace: dict[str, Any] = dict(version=VERSION, changed_items=0, items=[], added_items=[], removed_items=[], table_detected=False)
     trace.update(item_layout_type='UNKNOWN', layout_confidence=0.0,
+                 reserved_summary_amounts=[], reserved_summary_amount_count=0,
+                 reused_numeric_bbox_detected=False, hierarchical_collapsed_count=0,
+                 headerless_table_detected=False, review_reasons=[],
                  layout_reason='no_usable_layout', applied_postprocessor='preserve_llm_items',
                  detected_headers=[], detected_columns=[], table_schema=[], logical_rows=[],
                  row_confidence=[], row_matching=[], corrected_items=[], removal_candidates=[])
@@ -631,7 +763,11 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
     if not indexed:
         trace.update(reason='no_usable_layout', elapsed_ms=round((perf_counter() - started) * 1000, 3))
         return trace
+    _reserve_summary_numbers(indexed, trace)
     table_rows = _table_rows(indexed)
+    initial_kind = _item_layout(indexed, table_rows)[0]
+    if initial_kind == 'UNKNOWN':
+        table_rows.extend(_headerless_rows(indexed, table_rows, trace))
     for page in indexed:
         trace['detected_headers'].extend(dict(page=page['page'], role=h['role'], text=h['text'],
             bbox=list(h['cell'].box), x=h['x']) for h in page['headers'])
@@ -653,6 +789,20 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
     logical = table_rows if kind == 'COLUMN_TABLE' else [] if preserve else _logical_rows(indexed)
     table_matches = _match_table_items(items, table_rows) if table_rows else {}
     trace['table_detected'] = bool(table_rows)
+    repair_candidates = {}
+    try:
+        amounts = [float(i['total_amount']) for i in items]
+        excess = sum(amounts) - float(receipt_total)
+        if all(math.isfinite(a) and a >= 0 for a in amounts) and excess > 1 and not re.search(r'할인|쿠폰|discount', text, re.I):
+            for i, item in enumerate(items):
+                q, u = float(item['quantity']), float(item['unit_price'])
+                target = amounts[i] - excess
+                if u > 0 and q > 1 and abs(q * u - amounts[i]) <= 1 and target > 0:
+                    new_q = target / u
+                    if new_q.is_integer() and 0 < new_q < q:
+                        repair_candidates[i] = dict(quantity=int(new_q), unit_price=u, total_amount=target)
+    except (TypeError, ValueError, KeyError, OverflowError):
+        repair_candidates = {}
     proposals = []
     for index, item in enumerate(items[:50]):
         if not isinstance(item, dict):
@@ -695,7 +845,18 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
             entry['matched_ocr_row'] = dict(page=r['identity'][0], text=r['text'],
                 numbers=[dict(text=c.text, bbox=list(c.box)) for c in r['numbers']])
         match, reason = _match_name(str(item.get('name') or ''), indexed)
-        if consistent:
+        if match is not None:
+            page = match['page_data']
+            nearby, _ = _nearby_numbers(match)
+            summary_hit = any(c.index in page['reserved_numbers']
+                              and 0 <= c.y - match['y'] <= page['height'] * 1.4
+                              and _number(c)[0] in (item.get('unit_price'), item.get('total_amount'))
+                              for c in page['cells'])
+            if nearby is None and summary_hit:
+                entry['reason'] = 'summary_amount_used_as_item'
+                trace['review_reasons'].append('SUMMARY_AMOUNT_USED_AS_ITEM')
+                continue
+        if consistent and index not in repair_candidates:
             entry['reason'] = 'model_arithmetic_consistent'
             continue
         entry['reason'] = reason
@@ -708,6 +869,13 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
             continue
         entry['numbers'] = [dict(text=c.text, bbox=list(c.box)) for c in row]
         fields, entry['reason'] = _resolve_numbers(row, match['page_data']['anchors'], match['page_data']['height'])
+        if fields is None and len(repair_candidates) == 1 and index in repair_candidates:
+            candidate = repair_candidates[index]
+            observed = [_number(c)[0] for c in row]
+            if (candidate['unit_price'] in observed and candidate['total_amount'] in observed
+                    and len(row) <= 2 and all(n in (candidate['quantity'], candidate['unit_price'], candidate['total_amount']) for n in observed)):
+                fields = candidate
+                entry['reason'] = 'unique_global_sum_repair_with_ocr_price'
         if fields is not None:
             identity = (entry['page'], tuple(sorted(c.index for c in row)))
             logical_matches = [r for r in logical if r['identity'] == identity
@@ -718,9 +886,19 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
                 continue
             proposals.append((item, entry, fields, identity))
     counts = Counter(p[3] for p in proposals)
+    occupied = Counter((r['identity'][0], c.index) for r in logical for c in r['numbers']
+                       for e in trace['items'] if e.get('reason') == 'model_arithmetic_consistent'
+                       and (e.get('matched_ocr_row') or {}).get('text') == r['text'])
+    consumed = set(occupied)
+    if any(count > 1 for count in occupied.values()):
+        trace['reused_numeric_bbox_detected'] = True
+        trace['review_reasons'].append('NUMERIC_BBOX_REUSED')
     for item, entry, fields, identity in proposals:
-        if counts[identity] > 1:
+        numeric_ids = {(identity[0], i) for i in identity[1]}
+        if counts[identity] > 1 or numeric_ids & consumed:
             entry['reason'] = 'shared_numeric_row'
+            trace['reused_numeric_bbox_detected'] = True
+            trace['review_reasons'].append('NUMERIC_BBOX_REUSED')
             continue
         candidate = dict(item, **fields)
         try:
@@ -735,6 +913,7 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
         if not valid:
             entry['reason'] = 'candidate_arithmetic_not_verified'
             continue
+        consumed.update(numeric_ids)
         for key, value in fields.items():
             if item.get(key) != value:
                 entry['changes'][key] = dict(before=item.get(key), after=value)
@@ -746,6 +925,9 @@ def ground_items(items: Any, text: str, pages: Any) -> dict[str, Any]:
                                                  corrected_item=dict(item), reason=entry['reason'], changes=entry['changes']))
         entry['after'] = {k: item.get(k) for k in FIELDS}
     trace['before_count'] = len(items)
+    if kind == 'HIERARCHICAL':
+        _collapse_hierarchy(items, indexed, trace)
+        trace['applied_postprocessor'] = 'hierarchical_option_grounding'
     if kind == 'COLUMN_TABLE':
         _reconcile_count(items, logical, indexed, trace)
     else:

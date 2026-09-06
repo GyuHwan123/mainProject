@@ -163,10 +163,10 @@ def get_finance_taxonomy(user: User = Depends(require_current_user)) -> dict[str
 
 
 @router.get("/receipt-archive")
-def receipt_archive(category: str | None = None, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+def receipt_archive(category: str | None = None, document_id: str | None = None, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     if category and category != "UNCLASSIFIED" and category not in ALLOWED_EXPENSE_CATEGORIES:
         raise HTTPException(status_code=422, detail="지원하지 않는 영수증 카테고리입니다.")
-    archive = supabase_service.list_receipt_archive(user.email, category=category)
+    archive = supabase_service.list_receipt_archive(user.email, category=category, document_id=document_id)
     unique_archive = []
     seen_receipts = set()
     for item in archive:
@@ -192,12 +192,16 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
         document = item.get("ocr_documents") or {}
         if isinstance(document, list):
             document = document[0] if document else {}
-        storage_path = item.get("source_storage_path") or document.get("file_url")
         if not item.get("source_file_name") and document.get("file_name"):
             item["source_file_name"] = document["file_name"]
-        item["image_url"] = supabase_service.create_document_signed_url(storage_path) if storage_path else None
+        item["image_url"] = None  # Originals are fetched only when the user opens a receipt.
         unique_archive.append(item)
     return unique_archive
+
+
+@router.get("/receipt-archive/{archive_id}/image-url")
+def receipt_archive_image_url(archive_id: str, user: User = Depends(require_current_user)) -> dict[str, str]:
+    return {"image_url": supabase_service.get_receipt_archive_image_url(user.email, archive_id)}
 
 
 @router.delete("/receipt-archive/{archive_id}")
@@ -252,10 +256,7 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
         and values["tax_amount"] is not None
     ):
         values["total_amount"] = values["supply_amount"] + values["tax_amount"]
-    current = next(
-        (item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id),
-        None,
-    )
+    current = supabase_service.get_finance_record(user.email, record_id, columns="id,structured_data")
     if current:
         structured_data = dict(current.get("structured_data") or {})
         previous_decision = dict(structured_data.get("classification_decision") or {})
@@ -278,7 +279,7 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
 
 @router.post("/records/{record_id}/submit", response_model=FinanceRecord)
 def submit_to_finance(record_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
-    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    record = supabase_service.get_finance_record(user.email, record_id, columns="id,status,structured_data")
     if not record:
         raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
     if record.get("status") != "CONFIRMED":
@@ -299,7 +300,7 @@ def submit_to_finance(record_id: str, user: User = Depends(require_current_user)
 def confirm_by_finance(record_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
     if user.role not in {"ADMIN", "DEVELOPER"}:
         raise HTTPException(status_code=403, detail="재무팀 확인 권한이 없습니다.")
-    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    record = supabase_service.get_finance_record(user.email, record_id, columns="id,status,structured_data")
     if not record:
         raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
     structured_data = dict(record.get("structured_data") or {})
@@ -313,7 +314,7 @@ def confirm_by_finance(record_id: str, user: User = Depends(require_current_user
 
 @router.get("/records/{record_id}/export")
 def export_record(record_id: str, user: User = Depends(require_current_user)) -> StreamingResponse:
-    record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
+    record = supabase_service.get_finance_record(user.email, record_id, columns="id,document_id,document_type,expense_category,merchant,transaction_date,supply_amount,tax_amount,total_amount,payment_method,description,structured_data,status")
     if not record:
         raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
     content = build_finance_workbook([record], author={"name": user.name, "email": user.email})
@@ -330,8 +331,10 @@ def export_selected_records(payload: FinanceExportRequest, user: User = Depends(
     requested_ids = list(dict.fromkeys(payload.record_ids))
     records_by_id = {
         record.get("id"): record
-        for record in supabase_service.list_finance_records(user.email, limit=1000)
-        if record.get("id") in requested_ids
+        for record in supabase_service.list_finance_records(
+            user.email, limit=len(requested_ids), record_ids=requested_ids,
+            columns="id,document_id,document_type,expense_category,merchant,transaction_date,supply_amount,tax_amount,total_amount,payment_method,description,structured_data",
+        )
     }
     records = [records_by_id[record_id] for record_id in requested_ids if record_id in records_by_id]
     if len(records) != len(requested_ids):

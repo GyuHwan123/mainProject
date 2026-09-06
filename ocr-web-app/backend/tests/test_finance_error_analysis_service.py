@@ -4,6 +4,19 @@ from app.services.finance_error_analysis_service import analyze_finance_evaluati
 
 
 class FinanceErrorAnalysisServiceTests(unittest.TestCase):
+    def test_calculated_amount_missing_from_ocr_is_not_ocr_error(self):
+        for source in ('CALCULATED_TAXABLE', 'EXPLICIT_OCR'):
+            result = analyze_finance_evaluation_failure(
+                ocr_text='결제금액 77700',
+                ground_truth={'tax_amount': 7064, 'amount_sources': {'tax_amount': source}},
+                prediction={'tax_amount': 7063})
+            codes = {t['code'] for t in result['error_tags']}
+            if source == 'CALCULATED_TAXABLE':
+                self.assertNotIn('OCR_TEXT_MISSING', codes)
+                self.assertIn('CALCULATED_AMOUNT_MISMATCH', codes)
+            else:
+                self.assertIn('OCR_TEXT_MISSING', codes)
+
     def test_tags_semantically_equivalent_values_as_normalization_errors(self):
         result = analyze_finance_evaluation_failure(
             ocr_text="한국철도공사 KTX 125 일반실 승차권",

@@ -702,6 +702,9 @@ export default function OCRPage() {
   const generatedWorkbookUrlRef = useRef('');
   const receiptBatchRef = useRef({ files: [], index: -1, active: false, recordIds: [], evaluationEntries: [] });
   const archivePreviewSnapshotRef = useRef(null);
+  const archiveImageRequestRef = useRef(false);
+  const archiveCategoryRef = useRef(receiptArchiveCategory);
+  archiveCategoryRef.current = receiptArchiveCategory;
   const receiptRequestControllerRef = useRef(null);
   const receiptRetryRef = useRef({ file: null, wasBatch: false });
 
@@ -1231,7 +1234,7 @@ export default function OCRPage() {
           receiptBatchRef.current.recordIds.push(financeRecord.id);
         }
         setSavedFinanceRecords((current) => current.some((item) => item.id === financeRecord.id) ? current.map((item) => item.id === financeRecord.id ? financeRecord : item) : [financeRecord, ...current]);
-        await loadReceiptArchive();
+        await refreshReceiptArchiveItem(result.documentId);
         rememberPendingReceipt({
           document_id: result.documentId,
           record_id: financeRecord.id,
@@ -1468,12 +1471,28 @@ export default function OCRPage() {
     archivePreviewSnapshotRef.current = null;
   };
 
-  const previewArchivedReceipt = (item) => {
-    const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
+  const previewArchivedReceipt = async (item) => {
+    const canPreviewImage = /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
     if (!canPreviewImage) return;
+    if (archiveImageRequestRef.current) return;
     if (selectedArchiveDocumentId === item.document_id) {
       closeArchivePreview();
       return;
+    }
+    let imageUrl = item.image_url;
+    if (!imageUrl || !item.image_url_expires_at || Date.now() >= item.image_url_expires_at) {
+      archiveImageRequestRef.current = true;
+      try {
+        const { data } = await apiClient.get(`/finance/receipt-archive/${item.id}/image-url`);
+        imageUrl = data.image_url;
+        setReceiptArchive((current) => current.map((entry) => entry.id === item.id
+          ? { ...entry, image_url: imageUrl, image_url_expires_at: Date.now() + 3500000 } : entry));
+      } catch (requestError) {
+        setError(requestError.response?.data?.detail || '영수증 원본을 불러오지 못했습니다.');
+        return;
+      } finally {
+        archiveImageRequestRef.current = false;
+      }
     }
     if (!archivePreviewSnapshotRef.current) {
       archivePreviewSnapshotRef.current = { pdf, imagePreviewUrl, fileName, pageItems, pageRows, selectedItemIndex, activeReceiptSemantic, previewVariant, pageNumber, pendingFile, currentDocumentId };
@@ -1481,7 +1500,7 @@ export default function OCRPage() {
     setSelectedArchiveDocumentId(item.document_id);
     setPendingFile(null);
     setPdf(null);
-    setImagePreviewUrl(item.image_url);
+    setImagePreviewUrl(imageUrl);
     setFileName(item.source_file_name || '저장된 영수증');
     setPageItems([]);
     setPageRows([]);
@@ -1571,11 +1590,30 @@ export default function OCRPage() {
     setReceiptArchiveLoading(true);
     try {
       const { data } = await apiClient.get('/finance/receipt-archive', { params: category === 'ALL' ? {} : { category } });
+      if (archiveCategoryRef.current !== category) return;
       setReceiptArchive(Array.isArray(data) ? data : []);
     } catch {
-      setReceiptArchive([]);
+      if (archiveCategoryRef.current === category) setReceiptArchive([]);
     } finally {
-      setReceiptArchiveLoading(false);
+      if (archiveCategoryRef.current === category) setReceiptArchiveLoading(false);
+    }
+  };
+
+  const refreshReceiptArchiveItem = async (documentId) => {
+    try {
+      const { data } = await apiClient.get('/finance/receipt-archive', { params: { document_id: documentId } });
+      const item = Array.isArray(data) ? data[0] : null;
+      if (!item) return; // Duplicate analyses do not create an archive entry.
+      setReceiptArchive((current) => {
+        const category = archiveCategoryRef.current;
+        const matches = category === 'ALL' || (category === 'UNCLASSIFIED'
+          ? !item.expense_category : item.expense_category === category);
+        const previous = current.find((entry) => entry.id === item.id);
+        const remaining = current.filter((entry) => entry.id !== item.id);
+        return matches ? [{ ...item, image_url: previous?.image_url || null, image_url_expires_at: previous?.image_url_expires_at }, ...remaining] : remaining;
+      });
+    } catch {
+      setError('처리는 완료됐지만 새 보관 기록을 불러오지 못했습니다.');
     }
   };
 
@@ -1626,7 +1664,7 @@ export default function OCRPage() {
       setFinanceRecords([archivedFinanceRecord]);
       setSavedFinanceRecords((current) => current.some((item) => item.id === archivedFinanceRecord.id) ? current.map((item) => item.id === archivedFinanceRecord.id ? archivedFinanceRecord : item) : [archivedFinanceRecord, ...current]);
       setResultTab('text');
-      await loadReceiptArchive();
+      await refreshReceiptArchiveItem(archiveDocumentId);
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '저장된 영수증을 다시 분석하지 못했습니다.');
     } finally {
@@ -1736,7 +1774,7 @@ export default function OCRPage() {
       setSavedFinanceRecords((current) => current.map((item) => item.id === data.id ? data : item));
       setFinanceReviewOpen(false);
       setFinanceReviewDraft(null);
-      await loadReceiptArchive();
+      await refreshReceiptArchiveItem(data.document_id);
     } catch (requestError) {
       setError(requestError.response?.data?.detail || '수정한 재무 정보를 저장하지 못했습니다.');
     } finally {
@@ -1906,9 +1944,9 @@ export default function OCRPage() {
                 <div className="receipt-archive-filter"><select aria-label="영수증 카테고리" value={receiptArchiveCategory} onChange={(event) => setReceiptArchiveCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="날짜 정렬" value={receiptArchiveDateOrder} onChange={(event) => setReceiptArchiveDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
                 <div className="receipt-archive-list">
                   {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : filteredReceiptArchive.map((item) => {
-                    const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
+                    const canPreviewImage = /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
                     return <div className="receipt-saved-item" key={item.id}><button type="button" className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
-                      {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
+                      {canPreviewImage && item.image_url ? <img className="receipt-archive-thumb" src={item.image_url} loading="lazy" alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
                       <span><strong>{item.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={item.source_file_name || ''}>{item.source_file_name || '원본 파일명 없음'}</small><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
                       <em>{financeMoney(item.total_amount)}</em>
                     </button><button type="button" className="receipt-saved-delete" disabled={receiptArchiveLoading || receiptArchiveDeleting} onClick={() => requestReceiptArchiveDelete('single', item)} title="기록 삭제" aria-label={`${item.source_file_name || item.merchant || '영수증'} 기록 삭제`}>×</button></div>;

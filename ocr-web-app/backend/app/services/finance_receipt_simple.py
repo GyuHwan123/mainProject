@@ -333,14 +333,32 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
         "policy": "explicit_ocr_then_components_then_guarded_arithmetic",
         "explicit": evidence, "changes": [], "review_reason": reasons,
         "tax_treatment": "UNKNOWN", "supply_source": "UNKNOWN", "tax_source": "UNKNOWN",
+        "rejected_tax_amount": None,
     }
+    model_total = _as_number(result.get('total_amount'))
     if evidence["total_amount"] is not None:
         result["total_amount"] = evidence["total_amount"]
         trace["changes"].append("total_from_explicit_ocr")
     total = _as_number(result.get("total_amount"))
-    total_confirmed = total is not None and total >= 0 and (
-        evidence["total_amount"] is not None or {_receipt_number(v) for v in _MONEY_RE.findall(text)} == {total}
-    ) and "total_amount" not in context["conflicts"]
+    total_support = []
+    if total is not None and total >= 0:
+        if evidence['total_amount'] == total:
+            total_support.append('EXPLICIT_PAYMENT_OCR')
+        if model_total == total:
+            total_support.append('LLM_TOTAL')
+        if total != explicit_tax and total in {_receipt_number(v) for v in _MONEY_RE.findall(text)}:
+            # A labelled payment and its numeric token are the same evidence.
+            if 'EXPLICIT_PAYMENT_OCR' not in total_support:
+                total_support.append('OCR_AMOUNT_CANDIDATE')
+        item_values = [_as_number(i.get('total_amount')) for i in (result.get('items') or []) if isinstance(i, dict)]
+        if item_values and all(v is not None and v >= 0 for v in item_values) and abs(sum(item_values) - total) <= AMOUNT_ROUNDING_TOLERANCE:
+            # LLM total and LLM items alone are not independent OCR evidence.
+            total_support.append('ITEM_SUM')
+    total_confirmed = ('total_amount' not in context['conflicts'] and
+                       ('EXPLICIT_PAYMENT_OCR' in total_support or
+                        ('OCR_AMOUNT_CANDIDATE' in total_support and len(total_support) >= 2)))
+    trace.update(total_confidence='CONFIRMED_TOTAL' if total_confirmed else 'UNCONFIRMED_TOTAL',
+                 total_evidence=total_support, policy_version='amount-reconcile-v3')
     mixed = ((taxable is not None and taxable > 0 and exempt is not None and exempt > 0)
              or bool(re.search(r"과세.{0,8}면세|면세.{0,8}과세", compact)))
     if taxable is not None and exempt is not None:
@@ -349,18 +367,20 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
                   or (labels["tax_exempt"] and exempt is None))
     extras = bool(re.search(r"교육세|봉사료|관광진흥기금|기금|수수료", compact))
     discount = bool(re.search(r"할인|쿠폰", compact))
-    ambiguous_bus = bool(re.search(r"시외[/·ㆍ,또는]+고속|고속[/·ㆍ,또는]+시외", compact))
-    taxable_transport = bool(re.search(r"택시|(?<![A-Z])(?:KTX|SRT)(?![A-Z])|고속철도|시외(?:우등|고급)고속|고속버스|우등고속|항공(?:기|권|운임)|전세버스", compact))
+    transport = bool(re.search(r"택시|버스|철도|기차|지하철|승차권|운임|미터요금|KTX|SRT|항공|시외우등|시외고급", compact))
     exempt_only = bool(re.search(r"(?:도서|책|면세상품)(?:만구매|단독|만결제)", compact))
     exempt_only = exempt_only or (exempt is not None and exempt == total and not (taxable or explicit_tax))
     exempt_only = exempt_only or bool(re.search(r"전액면세|면세전용|도서.*면세|면세.*도서", compact))
     if re.search(r"문구|볼펜|노트|완구|음료|커피|잡화", compact):
         exempt_only = False
     treatment = "UNKNOWN"
+    ordinary_transaction = not re.search(r'면세|도서|봉사료|교육세|기금|수수료|세금별도|VAT별도|부가세별도', compact) and not transport
     if not mixed and not incomplete:
-        if exempt_only and not (explicit_tax or taxable or taxable_transport):
+        if exempt_only and not (explicit_tax or taxable or transport):
             treatment = "EXEMPT"
-        elif (explicit_tax is not None and explicit_tax > 0) or (taxable is not None and taxable > 0) or (taxable_transport and not ambiguous_bus):
+        elif transport:
+            treatment = 'TRANSPORT_SPECIAL'
+        elif (explicit_tax is not None and explicit_tax > 0) or (taxable is not None and taxable > 0) or ordinary_transaction:
             treatment = "TAXABLE"
     trace["tax_treatment"] = treatment
     result["supply_amount"] = explicit_supply
@@ -384,6 +404,8 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
         reasons.append("TOTAL_AMOUNT_UNCONFIRMED")
     if extras:
         reasons.append("ADDITIONAL_TAX_COMPONENTS")
+    if transport and explicit_supply is None and explicit_tax is None:
+        reasons.append('TRANSPORT_SPECIAL')
     if incomplete or (mixed and (taxable is None or exempt is None)):
         reasons.append("MIXED_TAX_COMPONENTS_UNRESOLVED")
     # A discount summary is insufficient to infer the final taxable base.
@@ -392,12 +414,24 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
         reasons.append("DISCOUNT_TAX_BASIS_UNCLEAR")
     guarded = total_confirmed and not (extras or incomplete or context["conflicts"] or discount_blocked)
     if guarded and not mixed:
+        if explicit_tax is not None and result['supply_amount'] is None and 0 <= explicit_tax <= total:
+            result['supply_amount'] = total - explicit_tax
+            trace['supply_source'] = 'DERIVED_TAXABLE_TOTAL'
+            trace['changes'].append('supply_from_explicit_total_minus_tax')
+            trace['changes'].append('supply_from_guarded_arithmetic')
+        elif explicit_supply is not None and explicit_tax is None and 0 <= explicit_supply <= total:
+            result['tax_amount'] = total - explicit_supply
+            trace['tax_source'] = 'DERIVED_EXPLICIT_TOTAL'
+            trace['changes'].append('tax_from_explicit_total_minus_supply')
+            if result['tax_amount'] > 0 and treatment == 'UNKNOWN':
+                treatment = trace['tax_treatment'] = 'TAXABLE'
+    if guarded and not mixed:
         if treatment == "TAXABLE" and result["supply_amount"] is None:
             if explicit_tax is not None and 0 <= explicit_tax <= total:
                 result["supply_amount"] = total - explicit_tax
                 trace["supply_source"] = "DERIVED_TAXABLE_TOTAL"
                 trace["changes"].append("supply_from_guarded_arithmetic")
-            elif explicit_tax is None and not labels["tax"] and not re.search(r"VAT별도|부가세별도|세금별도", compact):
+            elif explicit_tax is None and not labels["tax"] and not re.search(r"면세|도서|승차권|시내버스|지하철|VAT별도|부가세별도|세금별도", compact):
                 result["tax_amount"] = round(total / 11)
                 result["supply_amount"] = total - result["tax_amount"]
                 trace["supply_source"] = trace["tax_source"] = "DERIVED_TAXABLE_TOTAL"
@@ -415,10 +449,16 @@ def _reconcile_amounts(result: dict[str, Any], text: str) -> dict[str, Any]:
         reasons.append("TAX_TREATMENT_UNKNOWN")
     if result["supply_amount"] is None or result["tax_amount"] is None:
         reasons.append("TAX_AMOUNTS_UNRESOLVED")
-    if explicit_tax is not None and not any(evidence[f] is not None for f in ("total_amount", "supply_amount", "taxable_supply_amount", "tax_exempt_amount")):
-        trace["rejected_tax_amount"] = {"value": explicit_tax, "reason": "missing_total_or_supply_cross_check"}
+    if explicit_tax is not None and not total_confirmed and not any(evidence[f] is not None for f in ("total_amount", "supply_amount", "taxable_supply_amount", "tax_exempt_amount")):
+        trace["uncorroborated_tax_amount"] = {"value": explicit_tax, "reason": "missing_total_or_supply_cross_check", "preserved": True}
         reasons.append("TAX_EVIDENCE_UNCORROBORATED")
     supply, tax = result["supply_amount"], result["tax_amount"]
+    trace['amount_sources'] = {
+        field: ('UNKNOWN' if result.get(field) is None else
+                'EXPLICIT_OCR' if trace[source] in ('EXPLICIT_OCR', 'TAXABLE_PLUS_EXEMPT_OCR') else
+                'EXEMPT' if treatment == 'EXEMPT' else 'CALCULATED_TAXABLE')
+        for field, source in (('supply_amount', 'supply_source'), ('tax_amount', 'tax_source'))
+    }
     if total is not None and supply is not None and tax is not None:
         if supply < 0 or tax < 0 or abs(supply + tax - total) > AMOUNT_ROUNDING_TOLERANCE:
             reasons.append("AMOUNT_RELATION_MISMATCH")
@@ -495,6 +535,32 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
         # three-way relation to check and the missing side must not be inferred.
         amount_relation_basis = "not_checkable_partial_amounts"
     item_amounts = [_as_number(item.get("total_amount")) for item in result["items"]]
+    valid_amounts = [value for value in item_amounts if value is not None and value >= 0]
+    item_sum = sum(valid_amounts) if valid_amounts else None
+    sum_complete = bool(item_amounts) and len(valid_amounts) == len(item_amounts)
+    item_difference = item_sum - total if item_sum is not None and total is not None else None
+    global_pass = None
+    if item_amounts and not sum_complete:
+        reasons.append('ITEM_TOTALS_INCOMPLETE')
+    if item_difference is not None:
+        matched_total = min(abs(item_difference), abs(item_difference - discount)) <= AMOUNT_ROUNDING_TOLERANCE
+        global_pass = matched_total if sum_complete else None
+        if (sum_complete and not matched_total) or item_difference - discount > AMOUNT_ROUNDING_TOLERANCE:
+            global_pass = False
+            reasons.append('ITEM_SUM_TOTAL_MISMATCH')
+        elif not sum_complete:
+            reasons.append('ITEM_TOTALS_INCOMPLETE')
+    grounding = result.get('item_grounding') or {}
+    reasons.extend(grounding.get('review_reasons', []))
+    if any(reason in grounding.get('review_reasons', []) for reason in
+           ('SUMMARY_AMOUNT_USED_AS_ITEM', 'NUMERIC_BBOX_REUSED')):
+        global_pass = False
+    quantity_candidates = []
+    if global_pass is False and len(result['items']) == 1:
+        item = result['items'][0]
+        if _as_number(item.get('unit_price')) == total and (_as_number(item.get('quantity')) or 0) > 1:
+            quantity_candidates.append(dict(item_index=0, quantity=1, total_amount=total,
+                                             reason='unit_price_matches_receipt_total', applied=False))
     if result["items"] and all(value is not None for value in item_amounts) and total is not None:
         item_sum = sum(float(value) for value in item_amounts if value is not None)
         if (
@@ -528,6 +594,13 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
         "warnings": warnings,
         "missing_fields": missing,
         "checks": {
+            "item_sum_vs_total": {"item_sum": item_sum, "receipt_total": total, "complete": sum_complete,
+                                  "discount_amount": discount, "quantity_correction_candidates": quantity_candidates},
+            "item_sum_difference": item_difference,
+            "global_item_consistency_pass": global_pass,
+            **{key: grounding.get(key, False if key.endswith('detected') else 0) for key in (
+                'reserved_summary_amount_count', 'reused_numeric_bbox_detected',
+                'hierarchical_collapsed_count', 'headerless_table_detected')},
             "json_schema": "PASS",
             "total_grounded": bool(total is not None and _amount_is_grounded(total, text)),
             "amount_relation": "AMOUNT_RELATION_MISMATCH" not in reasons,
@@ -579,7 +652,7 @@ async def _classify_receipt_with_model(
         raise ValueError("receipt JSON object expected")
     _reconcile_amounts(parsed, text)
     parsed["payment_method"], parsed["payment_method_evidence"] = _payment_from_ocr(text)
-    parsed["item_grounding"] = ground_items(parsed.get("items"), text, pages)
+    parsed["item_grounding"] = ground_items(parsed.get("items"), text, pages, receipt_total=parsed.get("total_amount"))
     parsed["automation_validation"] = _simple_validation(parsed, text)
     parsed["llm_trace"] = {
         "pipeline_version": RECEIPT_PIPELINE_VERSION,

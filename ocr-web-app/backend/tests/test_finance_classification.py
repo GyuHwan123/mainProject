@@ -34,10 +34,10 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
     def test_simple_v1_prompt_requests_all_fields_once(self):
         prompt, diagnostics = _simple_receipt_prompt(SAMPLE_OCR, "receipt.jpg")
 
-        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1.2-compact-category-ocr-payment")
+        self.assertEqual(FINANCE_PROMPT_VERSION, "receipt-simple-v1.3-compact-category-decision-rules")
         self.assertIn("merchant, transaction_date, expense_category", prompt)
         self.assertIn("items의 키", prompt)
-        self.assertIn("분류명이 OCR에 직접 없어도 됩니다", prompt)
+        self.assertIn("expense_category는 추출값이 아니라 분류값입니다", prompt)
         self.assertNotIn("payment_method", prompt)
         self.assertIn("쇼핑백·포장비·배달비", prompt)
         self.assertIn("할인 전 세금 요약", prompt)

@@ -429,11 +429,25 @@
     box-shadow: 0 0 0 2px rgba(81, 66, 232, 0.08);
   }
 }
+.chat-workspace .rag-document-title {
+  flex-wrap: wrap;
+  gap: 8px;
+  > div:first-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
 .rag-title-actions {
   display: flex !important;
+  flex-wrap: wrap;
   align-items: center;
   gap: 7px;
-  > button {
+  .document-upload-actions {
+    display: flex;
+    gap: 7px;
+  }
+  > button,
+  .document-upload-actions > button {
     padding: 6px 9px;
     display: inline-flex;
     align-items: center;
@@ -445,6 +459,11 @@
     font-size: 11px;
     font-weight: 750;
     cursor: pointer;
+    white-space: nowrap;
+    &:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
   }
   > button.clear-document-selection {
     color: $main-color;

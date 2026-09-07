@@ -6,6 +6,7 @@ import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
+import { documentUploadGroups } from '../features/documentUploads';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -272,6 +273,17 @@ function EvidencePreview({ source, onUpload, uploading }) {
     const load = async () => {
       if (!source?.documentId) { setPreview({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }); return; }
       setPreview({ type: 'loading', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
+      if (!isCompanyDocument && source.source?.endsWith('.images.zip')) {
+        const [{ data: document }, { data: privacy }] = await Promise.all([
+          apiClient.get(`/ocr/documents/${source.documentId}`),
+          apiClient.get(`/ocr/documents/${source.documentId}/privacy-boxes`),
+        ]);
+        if (active) {
+          setPrivacyPages(Array.isArray(privacy) ? privacy : []);
+          setPreview({ type: 'image-pages', documentId: source.documentId, url: '', pageCount: document.pages.length, width: 0, height: 0, scale: 1 });
+        }
+        return;
+      }
       const [{ data: blob }, { data: privacy }] = await Promise.all([
         apiClient.get(isCompanyDocument
           ? `/rag/company-documents/${encodeURIComponent(source.documentId)}/file`
@@ -316,6 +328,21 @@ function EvidencePreview({ source, onUpload, uploading }) {
     };
   }, [isCompanyDocument, source?.documentId, source?.source]);
 
+  useEffect(() => {
+    if (preview.type !== 'image-pages' || preview.documentId !== source?.documentId) return;
+    let active = true;
+    let objectUrl = '';
+    setPreview((value) => ({ ...value, url: '', width: 0, height: 0, pageLoading: true, pageError: false }));
+    apiClient.get(`/ocr/documents/${preview.documentId}/pages/${currentPage}/file`, { responseType: 'blob', timeout: 60000 })
+      .then(({ data }) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(data);
+        setPreview((value) => ({ ...value, url: objectUrl, pageLoading: false }));
+      })
+      .catch(() => { if (active) setPreview((value) => ({ ...value, pageLoading: false, pageError: true })); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [preview.type, preview.documentId, source?.documentId, currentPage]);
+
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
     if (!points.length || !preview.width || !preview.height) return null;
@@ -325,7 +352,7 @@ function EvidencePreview({ source, onUpload, uploading }) {
     return { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: Math.max(3, (Math.max(...xs) - Math.min(...xs)) * preview.scale), height: Math.max(3, (Math.max(...ys) - Math.min(...ys)) * preview.scale) };
   })();
   const safePrivacyPages = Array.isArray(privacyPages) ? privacyPages : [];
-  const imagePrivacyStyles = (safePrivacyPages.find((page) => page.page === 1)?.boxes || []).map((box) => {
+  const imagePrivacyStyles = (safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []).map((box) => {
     const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
     return xs.length && ys.length ? { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: (Math.max(...xs) - Math.min(...xs)) * preview.scale, height: (Math.max(...ys) - Math.min(...ys)) * preview.scale } : null;
   }).filter(Boolean);
@@ -333,15 +360,15 @@ function EvidencePreview({ source, onUpload, uploading }) {
   if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><RiFileUploadLine /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
   const pageCount = Math.max(1, preview.pageCount || 1);
   return <div className="evidence-preview"><div className="evidence-preview-label"><span>{source.source}</span><div className="evidence-page-controls"><button disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>‹</button><b>{currentPage} / {pageCount}</b><button disabled={currentPage >= pageCount} onClick={() => setCurrentPage((page) => page + 1)}>›</button></div></div><div className="evidence-preview-body">
-    {['pdf', 'spreadsheet'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
+    {['pdf', 'spreadsheet', 'image-pages'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
     <div className="evidence-document-stage">
-    {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
-    {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
+    {(preview.type === 'loading' || preview.pageLoading) && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
+    {['image', 'image-pages'].includes(preview.type) && preview.url && <img key={preview.url} src={preview.url} alt={`근거 문서 ${currentPage}페이지`} onError={() => setPreview((value) => ({ ...value, pageError: true }))} onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
     {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} sourceContent={Number(source?.pageNumber || 1) === currentPage ? source?.content : ''} />}
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
-    {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
-    {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
-    {['unsupported', 'error'].includes(preview.type) && <div className="evidence-preview-empty"><strong>{isCompanyDocument ? '기업 공용문서 원본을 표시할 수 없습니다' : '미리보기를 표시할 수 없습니다'}</strong>{!isCompanyDocument && <button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button>}</div>}
+    {['image', 'image-pages'].includes(preview.type) && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
+    {['image', 'image-pages'].includes(preview.type) && preview.width > 0 && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
+    {(['unsupported', 'error'].includes(preview.type) || preview.pageError) && <div className="evidence-preview-empty"><strong>{isCompanyDocument ? '기업 공용문서 원본을 표시할 수 없습니다' : '미리보기를 표시할 수 없습니다'}</strong>{!isCompanyDocument && <button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button>}</div>}
     </div>
   </div>{isCompanyDocument && source.content && <aside className="company-evidence-text"><strong>근거 텍스트</strong><p>{source.content}</p></aside>}</div>;
 }
@@ -595,16 +622,18 @@ function ChatPageContent() {
   const uploadFiles = async (files) => {
     setRagError('');
     try {
-      for (const file of files) {
+      for (const group of documentUploadGroups(files)) {
+        const bundled = group.length > 1;
         const formData = new FormData();
-        formData.append('file', file);
-        setIndexingId(file.name);
-        const { data: extracted } = await apiClient.post('/ocr/upload?upload_origin=RAG', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+        group.forEach((file) => formData.append(bundled ? 'files' : 'file', file));
+        setIndexingId(bundled ? `${group.length}장 이미지 문서` : group[0].name);
+        const { data: extracted } = await apiClient.post(bundled ? '/ocr/upload-images' : '/ocr/upload?upload_origin=RAG', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 * group.length,
         });
         const { data: indexed } = await apiClient.post(`/rag/documents/${extracted.document_id}/index`, null, { timeout: 300000 });
         setActiveId(indexed.id);
         setUploadMode(false);
+        setDocumentViewMode('viewer');
         setSelectedSource(null);
       }
       setSources([]);
@@ -852,7 +881,17 @@ function ChatPageContent() {
         </aside>
 
         <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
-          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>{activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}<button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><RiFileUploadLine /> 문서 추가</button></div></div>
+          <div className="rag-panel-title rag-document-title">
+            <div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div>
+            <div className="rag-title-actions">
+              <span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>
+              {activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}
+              <div className="document-upload-actions">
+                <button type="button" disabled={Boolean(indexingId)} onClick={() => { setUploadMode(true); startNewChat(); fileRef.current?.click(); }}><RiFileUploadLine /> 문서 추가</button>
+                {isDeveloper && <button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 데이터 업로드</button>}
+              </div>
+            </div>
+          </div>
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
           <div className="evidence-workspace">
             <div className="preview-slot">
@@ -888,7 +927,7 @@ function ChatPageContent() {
 
       {isDeveloper && <section className="rag-evaluation-panel">
         <header><div><small>DEVELOPER ONLY</small><h2>RAG 성능 평가</h2><p>현재 BGE-M3 · Vector Search · Reranker · gemma2:2b 전체 파이프라인을 평가합니다.</p></div><span className={`evaluation-state ${evaluationStatus === '완료' ? 'complete' : ''}`}>{evaluationStatus}</span></header>
-        <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 JSON 업로드</button><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
+        <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
         {(evaluationDataset || evaluationRunning) && <section className="evaluation-progress" aria-live="polite">
           <div className="evaluation-progress-heading"><strong>{evaluationRunning ? `현재 ${Math.min(evaluationProgress.current + 1, evaluationProgress.total || evaluationDataset?.cases.length || 0)}번째 문항 처리 중` : evaluationStatus}</strong><span>{evaluationProgress.current} / {evaluationProgress.total || evaluationDataset?.cases.length || 0} 완료 · {Number(evaluationProgress.progress_percent || 0).toFixed(1)}%</span></div>
           <div className="evaluation-progress-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>

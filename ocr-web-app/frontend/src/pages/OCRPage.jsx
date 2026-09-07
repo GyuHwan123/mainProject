@@ -1,7 +1,8 @@
+import { groupFinanceRecords } from '../features/financeRecordGroups';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoCloseOutline, IoDocumentTextOutline, IoMenuOutline, IoSearchOutline, IoTrashOutline } from 'react-icons/io5';
+import { IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoEyeOutline, IoMenuOutline, IoSearchOutline, IoTrashOutline } from 'react-icons/io5';
 import { RiFileUploadLine } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
@@ -676,6 +677,7 @@ export default function OCRPage() {
   const [financePreviewLoading, setFinancePreviewLoading] = useState(false);
   const [financePreviewSheet, setFinancePreviewSheet] = useState(0);
   const [financeSubmitMessage, setFinanceSubmitMessage] = useState('');
+  const [financeSendScope, setFinanceSendScope] = useState('pending');
   const [financeDuplicateNotice, setFinanceDuplicateNotice] = useState('');
   const [evaluationDatasetFile, setEvaluationDatasetFile] = useState(null);
   const [receiptBatchStatus, setReceiptBatchStatus] = useState('');
@@ -1496,25 +1498,11 @@ export default function OCRPage() {
     setPageNumber(1);
     document.querySelector('.preview-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   };
-  const savedFinanceGroups = useMemo(() => {
-    const groups = new Map();
-    savedFinanceRecords.forEach((record) => {
-      if (record.status !== 'CONFIRMED' || !record.structured_data?.excel_saved_at) return;
-      const createdAt = new Date(record.structured_data.excel_saved_at);
-      const month = Number.isNaN(createdAt.getTime()) ? '날짜 미확인' : `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, '0')}`;
-      const key = `${month}:${record.document_type}`;
-      if (!groups.has(key)) groups.set(key, { key, month, documentType: record.document_type, records: [] });
-      groups.get(key).records.push(record);
-    });
-    return [...groups.values()].map((group) => {
-      group.records.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-      group.total = group.records.reduce((sum, record) => sum + Number(record.total_amount || 0), 0);
-      const latest = group.records[group.records.length - 1];
-      const workflow = latest?.structured_data?.finance_workflow || {};
-      group.status = workflow.finance_confirmed_at ? '재무팀 확인' : workflow.submitted_at ? '재무팀 전달' : group.records.every((record) => record.status === 'CONFIRMED') ? '최종 확정' : group.records.some((record) => record.status === 'CONFIRMED') ? '확인 필요' : '작성 중';
-      return group;
-    }).sort((a, b) => b.key.localeCompare(a.key));
-  }, [savedFinanceRecords]);
+  const savedFinanceGroups = useMemo(() => groupFinanceRecords(savedFinanceRecords), [savedFinanceRecords]);
+  const hasPendingFinanceRecords = savedFinanceGroups.some((group) => !group.sent);
+  const effectiveFinanceSendScope = hasPendingFinanceRecords ? financeSendScope : 'all';
+  const canSendFinanceRecords = savedFinanceGroups.length > 0;
+
 
   useEffect(() => {
     setValidationRows(buildExtractionRows(currentRows, currentItems));
@@ -1547,6 +1535,27 @@ export default function OCRPage() {
     }
   };
 
+  const [deletingFinanceGroup, setDeletingFinanceGroup] = useState(null);
+  const deleteSavedFinanceGroup = async (group) => {
+    if (deletingFinanceGroup) return;
+    setDeletingFinanceGroup(group.key);
+    setError('');
+    try {
+      const ids = group.records.map((record) => record.id);
+      for (let offset = 0; offset < ids.length; offset += 200) {
+        await apiClient.post('/finance/records/soft-delete', { record_ids: ids.slice(offset, offset + 200) });
+      }
+      setSavedFinanceRecords((current) => current.filter((record) => !ids.includes(record.id)));
+      setFinancePreview((current) => current?.group?.key === group.key ? null : current);
+      await loadSavedFinanceRecords();
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || '재무 기록을 삭제하지 못했습니다.');
+      await loadSavedFinanceRecords();
+    } finally {
+      setDeletingFinanceGroup(null);
+    }
+  };
+
   const previewSavedFinanceGroup = async (group) => {
     setFinancePreviewLoading(true);
     setError('');
@@ -1572,7 +1581,7 @@ export default function OCRPage() {
       const url = URL.createObjectURL(response.data);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `${group.month}_${FINANCE_DOCUMENTS[group.documentType]?.title || '재무문서'}.xlsx`;
+      anchor.download = `${group.month}_${group.batchLabel.replaceAll(':', '-')}_${FINANCE_DOCUMENTS[group.documentType]?.title || '재무문서'}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -1847,19 +1856,21 @@ export default function OCRPage() {
   };
 
   const submitFinanceRecord = async () => {
+    if (loading || savedFinanceLoading || !canSendFinanceRecords) return;
     setLoading(true);
     setError('');
     setFinanceSubmitMessage('');
     try {
-      const { data } = await apiClient.post('/finance/records/submit-all', {}, { timeout: 300000 });
+      const { data } = await apiClient.post('/finance/records/submit-all', {}, { timeout: 300000, params: { include_previous: effectiveFinanceSendScope === 'all' } });
       const updated = new Map(data.map((record) => [record.id, record]));
       setFinanceRecord((current) => updated.get(current?.id) || current);
       setFinanceRecords((current) => current.map((record) => updated.get(record.id) || record));
       setSessionProcessedReceipts((current) => current.map((entry) => ({ ...entry, record: updated.get(entry.record.id) || entry.record })));
-      setSavedFinanceRecords(data);
-      setFinanceSubmitMessage(data.length ? `최종 확정한 ${data.length}건이 모두 제출된 상태입니다.` : '제출할 최종 확정 기록이 없습니다.');
+      setSavedFinanceRecords((current) => current.map((record) => updated.get(record.id) || record));
+      await loadSavedFinanceRecords();
+      setFinanceSubmitMessage(data.length ? `${data.length}건을 docai0914@gmail.com으로 발송했습니다. 기록은 발송 완료 상태로 보관됩니다.` : '새로 보낼 최종 확정 기록이 없습니다.');
     } catch (requestError) {
-      setError('전체 제출을 완료하지 못했습니다. 다시 누르면 이미 제출된 건을 제외하고 나머지를 제출합니다.');
+      setError(requestError.response?.data?.detail || '이메일 발송 결과를 확인하지 못했습니다. 수신함과 저장된 목록을 확인해 주세요.');
       await loadSavedFinanceRecords();
     } finally {
       setLoading(false);
@@ -2028,12 +2039,12 @@ export default function OCRPage() {
               {processingMode === 'receipt' && <button type="button" className={`saved-finance-trigger ${savedFinanceOpen ? 'open' : ''}`} onClick={() => { setSavedFinanceOpen((open) => !open); if (!savedFinanceOpen) loadSavedFinanceRecords(); }}>저장된 기록 <b>{savedFinanceGroups.length}</b></button>}
             </div>
             {processingMode === 'receipt' && savedFinanceOpen && <section className="saved-finance-panel">
-              <header><div><strong>저장된 재무 기록</strong><small>‘이 내용으로 최종 확정’을 누른 기록만 Excel에 저장됩니다.</small></div><button type="button" aria-label="닫기" onClick={() => setSavedFinanceOpen(false)}><IoCloseOutline /></button></header>
+              <header><div><strong>저장된 재무 기록</strong><small>최종 확정한 기록을 보관하며, 재무팀 미발송과 발송 완료 상태로 구분합니다.</small></div><button type="button" aria-label="닫기" onClick={() => setSavedFinanceOpen(false)}><IoCloseOutline /></button></header>
               <label><IoSearchOutline /><input value={savedFinanceSearch} onChange={(event) => setSavedFinanceSearch(event.target.value)} placeholder="문서 유형 또는 작성 월 검색" /></label>
               <div className="saved-finance-list">
-                {savedFinanceLoading ? <p>저장된 기록을 불러오는 중입니다.</p> : savedFinanceGroups.filter((group) => `${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title || group.documentType}`.toLowerCase().includes(savedFinanceSearch.trim().toLowerCase())).map((group) => <div className="saved-finance-card" key={group.key}><button className="saved-finance-select" type="button" onClick={() => { setFinanceRecords(group.records); setFinanceRecord(group.records[group.records.length - 1]); setResultTab('text'); setSavedFinanceOpen(false); }}>
-                  <span className="saved-finance-file">XLSX</span><span><strong>{group.month.replace('-', '년 ')}월 {FINANCE_DOCUMENTS[group.documentType]?.title || '재무 문서'}</strong><small>{group.records.length}개 행 · 누적 {financeMoney(group.total)}</small></span><em className={`status-${group.status.replaceAll(' ', '-')}`}>{group.status}</em><i>›</i>
-                </button><button className="saved-finance-download" type="button" disabled={financePreviewLoading} onClick={() => previewSavedFinanceGroup(group)}>{financePreviewLoading ? '불러오는 중…' : '미리보기'}</button><button className="saved-finance-download" type="button" disabled={Boolean(downloadingFinanceGroup)} onClick={() => downloadSavedFinanceGroup(group)} aria-label={`${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title || '재무 문서'} 전체 Excel 다운로드`}>{downloadingFinanceGroup === group.key ? '다운로드 중…' : 'Excel 다운로드'}</button></div>)}
+                {savedFinanceLoading ? <p>저장된 기록을 불러오는 중입니다.</p> : savedFinanceGroups.filter((group) => `${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title || group.documentType}`.toLowerCase().includes(savedFinanceSearch.trim().toLowerCase())).map((group) => <div className="saved-finance-card" key={group.key}>{group.records.every((record) => record.structured_data?.finance_workflow?.submitted_at) && <button type="button" className="saved-finance-delete" disabled={Boolean(deletingFinanceGroup)} onClick={() => deleteSavedFinanceGroup(group)} aria-label={`${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title} 삭제`} title="발송 완료 기록 삭제"><IoCloseOutline aria-hidden="true" /></button>}<button className="saved-finance-select" type="button" onClick={() => { setFinanceRecords(group.records); setFinanceRecord(group.records[group.records.length - 1]); setResultTab('text'); setSavedFinanceOpen(false); }}>
+                  <span className="saved-finance-file">XLSX</span><span><strong title={`${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title} · ${group.batchLabel}`}>{group.month.replace('-', '년 ')}월 {FINANCE_DOCUMENTS[group.documentType]?.title || '재무 문서'}</strong><small>{group.batchLabel} · {group.records.length}건 · {financeMoney(group.total)}</small></span><em className={`status-${group.status.replaceAll(' ', '-')}`}>{group.status}</em><i>›</i>
+                </button><div className="saved-finance-actions"><button className="saved-finance-action" type="button" disabled={financePreviewLoading} onClick={() => previewSavedFinanceGroup(group)}><IoEyeOutline aria-hidden="true" />{financePreviewLoading ? '불러오는 중…' : '미리보기'}</button><button className="saved-finance-action saved-finance-action-download" type="button" disabled={Boolean(downloadingFinanceGroup)} onClick={() => downloadSavedFinanceGroup(group)} aria-label={`${group.month} ${FINANCE_DOCUMENTS[group.documentType]?.title || '재무 문서'} 전체 Excel 다운로드`}><IoDownloadOutline aria-hidden="true" />{downloadingFinanceGroup === group.key ? '다운로드 중…' : 'Excel 다운로드'}</button></div></div>)}
                 {!savedFinanceLoading && !savedFinanceGroups.length && <p>저장된 재무 기록이 아직 없습니다.</p>}
               </div>
             </section>}
@@ -2069,9 +2080,9 @@ export default function OCRPage() {
                 <div className="agent-amount-check"><strong>금액 검산</strong>{optionalFinanceNumber(financeRecord.supply_amount) === null || optionalFinanceNumber(financeRecord.tax_amount) === null ? <><span>공급가액 또는 부가세 정보 없음</span><em>검산 불가</em></> : <><span>{financeMoney(financeRecord.supply_amount)} + {financeMoney(financeRecord.tax_amount)} = {financeMoney(Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount))}</span><em className={Number(financeRecord.total_amount || 0) === Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount) ? 'valid' : ''}>{Number(financeRecord.total_amount || 0) === Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount) ? '일치' : '확인 필요'}</em></>}</div>
                 <button type="button" className="agent-review" onClick={openFinanceReview}>내용 검토·수정</button>
                 <button type="button" className="agent-confirm" disabled={loading || (financeRecord.status === 'CONFIRMED' && Boolean(financeRecord.structured_data?.excel_saved_at))} onClick={confirmFinanceRecord}>{financeRecord.status === 'CONFIRMED' && financeRecord.structured_data?.excel_saved_at ? '사용자 확정 완료' : '이 내용으로 최종 확정'}</button>
-                {financeRecord.status === 'CONFIRMED' && <button type="button" className="agent-submit" disabled={loading} onClick={submitFinanceRecord}>{loading ? '처리 중…' : '확정한 모든 기록을 재무팀에 보내기'}</button>}
+                {financeRecord.status === 'CONFIRMED' && <><label className="finance-send-scope">발송 범위<select value={effectiveFinanceSendScope} disabled={loading} onChange={(event) => setFinanceSendScope(event.target.value)}><option value="pending" disabled={!hasPendingFinanceRecords}>미발송 기록만</option><option value="all">이전 발송 기록 포함 (전체)</option></select></label><button type="button" className="agent-submit" disabled={loading || savedFinanceLoading || !canSendFinanceRecords} onClick={submitFinanceRecord}>{loading ? '처리 중…' : effectiveFinanceSendScope === 'all' ? '이전 기록 포함하여 재무팀에 보내기' : '미발송 기록을 재무팀에 보내기'}</button></>}
                 {financeSubmitMessage && <p role="status">{financeSubmitMessage}</p>}
-                {financeRecord.status === 'CONFIRMED' && <p>지금까지 최종 확정한 모든 데이터가 재무팀에 전달됩니다.</p>}
+                {financeRecord.status === 'CONFIRMED' && <p>{effectiveFinanceSendScope === 'all' ? '삭제하지 않은 이전 발송 기록과 미발송 기록을 함께 보냅니다.' : '아직 보내지 않은 기록만 보냅니다.'} 수신: docai0914@gmail.com</p>}
                 <p>{financeRecord.structured_data?.finance_workflow?.submitted_at ? '전달된 문서는 마이페이지 재무 히스토리에서 확인할 수 있습니다.' : '내용을 검토한 뒤 사용자가 직접 최종 확정합니다.'}</p>
               </div> : <div className="receipt-result-waiting" role="status">
                 <span className="receipt-excel-mark">XLSX</span>
@@ -2091,7 +2102,7 @@ export default function OCRPage() {
         </section>
         {financePreview && <div className="finance-excel-preview-backdrop" onClick={() => setFinancePreview(null)}>
           <section className="finance-excel-preview-dialog" role="dialog" aria-modal="true" aria-label="Excel 미리보기" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setFinancePreview(null); }}>
-            <header><strong>{financePreview.group.month} Excel 미리보기</strong><button type="button" disabled={Boolean(downloadingFinanceGroup)} onClick={() => downloadSavedFinanceGroup(financePreview.group)}>Excel 다운로드</button><button type="button" autoFocus onClick={() => setFinancePreview(null)}>닫기</button></header>
+            <header><strong>{financePreview.group.month} · {financePreview.group.batchLabel} Excel 미리보기</strong><button type="button" disabled={Boolean(downloadingFinanceGroup)} onClick={() => downloadSavedFinanceGroup(financePreview.group)}>Excel 다운로드</button><button type="button" autoFocus onClick={() => setFinancePreview(null)}>닫기</button></header>
             <p>다운로드 문서의 셀 내용입니다. 수식은 계산식으로 표시됩니다.</p>
             <nav aria-label="Excel 시트">{financePreview.sheets.map((sheet, index) => <button type="button" key={sheet.name} aria-pressed={financePreviewSheet === index} onClick={() => setFinancePreviewSheet(index)}>{sheet.name}</button>)}</nav>
             <div className="finance-excel-preview-table"><table><tbody>{financePreview.sheets[financePreviewSheet]?.rows.map((row, index) => <tr key={index}><th scope="row">{index + 1}</th>{row.map((value, column) => <td key={column}>{String(value ?? '')}</td>)}</tr>)}</tbody></table></div>

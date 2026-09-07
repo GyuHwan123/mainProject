@@ -1207,22 +1207,69 @@
       overflow-y: auto;
 
       .saved-finance-card {
+        position: relative;
         min-height: max-content;
         border: 1px solid #dfe6ed;
         border-radius: 10px;
         background: #fff;
         overflow: hidden;
       }
-      .saved-finance-download {
-        display: block;
-        margin: 0 12px 10px auto;
-        padding: 6px 10px;
-        border: 1px solid #a9c8dd;
-        border-radius: 6px;
-        background: #f1f7fc;
-        color: #205c89;
+      .saved-finance-card:has(.saved-finance-delete) .saved-finance-select {
+        padding-right: 40px;
+      }
+      .saved-finance-delete {
+        position: absolute;
+        top: 12px;
+        right: 10px;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        color: #cf6262;
+        background: #fff0f0;
         cursor: pointer;
-        &:disabled { opacity: 0.6; cursor: wait; }
+        &:hover:not(:disabled) { background: #ffe0e0; }
+        &:focus-visible { outline: 2px solid #cf6262; outline-offset: 2px; }
+        &:disabled { opacity: 0.5; cursor: wait; }
+      }
+      .saved-finance-actions {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px 10px;
+      }
+      .saved-finance-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        min-height: 32px;
+        padding: 6px 10px;
+        border: 1px solid #e2e8ef;
+        border-radius: 7px;
+        background: #f7f9fc;
+        color: #52677e;
+        font: inherit;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.4;
+        white-space: nowrap;
+        cursor: pointer;
+        transition: background 0.18s, border-color 0.18s;
+        svg { flex-shrink: 0; font-size: 16px; }
+        &:hover:not(:disabled) { background: #edf2f7; border-color: #cbd7e2; }
+        &:focus-visible { outline: 2px solid #2d709f; outline-offset: 2px; }
+        &:disabled { opacity: 0.55; cursor: wait; }
+        &.saved-finance-action-download {
+          color: #19734a;
+          background: #edf7f2;
+          border-color: #d9ece2;
+          &:hover:not(:disabled) { background: #e0f0e7; border-color: #b9dbca; }
+        }
       }
       .saved-finance-select {
         width: 100%;
@@ -1232,8 +1279,8 @@
         grid-template-columns: 36px minmax(0, 1fr) auto 12px;
         align-items: center;
         gap: 10px;
-        border: 1px solid #dfe6ed;
-        border-radius: 10px;
+        border: 0;
+        border-radius: 0;
         color: #64748a;
         background: #fff;
         text-align: left;
@@ -1243,8 +1290,7 @@
           box-shadow 0.18s;
       }
       .saved-finance-select:hover {
-        border-color: #a9c8dd;
-        box-shadow: 0 5px 15px rgba(18, 68, 112, 0.07);
+        background: #f8fafc;
       }
       .saved-finance-file {
         padding: 8px 4px;
@@ -1284,10 +1330,12 @@
         font-weight: 800;
         white-space: nowrap;
       }
+      em.status-재무팀-미발송,
       em.status-확인-필요 {
         color: #8b5a00;
         background: #fff2d7;
       }
+      em.status-재무팀-발송-완료,
       em.status-최종-확정,
       em.status-재무팀-확인 {
         color: #19734a;
@@ -4175,4 +4223,22 @@
   table { border-collapse: collapse; font-size: 12px; }
   td, th { border: 1px solid #dfe6ed; padding: 8px; min-width: 100px; white-space: pre-wrap; }
   th { min-width: 32px; background: #f1f7fc; }
+}
+.finance-send-scope {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0 8px;
+  color: #52677e;
+  font-size: 12px;
+  select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 1px solid #dfe6ed;
+    border-radius: 7px;
+    background: #f7f9fc;
+    color: #31465b;
+    font: inherit;
+  }
 }

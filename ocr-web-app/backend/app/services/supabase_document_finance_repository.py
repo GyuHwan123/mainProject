@@ -180,7 +180,7 @@ class DocumentFinanceMixin:
             request_size = page_size if limit is None else min(page_size, limit - len(rows))
             response = _legacy_httpx().get(
                 f"{self.url}/rest/v1/finance_records",
-                params={"select": "*", "user_id": f"eq.{user_id}", "order": "created_at.desc", "limit": str(request_size), "offset": str(len(rows))},
+                params={"select": "*", "user_id": f"eq.{user_id}", "deleted_at": "is.null", "order": "created_at.desc", "limit": str(request_size), "offset": str(len(rows))},
                 headers=self._service_headers(), timeout=20,
             )
             self._raise_for_supabase(response, "재무 문서 목록 조회 실패")
@@ -262,11 +262,24 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "영수증 보관함 삭제 실패")
         return len(response.json())
 
+    def soft_delete_finance_records(self, user_email: str, record_ids: list[str]) -> int:
+        user_id = self.get_public_user_id(user_email)
+        now = datetime.now(timezone.utc).isoformat()
+        response = _legacy_httpx().patch(
+            f"{self.url}/rest/v1/finance_records",
+            params={"user_id": f"eq.{user_id}", "id": f"in.({','.join(record_ids)})",
+                    "deleted_at": "is.null", "structured_data->finance_workflow->>submitted_at": "not.is.null"},
+            headers={**self._service_headers(), "Prefer": "return=representation"},
+            json={"deleted_at": now, "updated_at": now}, timeout=20,
+        )
+        self._raise_for_supabase(response, "재무 기록 삭제 실패")
+        return len(response.json())
+
     def update_finance_record(self, user_email: str, record_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         user_id = self.get_public_user_id(user_email)
         response = _legacy_httpx().patch(
             f"{self.url}/rest/v1/finance_records",
-            params={"id": f"eq.{record_id}", "user_id": f"eq.{user_id}"},
+            params={"id": f"eq.{record_id}", "user_id": f"eq.{user_id}", "deleted_at": "is.null"},
             headers={**self._service_headers(), "Prefer": "return=representation"},
             json={**payload, "updated_at": datetime.now(timezone.utc).isoformat()},
             timeout=15,

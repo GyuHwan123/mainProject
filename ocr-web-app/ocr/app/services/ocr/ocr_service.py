@@ -9,7 +9,8 @@ from time import perf_counter
 from fastapi import UploadFile
 from paddleocr import PaddleOCR
 
-from app.schemas.ocr import OCRPage, OCRResponse
+from app.schemas.ocr import OCRItem, OCRPage, OCRResponse
+from app.services.postprocess_service import normalize_ocr_text
 from app.services.file_classifier import (
     FileContentType,
     classify_file,
@@ -104,10 +105,25 @@ def build_text_page(
     OCRPage 형태로 변환한다.
     """
 
+    normalized = normalize_ocr_text(text)
+    # Plain-text documents have no physical page geometry.  Stable virtual
+    # line boxes nevertheless let the preview and privacy-mask endpoint point
+    # to only the affected line instead of losing all masking information.
+    items = []
+    for line_number, line in enumerate(normalized.splitlines()):
+        if not line:
+            continue
+        top = line_number * 20
+        items.append(OCRItem(
+            text=line,
+            confidence=1.0,
+            bbox=[[0, top], [max(len(line) * 10, 10), top],
+                  [max(len(line) * 10, 10), top + 18], [0, top + 18]],
+        ))
     return OCRPage(
         page=page_number,
-        text=text.strip(),
-        items=[],
+        text=normalized,
+        items=items,
     )
 
 def print_final_result(

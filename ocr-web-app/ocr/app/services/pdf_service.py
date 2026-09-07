@@ -144,7 +144,10 @@ def _reading_order(item: OCRItem) -> tuple[int, int]:
 
 def _sort_document_items(items: list[OCRItem]) -> None:
     """Order a conventional two-column document left column before right."""
-    if len(items) < 10:
+    # A short two-column page is still a two-column page.  The previous
+    # ten-word threshold made small fixtures (A/B/C | D/E/F) fall back to
+    # line-by-line ordering, producing A/D/B/E/C/F.
+    if len(items) < 4:
         items.sort(key=_reading_order)
         return
     min_x = min(point[0] for item in items for point in item.bbox)
@@ -153,7 +156,7 @@ def _sort_document_items(items: list[OCRItem]) -> None:
     gutter = max((max_x - min_x) * 0.025, 8)
     left = [item for item in items if max(point[0] for point in item.bbox) < midpoint - gutter]
     right = [item for item in items if min(point[0] for point in item.bbox) > midpoint + gutter]
-    if len(left) < 4 or len(right) < 4:
+    if len(left) < 2 or len(right) < 2:
         items.sort(key=_reading_order)
         return
     spanning = [item for item in items if item not in left and item not in right]

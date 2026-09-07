@@ -937,9 +937,7 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
         if quantity is not None and unit_price is not None and item_total is not None:
             calculated = float(quantity) * float(unit_price)
             if abs(calculated - float(item_total)) > 1:
-                # Coupons and bundle/member discounts commonly make the displayed
-                # unit price differ from the charged line amount. Preserve every
-                # extracted value and expose only a non-blocking diagnostic.
+                reasons.append("ITEM_ARITHMETIC_MISMATCH")
                 warnings.append({
                     "code": "ITEM_AMOUNT_RELATION_WARNING",
                     "item_index": item_index,
@@ -968,7 +966,7 @@ def _simple_validation(result: dict[str, Any], text: str) -> dict[str, Any]:
             "amount_relation": "AMOUNT_RELATION_MISMATCH" not in reasons,
             "amount_relation_basis": amount_relation_basis,
             "item_sum": "ITEM_SUM_MISMATCH" not in reasons,
-            "item_arithmetic": True,
+            "item_arithmetic": "ITEM_ARITHMETIC_MISMATCH" not in reasons,
             "item_amount_relation_warning": bool(warnings),
         },
     }

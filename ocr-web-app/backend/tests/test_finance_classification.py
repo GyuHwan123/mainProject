@@ -401,7 +401,7 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("AMOUNT_RELATION_MISMATCH", validation["reasons"])
         self.assertEqual(validation["checks"]["amount_relation_basis"], "explicit_ocr_mismatch")
 
-    def test_item_amount_relation_mismatch_is_non_blocking_warning(self):
+    def test_item_amount_relation_mismatch_requires_review(self):
         item = {"name": "행사상품", "quantity": 2, "unit_price": 1000, "total_amount": 1500}
         result = {
             "merchant": "할인마트",
@@ -418,8 +418,9 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         validation = _simple_validation(result, text)
 
-        self.assertEqual(validation["decision"], "PASS")
-        self.assertNotIn("ITEM_ARITHMETIC_MISMATCH", validation["reasons"])
+        self.assertEqual(validation["decision"], "REVIEW")
+        self.assertIn("ITEM_ARITHMETIC_MISMATCH", validation["reasons"])
+        self.assertFalse(validation["checks"]["item_arithmetic"])
         self.assertTrue(validation["checks"]["item_amount_relation_warning"])
         self.assertEqual(validation["warnings"][0]["code"], "ITEM_AMOUNT_RELATION_WARNING")
         self.assertEqual(result["items"][0], item)

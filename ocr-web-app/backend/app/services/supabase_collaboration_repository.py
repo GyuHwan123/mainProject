@@ -314,7 +314,7 @@ class CollaborationMixin:
             raise HTTPException(status_code=404, detail="RAG 문서를 찾을 수 없습니다.")
         document_by_id = dict(company_document_by_id)
         if rag_document_id:
-            document_by_id[rag_document_id] = accessible_document_by_id[rag_document_id]
+            document_by_id = {rag_document_id: accessible_document_by_id[rag_document_id]}
         allowed_document_ids = list(document_by_id)
         if not allowed_document_ids:
             return []
@@ -370,7 +370,7 @@ class CollaborationMixin:
 
         document_by_id = dict(company_by_id)
         if rag_document_id:
-            document_by_id[rag_document_id] = accessible_by_id[rag_document_id]
+            document_by_id = {rag_document_id: accessible_by_id[rag_document_id]}
         allowed_ids = list(document_by_id)
         if not allowed_ids:
             return []

@@ -127,6 +127,20 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
 }
 
 function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, onExportPdf }) {
+  const [dateRange, setDateRange] = useState(createInitialMonitoringDateRange);
+  const [period, setPeriod] = useState('7');
+  const changeDate = (field, value) => {
+    setDateRange((current) => ({ ...current, [field]: value }));
+    setPeriod('custom');
+  };
+  const changePeriod = (value) => {
+    setPeriod(value);
+    if (value === 'custom') return;
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - Number(value) + 1);
+    setDateRange({ startDate: dateInputValue(startDate), endDate: dateInputValue(endDate) });
+  };
   const metrics = useMemo(() => {
     if (!evaluation) return null;
     const cases = Array.isArray(evaluation.cases) ? evaluation.cases : [];
@@ -140,6 +154,9 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
       : null;
     return {
       total: Number(summary.total || cases.length),
+      hitAtK: summary.hit_at_k,
+      topK: summary.top_k,
+      hitAt5: summary.hit_at_5,
       hitAt1: summary.hit_at_1 ?? hitAt(1),
       hitAt3: summary.hit_at_3 ?? hitAt(3),
       hitAt4: summary.hit_at_4 ?? hitAt(4),
@@ -147,7 +164,6 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
       mrr: summary.mrr,
       ndcg: summary.ndcg_at_k,
       contextPrecision: summary.context_precision,
-      citationAccuracy: summary.citation_accuracy,
       answerAccuracy: summary.answer_accuracy,
       faithfulness: summary.faithfulness,
       hallucinationRate: summary.hallucination_rate,
@@ -157,13 +173,14 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
   }, [evaluation]);
   const metricValue = (value) => value == null ? '—' : percent(value);
   const retrievalMetrics = [
-    ['Hit@1', metrics?.hitAt1], ['Hit@3', metrics?.hitAt3], ['Hit@4', metrics?.hitAt4],
+    ...(Number(metrics?.topK) === 1 ? [] : [['Hit@K', metrics?.hitAtK]]),
+    ...(Number(metrics?.topK) === 3 ? [] : [['Hit@3', metrics?.hitAt3]]),
+    ...(Number(metrics?.topK) === 4 ? [] : [['Hit@4', metrics?.hitAt4]]),
+    ...(metrics?.hitAt5 == null || Number(metrics?.topK) === 5 ? [] : [['Hit@5', metrics.hitAt5]]),
     ['Recall@K', metrics?.recall], ['MRR', metrics?.mrr], ['NDCG@K', metrics?.ndcg],
-    ['Context Precision', metrics?.contextPrecision], ['Citation / Source Accuracy', metrics?.citationAccuracy],
   ];
   const answerMetrics = [
-    ['Answer Accuracy', metrics?.answerAccuracy], ['Faithfulness', metrics?.faithfulness],
-    ['Hallucination Rate', metrics?.hallucinationRate], ['Unanswerable Rejection', metrics?.unanswerableRejectionRate],
+    ['Unanswerable Rejection', metrics?.unanswerableRejectionRate],
   ];
   const questionTypeMetrics = useMemo(() => {
     if (!evaluation || !Array.isArray(evaluation.cases)) return [];
@@ -228,46 +245,50 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
   const listDocuments = (documents) => Array.isArray(documents) && documents.length ? documents.join(', ') : '—';
   const booleanLabel = (value) => typeof value === 'boolean' ? (value ? '통과' : '실패') : '—';
 
-  return <section className="rag-performance-report">
-    <div className="rag-report-controls">
-      <div className="receipt-monitoring-filters" aria-label="RAG 리포트 필터 및 내보내기">
-        <div className="receipt-date-range rag-control-disabled" title="현재 RAG 평가 API는 기간 조회를 지원하지 않습니다.">
-          <input type="date" aria-label="RAG 조회 시작일 (미지원)" disabled />
+  return <section className="receipt-monitoring rag-monitoring">
+    <div className="receipt-monitoring-heading">
+      <div><p>RAG MONITORING</p><h2>RAG 서비스 성능 모니터링 대시보드</h2><span>{evaluation?.dataset_name || '저장된 평가 결과 없음'}{evaluation?.created_at ? ` · ${new Date(evaluation.created_at).toLocaleString('ko-KR')}` : ''}</span></div>
+      <div className="receipt-monitoring-filters" aria-label="RAG 성능 기간 선택" aria-describedby="rag-period-note">
+        <div className="receipt-date-range">
+          <input type="date" aria-label="RAG 조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => changeDate('startDate', event.target.value)} />
           <span>~</span>
-          <input type="date" aria-label="RAG 조회 종료일 (미지원)" disabled />
+          <input type="date" aria-label="RAG 조회 종료일" value={dateRange.endDate} min={dateRange.startDate} onChange={(event) => changeDate('endDate', event.target.value)} />
         </div>
-        <select aria-label="RAG 조회 기간 (미지원)" defaultValue="unsupported" disabled title="현재 RAG 평가 API는 기간 preset을 지원하지 않습니다.">
-          <option value="unsupported">기간 조회 미지원</option>
+        <select aria-label="RAG 조회 기간" value={period} onChange={(event) => changePeriod(event.target.value)}>
+          <option value="7">최근 7일</option><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="custom">사용자 지정</option>
         </select>
-        <button type="button" className="receipt-model-filter rag-control-disabled" disabled title="현재 RAG 평가 결과는 모델별 필터를 지원하지 않습니다.">모델 필터 미지원</button>
         <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
       </div>
     </div>
-    <section className="rag-dashboard-section">
-      <div className="rag-section-heading"><div><span>PERFORMANCE SNAPSHOT</span><h2>핵심 KPI Overview</h2></div><small>{metrics ? `${metrics.total}개 평가 기준` : '평가 데이터 없음'}</small></div>
-      <div className="rag-kpi-grid">{kpis.map(([label, value, format], index) => <article className={`report-card rag-kpi-card tone-${index + 1}`} key={label}><div className="rag-kpi-icon" aria-hidden="true">{String(index + 1).padStart(2, '0')}</div><span>{label}</span><strong>{format === 'cases' ? (value ?? '—') : metricValue(value)}</strong><small>현재 저장된 실제 평가 결과</small></article>)}</div>
-    </section>
-
-    <article className="report-card rag-model-card"><header><div><span className="rag-card-eyebrow">RUNTIME CONFIGURATION</span><h2>RAG 운영 설정</h2><p>Backend 상태 API가 반환한 현재 실제 구성</p></div><span className={`rag-status-badge ${modelConfig.ready ? 'online' : ''}`}>{modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</span></header><div className="rag-model-grid">
-      <div><span>Embedding Model</span><strong>{modelConfig.embedding_model || '—'}</strong><small>{modelConfig.embedding_dimensions ? `${modelConfig.embedding_dimensions} dimensions` : '차원 미설정'}</small></div>
-      <div><span>Retrieval</span><strong>{modelConfig.retrieval_method === 'dense_bm25_hybrid' ? 'Dense + BM25 Hybrid' : 'Dense Vector'}</strong><small>Dense {modelConfig.dense_candidate_count ?? '—'} + BM25 {modelConfig.bm25_candidate_count ?? '—'} 후보</small></div>
-      <div><span>Reranker</span><strong>{modelConfig.rerank_model || '미사용'}</strong><small>Hybrid 후보 재정렬</small></div>
-      <div><span>LLM</span><strong>{modelConfig.model || '—'}</strong><small>최종 답변 생성</small></div>
-      <div><span>Query Rewriting</span><strong>{modelConfig.query_rewriting ? '사용' : '미사용'}</strong><small>현재 검색 경로 기준</small></div>
-      <div><span>Top-K</span><strong>{modelConfig.top_k ?? '—'}</strong><small>최종 Context 청크 수</small></div>
-    </div></article>
-
-    <section className="rag-metric-columns">
-      <article className="report-card rag-metric-card"><header><div><span className="rag-card-eyebrow">RETRIEVAL QUALITY</span><h2>검색 성능</h2><p>정답 문서 ID 기준 document-level 평가</p></div><span>{metrics ? `${metrics.total} CASES` : 'NO DATA'}</span></header><div>{retrievalMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong><i><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, Number(value) * 100))}%` }} /></i></section>)}</div></article>
-      <article className="report-card rag-metric-card answer"><header><div><span className="rag-card-eyebrow">ANSWER QUALITY</span><h2>답변 성능</h2><p>정답 유사도와 검색 Context 근거성 기준</p></div><span>{metrics ? 'ACTUAL' : 'NO DATA'}</span></header><div>{answerMetrics.map(([label, value]) => <section key={label}><span>{label}</span><strong>{metricValue(value)}</strong><i><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, Number(value) * 100))}%` }} /></i></section>)}</div>{metrics?.faithfulnessMethod && <footer>Faithfulness: {metrics.faithfulnessMethod}</footer>}</article>
-      <article className="report-card rag-composition-card"><header><div><span className="rag-card-eyebrow">DATASET MIX</span><h2>평가 문항 구성</h2><p>전체 평가에서 문항 유형이 차지하는 비율</p></div><span>{questionComposition.rows.length ? `${questionComposition.rows.length} TYPES` : 'NO DATA'}</span></header>{questionComposition.rows.length ? <div className="rag-composition-body"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map((item) => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="model-evaluation-empty"><strong>평가 문항 없음</strong><p>문항 유형별 평가 데이터가 필요합니다.</p></div>}</article>
-    </section>
-
+    <p id="rag-period-note" className="rag-monitoring-note">기간 조회 연결 전입니다. 선택한 기간과 관계없이 최신 저장 평가 결과를 표시합니다.</p>
+    <div className="receipt-monitoring-kpis">{kpis.map(([label, value, format], index) => <article key={label}>
+      <h3>{label}</h3>
+      <div className="monitoring-kpi-value"><strong style={{ color: value == null ? undefined : ['#1767df', '#079b62', '#7c3aed', '#f06a13', '#24599b', '#d45764'][index] }}>{format === 'cases' ? (value ?? '—') : metricValue(value)}</strong><small>최신 저장 평가 기준</small></div>
+      <div className="rag-sparkline-slot" aria-label={`${label} 추이 영역`}>추이 데이터 연결 예정</div>
+    </article>)}</div>
+    <div className="receipt-monitoring-panels">
+      <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>연결 예정</span></header><div className="empty-monitoring-box"><span>평가 이력이 연결되면 추세를 표시합니다.</span></div></article>
+      <article><header><h3>Retrieval 상세 지표</h3><span>Top-K {metrics?.topK ?? '—'}</span></header><div className="rag-monitoring-metrics">{retrievalMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div></article>
+      <article><header><h3>평가 문항 구성</h3><span>{questionComposition.total}문항</span></header>{questionComposition.rows.length ? <div className="rag-monitoring-composition"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map((item) => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="empty-monitoring-box"><span>평가 문항 데이터가 없습니다.</span></div>}</article>
+      <article><header><h3>추가 평가 정보</h3><span>최신 평가</span></header><div className="rag-monitoring-metrics">{answerMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div>{metrics?.faithfulnessMethod && <p className="rag-monitoring-method">Faithfulness: {metrics.faithfulnessMethod}</p>}</article>
+    </div>
+    <div className="receipt-monitoring-bottom">
+      <article><header><h3>RAG 운영 설정</h3></header><details className="rag-runtime-details"><summary>{modelConfig.model || '모델 미설정'} · Top-K {modelConfig.top_k ?? '—'} · {modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</summary><dl>
+        <div><dt>Embedding</dt><dd>{modelConfig.embedding_model || '—'} · {modelConfig.embedding_dimensions ?? '—'}차원</dd></div>
+        <div><dt>Retrieval</dt><dd>{modelConfig.retrieval_method === 'dense_bm25_hybrid' ? 'Dense + BM25 Hybrid' : 'Dense Vector'}</dd></div>
+        <div><dt>후보 수</dt><dd>Dense {modelConfig.dense_candidate_count ?? '—'} · BM25 {modelConfig.bm25_candidate_count ?? '—'}</dd></div>
+        <div><dt>Reranker</dt><dd>{modelConfig.rerank_model || '미사용'}</dd></div>
+        <div><dt>Query Rewriting</dt><dd>{modelConfig.query_rewriting ? '사용' : '미사용'}</dd></div>
+      </dl></details></article>
+      <article className="recent-runs-card"><header><h3>최근 평가 실행 이력</h3><span>연결 예정</span></header><div className="empty-monitoring-row">평가 실행 이력이 연결되면 표시됩니다.</div></article>
+    </div>
+    <details className="rag-monitoring-technical"><summary>평가 상세 분석</summary>
     <article className="report-card rag-umap-card"><header><div><span className="rag-card-eyebrow">VECTOR SPACE</span><h2>BGE-M3 Embedding 분석</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div className="rag-embedding-layout"><div className="rag-umap-visual"><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /></div><aside className="rag-embedding-stats"><h3>Embedding 통계</h3><dl><div><dt>Embedding Model</dt><dd>{modelConfig.embedding_model || '—'}</dd></div><div><dt>Dimension</dt><dd>{modelConfig.embedding_dimensions ?? '—'}</dd></div><div><dt>Vector Count</dt><dd>{umapData.chunk_count ?? '—'}</dd></div><div><dt>Document Count</dt><dd>{umapData.document_count ?? '—'}</dd></div><div><dt>Projection</dt><dd>{umapData.input_shape?.join(' × ') || '—'} → {umapData.output_shape?.join(' × ') || '—'}</dd></div></dl></aside></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
 
     <article className="report-card rag-type-card"><header><div><span className="rag-card-eyebrow">QUESTION CATEGORIES</span><h2>문항 유형별 성능</h2><p>각 문항 유형별 최종 답변 정확도</p></div><span>{questionTypeMetrics.length ? `${questionTypeMetrics.length} TYPES` : 'NO DATA'}</span></header>{questionTypeMetrics.length ? <div className="rag-type-bars">{questionTypeMetrics.map((item) => <section key={item.type} title={`${item.label} · ${item.count}문항 · Hit@K ${metricValue(item.hit)} · MRR ${metricValue(item.mrr)}`}><div><strong>{item.label}</strong><span>{item.count}문항</span></div><i><b style={{ width: item.accuracy == null ? '0%' : `${Math.max(0, Math.min(100, item.accuracy * 100))}%` }} /></i><em>{metricValue(item.accuracy)}</em><small>Hit@K {metricValue(item.hit)} · MRR {metricValue(item.mrr)}</small></section>)}</div> : <div className="model-evaluation-empty"><strong>평가 결과 없음</strong><p>문항별 question_type 평가 결과가 필요합니다.</p></div>}</article>
 
     {evaluationCases.length > 0 && <article className="report-card rag-detail-card"><header><div><span className="rag-card-eyebrow">CASE INSPECTION</span><h2>질문별 평가 결과</h2><p>평가 응답에 포함된 실제 문항·문서·성능 값</p></div><span>{evaluationCases.length} ROWS</span></header><div className="rag-detail-table-wrap"><table><thead><tr><th>질문</th><th>Expected document</th><th>Retrieved document</th><th>Retrieval</th><th>Answer</th><th>Faithfulness</th><th>답변 상태</th></tr></thead><tbody>{evaluationCases.map((item, index) => <tr key={item.question_id || item.id || index}><td><strong>{item.question_id || item.id || `#${index + 1}`}</strong><span>{item.question || '—'}</span></td><td>{listDocuments(item.expected_documents)}</td><td>{listDocuments(item.retrieved_documents)}</td><td><span className={`rag-result-pill ${item.hit === true ? 'pass' : item.hit === false ? 'fail' : ''}`}>{booleanLabel(item.hit)}</span></td><td>{typeof item.answer_correct === 'boolean' ? booleanLabel(item.answer_correct) : metricValue(item.answer_score)}</td><td>{metricValue(item.faithfulness)}</td><td>{typeof item.rejected === 'boolean' ? (item.rejected ? '답변 거절' : '답변 생성') : '—'}</td></tr>)}</tbody></table></div></article>}
+    </details>
     {!evaluation && <p className="rag-report-empty">ChatPage에서 RAG 평가를 완료하면 실제 결과가 이 영역에 표시됩니다.</p>}
   </section>;
 }
@@ -690,7 +711,7 @@ export default function ReportPage() {
   const [reportView, setReportView] = useState(isDeveloper ? 'developer' : 'business');
   const [developerReport, setDeveloperReport] = useState(requestedDeveloperReport === 'receipt' ? 'receipt' : 'rag');
   const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
-  const [ragReportTab, setRagReportTab] = useState(() => localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
+  const [ragReportTab, setRagReportTab] = useState(() => new URLSearchParams(window.location.search).get('ragReportTab') === 'overview' ? 'overview' : localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], enterpriseTasks: [], meetings: [], ragQuestions: [], agentLogs: [], enterpriseUserCount: 0 });
   const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
@@ -933,6 +954,7 @@ export default function ReportPage() {
 
               if (isDeveloper && SHOW_LEGACY_EVALUATIONS) {refreshRequests.push(loadEvaluations());}
 
+              if (isDeveloper && reportView === 'developer' && developerReport === 'rag') refreshRequests.push(loadRagReport());
               if (developerReport === 'receipt') {window.dispatchEvent(new Event('finance-evaluations-updated'));}
 
               await Promise.allSettled(refreshRequests);

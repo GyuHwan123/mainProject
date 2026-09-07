@@ -935,11 +935,7 @@ function ChatPageContent() {
           {evaluationRunning && evaluationProgress.current === 0 && <p>첫 문항이 끝나면 문항당 평균 시간과 예상 남은 시간이 계산됩니다.</p>}
         </section>}
         {evaluationError && <p className="evaluation-error">{evaluationError}</p>}
-        <div className="evaluation-metrics">{[
-          ['Hit@K', 'hit_at_k'], ['Recall@K', 'recall_at_k'], ['MRR', 'mrr'], ['NDCG@K', 'ndcg_at_k'],
-          ['Answer Accuracy', 'answer_accuracy'], ['Citation / Source', 'citation_accuracy'], ['Unanswerable Rejection', 'unanswerable_rejection_rate'],
-        ].map(([label, key]) => <article key={key}><span>{label}</span><strong>{evaluationResult ? `${(Number(evaluationResult.summary?.[key] || 0) * 100).toFixed(1)}%` : '—'}</strong></article>)}</div>
-        {evaluationResult && <footer>총 {evaluationResult.summary.total}문항 · Top-K {evaluationResult.summary.top_k} · 답변 유사도 기준 {(evaluationResult.summary.answer_threshold * 100).toFixed(0)}%</footer>}
+        <footer>{evaluationResult ? '저장된 평가 결과는 AI 성능 리포트에서 확인하세요.' : '평가 완료 후 AI 성능 리포트에 결과가 표시됩니다.'} <a href="/reports?view=developer&developerReport=rag&ragReportTab=overview">RAG 성능 리포트 보기 →</a></footer>
       </section>}
 
       <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>

@@ -11,6 +11,7 @@ import ReportPage from './pages/ReportPage';
 import ChatPage from './pages/ChatPage';
 import PaymentSuccessPage from './pages/PaymentSuccessPage';
 import PaymentFailPage from './pages/PaymentFailPage';
+import FinanceEmailReviewPage from './pages/FinanceEmailReviewPage';
 
 function ProtectedRoute({ children }) {
   if (!hasAppSession()) {
@@ -53,6 +54,7 @@ export default function App() {
         </div>
       )}
       <Routes>
+        <Route path="/finance-review" element={<FinanceEmailReviewPage />} />
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />

@@ -8,6 +8,31 @@ from app.core.config import settings
 
 
 class EmailService:
+    def send_finance_records(self, *, author_email: str, record_count: int, content: bytes, filename: str, review_url: str | None = None) -> None:
+        if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
+            raise RuntimeError("SMTP settings are incomplete")
+        message = EmailMessage()
+        message["Subject"] = f"[DocAI] 최종 확정 재무 기록 {record_count}건"
+        message["From"] = f"{settings.SMTP_FROM_NAME} <{settings.SMTP_FROM_EMAIL}>"
+        message["To"] = "docai0914@gmail.com"
+        message["Reply-To"] = author_email
+        message.set_content(f"제출자: {author_email}\n최종 확정한 재무 기록 {record_count}건을 Excel 파일로 첨부합니다.")
+        if review_url:
+            message.set_content(f"제출자: {author_email}\n재무 기록 {record_count}건을 검토한 후 아래 링크에서 처리 완료를 눌러 주세요.\n{review_url}\n링크는 7일간 유효하며, 링크 소지자는 처리할 수 있으므로 전달하지 마세요.")
+            message.add_alternative(f'<p>재무 기록 {record_count}건을 첨부했습니다.</p><p><a href="{escape(review_url, quote=True)}" style="display:inline-block;padding:14px 22px;background:#208060;color:white;border-radius:8px;text-decoration:none">재무팀 검토 및 처리</a></p><p>7일간 유효한 전용 링크입니다. 전달하지 마세요. 화면에서 처리 완료를 눌러야 반영됩니다.</p>', subtype='html')
+        message.add_attachment(content, maintype="application", subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=filename)
+        smtp_class = smtplib.SMTP_SSL if settings.SMTP_PORT == 465 else smtplib.SMTP
+        with smtp_class(settings.SMTP_HOST, settings.SMTP_PORT, timeout=60) as smtp:
+            smtp.ehlo()
+            if settings.SMTP_PORT != 465:
+                smtp.starttls()
+                smtp.ehlo()
+            if settings.SMTP_USERNAME:
+                smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
+            refused = smtp.send_message(message)
+            if refused:
+                raise smtplib.SMTPRecipientsRefused(refused)
+
     def send_password_reset(self, recipient: str, reset_url: str) -> None:
         if not settings.SMTP_HOST or not settings.SMTP_FROM_EMAIL:
             raise RuntimeError("SMTP settings are incomplete")

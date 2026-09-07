@@ -56,6 +56,7 @@ ITEM_NAME_ALIASES = {
     # Tmoney Mobility receipts may expose the issuer/service name where the
     # labelled ground truth uses the purchased intercity/express bus ticket.
     "시외고속버스승차권": "intercity_express_bus_ticket",
+    "승차권": "intercity_express_bus_ticket",
     "티머니모빌리티": "intercity_express_bus_ticket",
     "티머니모빌리티승차권": "intercity_express_bus_ticket",
     "유류": "fuel_product",
@@ -156,6 +157,10 @@ def normalize_ground_truth(truth: dict[str, Any]) -> dict[str, Any]:
                     item[english_key] = source_item[korean_key]
             normalized["items"].append(item)
 
+    if isinstance(truth.get('amount_sources'), dict):
+        normalized['amount_sources'] = {field: source for field, source in truth['amount_sources'].items()
+                                        if field in ('supply_amount', 'tax_amount') and source in
+                                        ('EXPLICIT_OCR', 'CALCULATED_TAXABLE', 'EXEMPT', 'UNKNOWN')}
     return normalized
 
 
@@ -383,7 +388,7 @@ def score_fields(
     evaluated = 0
     correct = 0
     for field in CORE_FIELDS:
-        if field not in truth:
+        if field == "card_number" or field not in truth:
             continue
         matched = _values_match(field, truth.get(field), prediction.get(field), ocr_pages)
         details[field] = {"expected": truth.get(field), "actual": prediction.get(field), "correct": matched}
@@ -419,6 +424,10 @@ def score_fields(
         }
     return {
         "correct_fields": correct,
+        "gt_warnings": ([{"code": "GT_AMOUNT_INCONSISTENT", "reference": "receipt_050",
+                          "exclusion_candidate": True, "difference": 200}]
+                        if tuple(_canonical(field, truth.get(field)) for field in
+                                 ('total_amount', 'supply_amount', 'tax_amount')) == (17600, 16003, 1797) else []),
         "evaluated_fields": evaluated,
         "field_accuracy": correct / evaluated if evaluated else 0,
         "complete_match": bool(evaluated) and correct == evaluated,

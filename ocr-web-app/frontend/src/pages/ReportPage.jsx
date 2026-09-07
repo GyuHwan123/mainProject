@@ -597,7 +597,7 @@ function DailyPerformanceChart({ daily }) {
 }
 
 const ERROR_META = {
-  OCR_ERROR: ['OCR 오류', '#2f75dd'], CANDIDATE_ERROR: ['품목 누락', '#f4aa00'],
+  OCR_ERROR: ['OCR 오류', '#2f75dd'],
   LLM_ERROR: ['환각 / JSON 오류', '#7652d6'], VALIDATION_ERROR: ['검증 오류', '#11a167'],
   PIPELINE_ERROR: ['파이프라인 오류', '#ef5b2a'], UNKNOWN: ['기타 오류', '#8a98aa'],
 };
@@ -629,6 +629,47 @@ function SystemPerformance({ system }) {
     ['LLM JSON 실패', `${system?.llm_json_failure_count || 0}건`], ['전체 처리 건수', `${(system?.total_count || 0).toLocaleString()}건`],
   ];
   return <div className="system-performance-list">{rows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>;
+}
+
+const AUTOMATION_REASON_LABELS = {
+  ITEM_SUM_TOTAL_MISMATCH: '품목 합계와 총액 불일치',
+  TAX_AMOUNTS_UNRESOLVED: '공급가액·세액 미확정',
+  DOCUMENT_CLASSIFIER_LOW_CONFIDENCE: '문서 분류 신뢰도 기준 미달',
+  DOCUMENT_CLASSIFIER_SYNTHETIC_VALIDATION_ONLY: '문서 분류 운영 검증 미완료',
+  DOCUMENT_CLASSIFIER_UNAVAILABLE: '문서 분류 모델 사용 불가',
+  TOTAL_AMOUNT_NOT_IN_OCR: '총액의 OCR 근거 없음',
+  TOTAL_AMOUNT_UNCONFIRMED: '총 결제액 미확정',
+  AMOUNT_RELATION_MISMATCH: '공급가액·세액·총액 불일치',
+  DISCOUNT_TAX_BASIS_UNCLEAR: '할인 적용 세금 기준 불명확',
+  ITEM_TOTALS_INCOMPLETE: '품목 금액 누락',
+  TAX_AMOUNT_UNRESOLVED: '세액 미확정',
+  SUPPLY_AMOUNT_UNRESOLVED: '공급가액 미확정',
+  MISSING_TRANSACTION_DATE: '거래일자 누락',
+  MIXED_TAX_COMPONENTS_UNRESOLVED: '과세·면세 구성 미확정',
+  TAX_TREATMENT_UNKNOWN: '과세 유형 미확정',
+  TRANSPORT_SPECIAL: '교통 영수증 별도 확인 필요',
+};
+
+function AutomationMonitoring({ automation, loading, error }) {
+  const [stageKey, setStageKey] = useState('extraction_validation');
+  if (loading || error || !automation?.total) return <div className="empty-monitoring-row">{loading ? '불러오는 중' : error ? '통계를 불러오지 못했습니다.' : '선택한 기간의 평가 데이터가 없습니다.'}</div>;
+  const stages = automation.stages || {};
+  const selected = stages[stageKey] || {};
+  const choices = [['extraction_validation', '추출 검증'], ['classification_validation', '문서 분류'], ['final', '최종 자동처리']];
+  return <div className="automation-monitoring">
+    <div className="automation-stage-grid">{choices.map(([key, label]) => {
+      const stage = stages[key] || {};
+      return <button type="button" key={key} className={stageKey === key ? 'active' : ''} aria-pressed={stageKey === key} onClick={() => setStageKey(key)}>
+        <span>{label}</span><strong>{metricText(stage.rate, 'percent')}</strong>
+        <small>통과 {stage.passed || 0} / 측정 {stage.measured || 0}건</small>
+      </button>;
+    })}</div>
+    <div className="automation-review-heading"><strong>{choices.find(([key]) => key === stageKey)[1]} 검토 사유</strong><span>검토 {selected.review || 0}건 · 미측정 {selected.unmeasured || 0}건</span></div>
+    <div className="automation-reason-list">{selected.reasons?.length ? selected.reasons.map(({ code, count }) => <div className="automation-reason" key={code}>
+      <span title={code}>{AUTOMATION_REASON_LABELS[code] || code}</span><div className="automation-reason-track"><i style={{ width: `${selected.measured ? count / selected.measured * 100 : 0}%` }} /></div><b>{count}건</b>
+    </div>) : <p>{selected.measured ? '기록된 검토 사유가 없습니다.' : '단계별 판정이 없습니다. 재평가 후 확인할 수 있습니다.'}</p>}</div>
+    <p className="automation-monitoring-note">통과율은 판정이 기록된 평가 기준입니다. 사유는 중복될 수 있으며 품목 합계 불일치는 통합 집계합니다. 추출 통과율은 정답 정확도와 다릅니다.</p>
+  </div>;
 }
 
 function RecentRuns({ runs }) {
@@ -714,7 +755,7 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
       <article><header><h3>필드별 정확도</h3><span>{periodLabel}</span></header><FieldAccuracyList details={monitoring.details} previousDetails={monitoring.comparison?.details} /></article>
       <article><header><h3>시스템 성능</h3><span>{periodLabel}</span></header><SystemPerformance system={monitoring.details?.system} /></article>
     </div>
-    <div className="receipt-monitoring-bottom"><article><header><h3>알림 / 이상 탐지</h3></header><div className="empty-monitoring-row">—</div></article><article className="recent-runs-card"><header><h3>최근 실행 이력</h3><span>{monitoring.recent_runs?.length || 0}회</span></header><RecentRuns runs={monitoring.recent_runs || []} /></article></div>
+    <div className="receipt-monitoring-bottom"><article className="automation-monitoring-card"><header><h3>자동처리 검증 현황</h3><span>자동처리 검증 · {periodLabel}</span></header><AutomationMonitoring automation={monitoring.details?.automation} loading={monitoringLoading} error={monitoringError} /></article><article className="recent-runs-card"><header><h3>최근 실행 이력</h3><span>{monitoring.recent_runs?.length || 0}회</span></header><RecentRuns runs={monitoring.recent_runs || []} /></article></div>
   </section>;
 }
 

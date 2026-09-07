@@ -51,13 +51,16 @@ def preprocess_image(
 
 
 def _upscale_small_document(image: np.ndarray) -> np.ndarray:
-    """Upscale only low-resolution inputs, capped to avoid excess memory use."""
+    """Upscale small OCR inputs without excessive memory use."""
     height, width = image.shape[:2]
-    longest_side = max(height, width)
-    if longest_side >= 1800:
+
+    target_width = 1400
+
+    if width >= target_width:
         return image
 
-    scale = min(2.0, 1800 / max(longest_side, 1))
+    scale = min(2.5, target_width / max(width, 1))
+
     return cv2.resize(
         image,
         None,
@@ -91,33 +94,60 @@ def _sharpen_text_edges(image: np.ndarray) -> np.ndarray:
 
 
 def _deskew(image: np.ndarray) -> np.ndarray:
-    """Correct modest document skew while ignoring implausible rotations."""
+    """Correct modest receipt skew using dominant near-horizontal lines."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    threshold = cv2.threshold(
-        blurred,
-        0,
-        255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU,
-    )[1]
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
 
-    coords = np.column_stack(np.where(threshold > 0))
-    if len(coords) < 50:
-        return image
-
-    angle = cv2.minAreaRect(coords)[-1]
-    if angle > 45:
-        angle -= 90
-    elif angle < -45:
-        angle = -(90 + angle)
-    else:
-        angle = -angle
-
-    if not 0.5 < abs(angle) < 15:
-        return image
+    edges = cv2.Canny(gray, 50, 150)
 
     height, width = image.shape[:2]
-    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), angle, 1.0)
+
+    lines = cv2.HoughLinesP(
+        edges,
+        1,
+        np.pi / 180,
+        threshold=max(50, width // 12),
+        minLineLength=max(80, width // 4),
+        maxLineGap=max(10, width // 50),
+    )
+
+    if lines is None:
+        return image
+
+    angles = []
+
+    for x1, y1, x2, y2 in lines[:, 0]:
+        dx = x2 - x1
+        dy = y2 - y1
+
+        if dx == 0:
+            continue
+
+        angle = np.degrees(np.arctan2(dy, dx))
+
+        # 수평에 가까운 영수증 행/구분선만 사용
+        if -15 <= angle <= 15:
+            angles.append(angle)
+
+    if len(angles) < 3:
+        return image
+
+    angle = float(np.median(angles))
+
+    # 거의 수평이면 건드리지 않음
+    if abs(angle) < 0.5:
+        return image
+
+    # 과도한 회전 방지
+    if abs(angle) > 12:
+        return image
+
+    matrix = cv2.getRotationMatrix2D(
+        (width / 2, height / 2),
+        angle,
+        1.0,
+    )
+
     return cv2.warpAffine(
         image,
         matrix,

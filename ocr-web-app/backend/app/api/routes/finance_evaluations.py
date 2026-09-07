@@ -143,6 +143,31 @@ def _monitoring_metrics(evaluations: list[dict[str, Any]], items: list[dict[str,
     }
 
 
+def _monitoring_automation(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
+    stages = {}
+    for name in ("extraction_validation", "classification_validation", "final"):
+        measured = passed = 0
+        reasons: Counter[str] = Counter()
+        for row in evaluations:
+            validation = row.get("validation") or (row.get("pipeline_trace") or {}).get("validation") or {}
+            stage = validation if name == "final" else validation.get(name)
+            if not isinstance(stage, dict) or stage.get("decision") not in {"PASS", "REVIEW"}:
+                continue
+            measured += 1
+            passed += stage["decision"] == "PASS"
+            if stage["decision"] == "REVIEW":
+                # Two validators report the same item sum issue. Count once per receipt.
+                reasons.update({"ITEM_SUM_TOTAL_MISMATCH" if code == "ITEM_SUM_MISMATCH" else code
+                                for code in stage.get("reasons", []) if isinstance(code, str)})
+        stages[name] = {
+            "measured": measured, "passed": passed, "review": measured - passed,
+            "unmeasured": len(evaluations) - measured,
+            "rate": passed / measured if measured else None,
+            "reasons": [{"code": code, "count": count} for code, count in reasons.most_common()],
+        }
+    return {"total": len(evaluations), "stages": stages}
+
+
 def _monitoring_details(evaluations: list[dict[str, Any]], items: list[dict[str, Any]]) -> dict[str, Any]:
     completed = [row for row in evaluations if row.get("status") == "COMPLETED"]
     errors: Counter[str] = Counter()
@@ -189,6 +214,7 @@ def _monitoring_details(evaluations: list[dict[str, Any]], items: list[dict[str,
             for category, count in errors.most_common()
         ],
         "total_errors": total_errors,
+        "automation": _monitoring_automation(evaluations),
         "field_accuracy": [
             {"field": field, "accuracy": sum(values) / len(values), "count": len(values)}
             for field, values in sorted(fields.items(), key=lambda item: (-sum(item[1]) / len(item[1]), item[0]))

@@ -1,0 +1,185 @@
+{
+  "validation": "Offline OCR replay; no new LLM inference or latency measurement",
+  "count": 22,
+  "payment_correct": 21,
+  "old_prompt_chars_mean": 2318.318181818182,
+  "new_prompt_chars_mean": 1959.090909090909,
+  "cases": [
+    {
+      "image": "이미지 test 데이터/receipt_006.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2111,
+      "new_prompt_chars": 1751
+    },
+    {
+      "image": "이미지 test 데이터/receipt_008.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2067,
+      "new_prompt_chars": 1707
+    },
+    {
+      "image": "이미지 test 데이터/receipt_009.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2068,
+      "new_prompt_chars": 1708
+    },
+    {
+      "image": "이미지 test 데이터/receipt_021.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2228,
+      "new_prompt_chars": 1869
+    },
+    {
+      "image": "이미지 test 데이터/receipt_025.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2392,
+      "new_prompt_chars": 2032
+    },
+    {
+      "image": "이미지 test 데이터/receipt_027.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2366,
+      "new_prompt_chars": 2005
+    },
+    {
+      "image": "이미지 test 데이터/receipt_030.jpg",
+      "expected": null,
+      "actual": null,
+      "reason": "missing_evidence",
+      "old_prompt_chars": 2172,
+      "new_prompt_chars": 1811
+    },
+    {
+      "image": "이미지 test 데이터/receipt_032.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2895,
+      "new_prompt_chars": 2535
+    },
+    {
+      "image": "이미지 test 데이터/receipt_033.jpg",
+      "expected": null,
+      "actual": null,
+      "reason": "missing_evidence",
+      "old_prompt_chars": 2175,
+      "new_prompt_chars": 1815
+    },
+    {
+      "image": "이미지 test 데이터/receipt_038.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2646,
+      "new_prompt_chars": 2286
+    },
+    {
+      "image": "이미지 test 데이터/receipt_041.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2364,
+      "new_prompt_chars": 2003
+    },
+    {
+      "image": "이미지 test 데이터/receipt_044.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2317,
+      "new_prompt_chars": 1957
+    },
+    {
+      "image": "이미지 test 데이터/receipt_045.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2404,
+      "new_prompt_chars": 2043
+    },
+    {
+      "image": "이미지 test 데이터/receipt_047.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2332,
+      "new_prompt_chars": 1973
+    },
+    {
+      "image": "이미지 test 데이터/receipt_050.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2445,
+      "new_prompt_chars": 2085
+    },
+    {
+      "image": "이미지 test 데이터/receipt_051.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2176,
+      "new_prompt_chars": 1817
+    },
+    {
+      "image": "이미지 test 데이터/receipt_053.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2234,
+      "new_prompt_chars": 1876
+    },
+    {
+      "image": "이미지 test 데이터/receipt_054.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2550,
+      "new_prompt_chars": 2189
+    },
+    {
+      "image": "이미지 test 데이터/receipt_36.jpg",
+      "expected": null,
+      "actual": null,
+      "reason": "missing_evidence",
+      "old_prompt_chars": 2209,
+      "new_prompt_chars": 1850
+    },
+    {
+      "image": "이미지 test 데이터/test04.jpg",
+      "expected": null,
+      "actual": null,
+      "reason": "missing_evidence",
+      "old_prompt_chars": 2061,
+      "new_prompt_chars": 1705
+    },
+    {
+      "image": "이미지 test 데이터/test16.jpg",
+      "expected": "카드",
+      "actual": null,
+      "reason": "missing_evidence",
+      "old_prompt_chars": 2488,
+      "new_prompt_chars": 2133
+    },
+    {
+      "image": "이미지 test 데이터/test20.jpg",
+      "expected": "카드",
+      "actual": "카드",
+      "reason": "unique_evidence",
+      "old_prompt_chars": 2303,
+      "new_prompt_chars": 1950
+    }
+  ]
+}

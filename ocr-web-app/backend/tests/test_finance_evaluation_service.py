@@ -8,6 +8,46 @@ from app.services.finance_evaluation_service import estimate_ocr_impact, normali
 
 
 class FinanceEvaluationServiceTests(unittest.TestCase):
+    def test_receipt_050_amount_signature_is_flagged_without_rewriting(self):
+        truth = {'total_amount': 17600, 'supply_amount': 16003, 'tax_amount': 1797}
+        score = score_fields(dict(truth), truth)
+        self.assertEqual(score['gt_warnings'][0]['code'], 'GT_AMOUNT_INCONSISTENT')
+        self.assertTrue(score['gt_warnings'][0]['exclusion_candidate'])
+        self.assertEqual(truth['tax_amount'], 1797)
+        self.assertEqual(score_fields({}, dict(truth, tax_amount=1597))['gt_warnings'], [])
+
+    def test_generic_ticket_matches_bus_ticket_name_only(self):
+        for predicted, expected in (("승차권", "시외/고속버스 승차권"),
+                                    ("시외/고속버스 승차권", "승차권")):
+            with self.subTest(predicted=predicted):
+                score = score_fields(
+                    {"items": [{"name": predicted, "total_amount": 15000}]},
+                    {"items": [{"name": expected, "total_amount": 16200}]},
+                )
+                fields = score["fields"]["items"]["items"][0]["fields"]
+                self.assertTrue(fields["name"]["correct"])
+                self.assertFalse(fields["total_amount"]["correct"])
+        for name in ("KTX 승차권", "택시 이용", "항공권"):
+            with self.subTest(name=name):
+                score = score_fields({"items": [{"name": "승차권"}]},
+                                     {"items": [{"name": name}]})
+                self.assertFalse(score["fields"]["items"]["items"][0]["fields"]["name"]["correct"])
+
+    def test_card_number_is_excluded_from_evaluation(self):
+        baseline = score_fields({"total_amount": 1000}, {"total_amount": 1000})
+        for key in ("card_number", "카드번호"):
+            truth = normalize_ground_truth({"total_amount": 1000, key: "1234"})
+            for prediction in ({}, {"card_number": None}, {"card_number": "9999"}, {"card_number": "1234"}):
+                with self.subTest(key=key, prediction=prediction):
+                    score = score_fields({"total_amount": 1000, **prediction}, truth)
+                    self.assertEqual(score, baseline)
+                    self.assertEqual(score["evaluated_fields"], 1)
+                    self.assertEqual(score["field_accuracy"], 1.0)
+                    self.assertTrue(score["complete_match"])
+                    self.assertNotIn("card_number", score["fields"])
+                    impact = estimate_ocr_impact("1000", truth, score)
+                    self.assertFalse(any(e["field"] == "card_number" for e in impact["fields"]))
+
     def test_treats_haircut_and_beauty_service_as_same_item(self):
         score = score_fields(
             {"items": [{"name": "헤어컷", "quantity": 1, "unit_price": 140000, "total_amount": 140000}]},
@@ -246,6 +286,23 @@ class FinanceEvaluationServiceTests(unittest.TestCase):
 
         self.assertEqual(score["correct_fields"], 0)
         self.assertFalse(score["complete_match"])
+
+    def test_normalizes_merchant_spacing_and_terminal_branch_marker(self):
+        for actual, expected in (
+            ("맥도날드신도림디큐브", "맥도날드 신도림 디큐브점"),
+            ("맥도날드 신도림 디큐브점", "맥도날드신도림디큐브"),
+        ):
+            with self.subTest(actual=actual):
+                self.assertTrue(score_fields(
+                    {"merchant": actual}, {"merchant": expected},
+                )["complete_match"])
+
+    def test_terminal_branch_marker_normalization_preserves_branch_name(self):
+        for actual in ("맥도날드", "맥도날드강남", "맥도날드신도림디큐브점점"):
+            with self.subTest(actual=actual):
+                self.assertFalse(score_fields(
+                    {"merchant": actual}, {"merchant": "맥도날드 신도림 디큐브점"},
+                )["complete_match"])
 
     def test_treats_aladin_used_bookstore_name_as_same_merchant(self):
         score = score_fields(

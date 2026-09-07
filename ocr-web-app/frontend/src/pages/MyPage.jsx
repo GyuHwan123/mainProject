@@ -48,6 +48,22 @@ export default function MyPage() {
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
   const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
+  useEffect(() => {
+    let active = true;
+    let fetching = false;
+    const refreshFinance = async () => {
+      if (document.hidden || fetching) return;
+      fetching = true;
+      try {
+        const response = await apiClient.get('/finance/history');
+        if (active) setData((current) => ({ ...current, financeHistory: response.data }));
+      } catch { /* Keep the current history until the next successful refresh. */ }
+      finally { fetching = false; }
+    };
+    const timer = window.setInterval(refreshFinance, 30000);
+    window.addEventListener('focus', refreshFinance);
+    return () => { active = false; window.clearInterval(timer); window.removeEventListener('focus', refreshFinance); };
+  }, []);
   const [profileName, setProfileName] = useState(user.name || '');
   const [accountNotice, setAccountNotice] = useState('');
   const [accountSaving, setAccountSaving] = useState(false);

@@ -18,6 +18,8 @@ const SESSION_KEYS = [
   'pic_to_text_subscription_tier',
 ];
 const PUBLIC_AUTH_PATHS = [
+  '/finance/email-review/inspect',
+  '/finance/email-review/confirm',
   '/auth/login',
   '/auth/signup',
   '/auth/oauth/exchange',

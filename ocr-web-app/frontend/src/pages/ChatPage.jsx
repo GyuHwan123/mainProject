@@ -9,6 +9,7 @@ import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import { documentUploadGroups } from '../features/documentUploads';
 import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEvaluationProgress.mjs';
+import { validateFilesBeforeUpload } from '../features/fileSecurity';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -625,6 +626,8 @@ function ChatPageContent() {
   const uploadFiles = async (files) => {
     setRagError('');
     try {
+      await validateFilesBeforeUpload(files);
+
       for (const group of documentUploadGroups(files)) {
         const bundled = group.length > 1;
         const formData = new FormData();
@@ -642,7 +645,7 @@ function ChatPageContent() {
       setSources([]);
       await refreshRagDocuments();
     } catch (error) {
-      setRagError(error.response?.data?.detail || 'OCR 또는 RAG 인덱싱에 실패했습니다.');
+      setRagError(error.response?.data?.detail || error.message || 'OCR 또는 RAG 인덱싱에 실패했습니다.');
       throw error;
     } finally { setIndexingId(null); }
   };

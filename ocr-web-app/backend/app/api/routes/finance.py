@@ -1,12 +1,16 @@
 """Finance HTTP endpoints; receipt processing lives in the service layer."""
 
 import asyncio
+from pydantic import BaseModel, Field
+from app.services.finance_email_review import create_review, activate_review, read_review, confirm_review
+from threading import Lock
 from datetime import date, datetime, timezone
 from io import BytesIO
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from openpyxl import load_workbook
 
 from app.api.routes.auth import require_current_user
 from app.api.routes.chatbot import generate
@@ -32,7 +36,8 @@ from app.services.finance_receipt_simple import (
     _preflight_review_reasons,
     _simple_receipt_prompt,
 )
-from app.services.finance_workbook_service import build_finance_workbook
+from app.services.email_service import email_service
+from app.services.finance_workbook_service import build_finance_workbook, SHEET_NAMES, SUMMARY_SHEET_NAME
 from app.services.supabase_service import supabase_service
 
 
@@ -144,6 +149,8 @@ def list_records(user: User = Depends(require_current_user)) -> list[dict[str, A
     seen = set()
     for record in supabase_service.list_finance_records(user.email, limit=None):
         data = record.get("structured_data") or {}
+        if record.get("status") != "CONFIRMED" or not data.get("excel_saved_at"):
+            continue
         duplicate_key = data.get("receipt_identity_key") or data.get("receipt_fingerprint") or _legacy_receipt_key(record)
         if duplicate_key and duplicate_key in seen:
             continue
@@ -200,6 +207,19 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
     return unique_archive
 
 
+@router.delete("/receipt-archive/{archive_id}")
+def delete_receipt_archive_item(archive_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    deleted_count = supabase_service.soft_delete_receipt_archive(user.email, archive_id)
+    if not deleted_count:
+        raise HTTPException(status_code=404, detail="삭제할 영수증 보관 기록을 찾을 수 없습니다.")
+    return {"deleted": deleted_count}
+
+
+@router.delete("/receipt-archive")
+def delete_all_receipt_archive(user: User = Depends(require_current_user)) -> dict[str, Any]:
+    return {"deleted": supabase_service.soft_delete_receipt_archive(user.email)}
+
+
 @router.get("/history")
 def finance_history(user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
     history = []
@@ -224,6 +244,7 @@ def finance_history(user: User = Depends(require_current_user)) -> list[dict[str
 @router.patch("/records/{record_id}", response_model=FinanceRecord)
 def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Depends(require_current_user)) -> dict[str, Any]:
     values = payload.model_dump(mode="json")
+    items = values.pop("items", None)
     document_type, expense_category, needs_review, reason = validate_classification(
         values["document_type"], values["expense_category"],
         allow_explicit_document_type=True,
@@ -247,7 +268,14 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
         previous_decision = dict(structured_data.get("classification_decision") or {})
         structured_data["expense_category"] = expense_category
         structured_data["doc_type"] = document_type
+        if items is not None:
+            structured_data["items"] = items
         structured_data["needs_review"] = False
+        if values["status"] == "CONFIRMED":
+            structured_data["excel_saved_at"] = datetime.now(timezone.utc).isoformat()
+        else:
+            structured_data.pop("excel_saved_at", None)
+            structured_data.pop("finance_workflow", None)
         structured_data.pop("classification_review_reason", None)
         structured_data["classification_decision"] = {
             **previous_decision,
@@ -260,23 +288,112 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
     return supabase_service.update_finance_record(user.email, record_id, values)
 
 
+_finance_submission_lock = Lock()
+
+
+def _email_finance_records(records: list[dict[str, Any]], user: User) -> list[dict[str, Any]]:
+    if not records:
+        return []
+    filename = f"finance-receipts-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}.xlsx"
+    content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
+    review_id, review_url = create_review(records, user)
+    try:
+        email_service.send_finance_records(author_email=user.email, record_count=len(records), content=content, filename=filename, review_url=review_url)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="이메일 발송을 확인하지 못했습니다. 기록은 비우지 않았습니다. 수신함을 확인한 후 다시 시도해 주세요.") from exc
+    submitted = []
+    submitted_at = datetime.now(timezone.utc).isoformat()
+    try:
+        for record in records:
+            structured_data = dict(record.get("structured_data") or {})
+            previous_workflow = structured_data.get("finance_workflow") or {}
+            if previous_workflow.get("submitted_at"):
+                structured_data["finance_workflow"] = {
+                    **previous_workflow,
+                    "last_resent_at": submitted_at,
+                    "last_resent_filename": filename,
+                }
+                submitted.append(supabase_service.update_finance_record(user.email, record["id"], {"structured_data": structured_data}))
+                continue
+            structured_data["finance_workflow"] = {
+                **(structured_data.get("finance_workflow") or {}),
+                "finance_team_status": "확인 필요",
+                "submitted_at": submitted_at,
+                "email_sent_at": submitted_at,
+                "email_recipient": "docai0914@gmail.com",
+                "finance_confirmed_at": None,
+                "document_filename": filename,
+            }
+            submitted.append(supabase_service.update_finance_record(user.email, record["id"], {"structured_data": structured_data}))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="이메일은 발송됐지만 전송 기록 저장에 실패했습니다. 중복 발송을 피하려면 다시 보내지 말고 관리자에게 문의해 주세요.") from exc
+    activate_review(review_id)
+    return submitted
+
+
+class EmailReviewRequest(BaseModel):
+    token: str = Field(min_length=40, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+@router.post('/email-review/inspect')
+def inspect_email_review(payload: EmailReviewRequest):
+    return read_review(payload.token)
+
+
+@router.post('/email-review/confirm')
+def complete_email_review(payload: EmailReviewRequest):
+    return confirm_review(payload.token)
+
+
+@router.post("/records/submit-all", response_model=list[FinanceRecord])
+def submit_all_to_finance(user: User = Depends(require_current_user), include_previous: bool = False) -> list[dict[str, Any]]:
+    with _finance_submission_lock:
+        pending = [record for record in list_records(user)
+                   if include_previous or not ((record.get("structured_data") or {}).get("finance_workflow") or {}).get("submitted_at")]
+        return _email_finance_records(pending, user)
+
+
+@router.post("/records/preview")
+def preview_records(payload: FinanceExportRequest, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    available = {record["id"]: record for record in list_records(user)}
+    ids = list(dict.fromkeys(payload.record_ids))
+    if any(record_id not in available for record_id in ids):
+        raise HTTPException(status_code=422, detail="최종 확정하여 Excel에 저장한 기록만 미리 볼 수 있습니다.")
+    content = build_finance_workbook([available[record_id] for record_id in ids], author={"name": user.name, "email": user.email})
+    workbook = load_workbook(BytesIO(content))
+    try:
+        selected_types = {available[record_id].get("document_type") for record_id in ids}
+        preview_names = [name for kind, name in SHEET_NAMES.items() if kind in selected_types]
+        preview_names.append(SUMMARY_SHEET_NAME)
+        return {"sheets": [{"name": name, "rows": list(workbook[name].values)} for name in preview_names if name in workbook.sheetnames]}
+    finally:
+        workbook.close()
+
+
+@router.post("/records/soft-delete")
+def soft_delete_sent_records(payload: FinanceExportRequest, user: User = Depends(require_current_user)) -> dict[str, int]:
+    ids = list(dict.fromkeys(payload.record_ids))
+    available = {record["id"]: record for record in supabase_service.list_finance_records(user.email, limit=None)}
+    if any(record_id not in available for record_id in ids):
+        raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
+    if any(not ((available[record_id].get("structured_data") or {}).get("finance_workflow") or {}).get("submitted_at") for record_id in ids):
+        raise HTTPException(status_code=422, detail="재무팀 발송 완료 기록만 삭제할 수 있습니다.")
+    return {"deleted_count": supabase_service.soft_delete_finance_records(user.email, ids)}
+
+
 @router.post("/records/{record_id}/submit", response_model=FinanceRecord)
 def submit_to_finance(record_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
     record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
     if not record:
         raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
-    if record.get("status") != "CONFIRMED":
+    if record.get("status") != "CONFIRMED" or not (record.get("structured_data") or {}).get("excel_saved_at"):
         raise HTTPException(status_code=422, detail="사용자가 최종 확정한 문서만 재무팀에 보낼 수 있습니다.")
-    structured_data = dict(record.get("structured_data") or {})
-    workflow = dict(structured_data.get("finance_workflow") or {})
-    workflow.update({
-        "finance_team_status": "확인 필요",
-        "submitted_at": workflow.get("submitted_at") or datetime.now(timezone.utc).isoformat(),
-        "finance_confirmed_at": None,
-        "document_filename": workflow.get("document_filename") or f"finance-receipt-{record_id}.xlsx",
-    })
-    structured_data["finance_workflow"] = workflow
-    return supabase_service.update_finance_record(user.email, record_id, {"structured_data": structured_data})
+    with _finance_submission_lock:
+        pending = next((item for item in list_records(user) if item["id"] == record_id
+                        and not ((item.get("structured_data") or {}).get("finance_workflow") or {}).get("submitted_at")), None)
+        if pending is None:
+            return record
+        return _email_finance_records([pending], user)[0]
 
 
 @router.post("/records/{record_id}/finance-confirm", response_model=FinanceRecord)
@@ -300,6 +417,8 @@ def export_record(record_id: str, user: User = Depends(require_current_user)) ->
     record = next((item for item in supabase_service.list_finance_records(user.email, limit=1000) if item.get("id") == record_id), None)
     if not record:
         raise HTTPException(status_code=404, detail="재무 기록을 찾을 수 없습니다.")
+    if record.get("status") != "CONFIRMED" or not (record.get("structured_data") or {}).get("excel_saved_at"):
+        raise HTTPException(status_code=422, detail="최종 확정하여 Excel에 저장한 기록만 다운로드할 수 있습니다.")
     content = build_finance_workbook([record], author={"name": user.name, "email": user.email})
     filename = f"finance-receipt-{record_id}.xlsx"
     return StreamingResponse(
@@ -320,6 +439,8 @@ def export_selected_records(payload: FinanceExportRequest, user: User = Depends(
     records = [records_by_id[record_id] for record_id in requested_ids if record_id in records_by_id]
     if len(records) != len(requested_ids):
         raise HTTPException(status_code=404, detail="일부 재무 기록을 찾을 수 없습니다.")
+    if any(record.get("status") != "CONFIRMED" or not (record.get("structured_data") or {}).get("excel_saved_at") for record in records):
+        raise HTTPException(status_code=422, detail="최종 확정하여 Excel에 저장한 기록만 다운로드할 수 있습니다.")
     content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
     filename = f"finance-receipts-{date.today().isoformat()}.xlsx"
     return StreamingResponse(
@@ -331,7 +452,7 @@ def export_selected_records(payload: FinanceExportRequest, user: User = Depends(
 
 @router.get("/export")
 def export_records(user: User = Depends(require_current_user)) -> StreamingResponse:
-    records = [record for record in supabase_service.list_finance_records(user.email, limit=1000) if record.get("status") == "CONFIRMED"]
+    records = [record for record in supabase_service.list_finance_records(user.email, limit=1000) if record.get("status") == "CONFIRMED" and (record.get("structured_data") or {}).get("excel_saved_at")]
     if not records:
         raise HTTPException(status_code=422, detail="확정된 재무 문서가 없습니다. 내용을 검토하고 확정해 주세요.")
     content = build_finance_workbook(records, author={"name": user.name, "email": user.email})

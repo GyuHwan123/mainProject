@@ -494,19 +494,19 @@ function summarize(runs, model) {
   const extractionScore = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.extraction_score || 0), 0) / rubrics.length : 0;
   const schemaRate = rubrics.length ? rubrics.reduce((sum, rubric) => sum + Number(rubric.schema_rate || 0), 0) / rubrics.length : 0;
   const totalAmountRate = rubrics.length ? rubrics.filter((rubric) => rubric.total_amount_correct).length / rubrics.length : 0;
-  const autoApproved = rows.filter((row) => row.system?.automation?.auto_approved).length;
-  const autoApprovedCorrect = rows.filter((row) => row.system?.automation?.auto_approved_correct).length;
   const stageSummary = (key) => {
     const validations = rows.map((row) => row.system?.automation?.[key])
-      .filter((value) => ['PASS', 'REVIEW'].includes(value?.decision));
+      .filter((value) => ['PASS', 'USER_CONFIRM', 'REVIEW'].includes(value?.decision));
     const passed = validations.filter((value) => value.decision === 'PASS').length;
     const reasons = {};
     validations.forEach((value) => {
-      if (value.decision === 'REVIEW') {
+      if (value.decision !== 'PASS') {
         [...new Set(value.reasons || [])].forEach((reason) => { reasons[reason] = (reasons[reason] || 0) + 1; });
       }
     });
     return { measured: validations.length, passed,
+      user_confirm: validations.filter((value) => value.decision === 'USER_CONFIRM').length,
+      review: validations.filter((value) => value.decision === 'REVIEW').length,
       coverage: validations.length ? passed / validations.length : null,
       reasons: Object.fromEntries(Object.entries(reasons).sort((a, b) => b[1] - a[1])) };
   };
@@ -526,11 +526,7 @@ function summarize(runs, model) {
     extractionScore,
     schemaRate,
     totalAmountRate,
-    autoApproved,
     extractionValidation: stageSummary('extraction_validation'),
-    classificationValidation: stageSummary('classification_validation'),
-    autoCoverage: rows.length ? autoApproved / rows.length : 0,
-    autoAccuracy: autoApproved ? autoApprovedCorrect / autoApproved : 0,
   };
 }
 
@@ -605,7 +601,6 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
         ...summary,
         speedScore,
         finalScore: summary.extractionScore,
-        qualityGate: summary.documents > 0 && summary.autoApproved > 0 && summary.autoAccuracy >= 0.95,
       };
     });
   }, [summaries]);
@@ -972,7 +967,15 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     const isBatchExport = batchComplete && batchRuns.length > 1;
     const selectedRuns = isBatchExport ? batchRuns : (runs.length ? [runs[runs.length - 1]] : []);
     const sanitizedRuns = selectedRuns.map((run) => ({
-      ...run, results: (run.results || []).map(({ pure: _pure, ...result }) => result),
+      ...run, results: (run.results || []).map(({ pure: _pure, ...result }) => {
+        if (!result.system) return result;
+        const trace = result.system.pipeline_trace;
+        const extraction = result.system.automation?.extraction_validation || trace?.validation?.extraction_validation;
+        return { ...result, system: { ...result.system,
+          automation: { extraction_validation: extraction },
+          ...(trace ? { pipeline_trace: { ...trace, validation: { extraction_validation: extraction } } } : {}),
+        } };
+      }),
     }));
     const fieldErrorCounts = {}; const errorCases = [];
     sanitizedRuns.forEach((run) => (run.results || []).forEach((result) => {
@@ -998,7 +1001,6 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
         ...summary,
         speedScore,
         finalScore: summary.extractionScore,
-        qualityGate: summary.documents > 0 && summary.autoApproved > 0 && summary.autoAccuracy >= 0.95,
       };
     }))
       .map((summary) => ({
@@ -1007,11 +1009,8 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
         total_amount_accuracy: summary.totalAmountRate, average_latency_ms: summary.latency,
         p95_latency_ms: summary.p95Latency, speed_rubric_version: SPEED_RUBRIC_VERSION,
         speed_measured_documents: summary.measuredDocuments,
-        auto_approval_coverage: summary.autoCoverage,
-        auto_approval_accuracy: summary.autoAccuracy,
         extraction_validation: summary.extractionValidation,
-        classification_validation: summary.classificationValidation,
-        final_score_100: summary.finalScore ?? null, quality_gate_passed: summary.qualityGate ?? null,
+        final_score_100: summary.finalScore ?? null,
       }));
     const payload = {
       exported_at: new Date().toISOString(), export_type: isBatchExport ? 'BATCH_STATISTICS' : 'SINGLE_RESULT',
@@ -1045,13 +1044,11 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     {batchInsightsReady && <>
       <section className="batch-insight-grid single-batch-insights">
         <section className="eval-summary-grid batch-selection-metrics">{scoredSummaries.map((summary) => <article key={summary.model}>
-          <span className="selection-metric-title"><small>일괄 평가 결과</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>문서유형·총수량처럼 코드에서 파생되는 값은 모델 점수에서 제외합니다. 카드번호는 정답 데이터에 값이 있어도 필드 정확도와 모델 점수 모두에서 제외합니다.</span><em>품질 게이트: PASS 영수증이 존재하고 자동 승인 정확도가 95% 이상</em></span></span>
-          <h2 title={summary.model}>{summary.model}</h2><strong>{summary.finalScore.toFixed(1)}점</strong><p>{summary.documents}건 평가 · {summary.qualityGate ? '자동 승인 게이트 통과' : '자동 승인 게이트 재검토'}</p>
+          <span className="selection-metric-title"><small>일괄 평가 결과</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>문서유형·총수량처럼 코드에서 파생되는 값은 모델 점수에서 제외합니다. 카드번호는 정답 데이터에 값이 있어도 필드 정확도와 모델 점수 모두에서 제외합니다.</span><em>추출 검증은 참고 정보이며 최종 확인은 항상 사용자가 합니다.</em></span></span>
+          <h2 title={summary.model}>{summary.model}</h2><strong>{summary.finalScore.toFixed(1)}점</strong><p>{summary.documents}건 평가 · 최종 사용자 확인 필요</p>
           <dl>
             <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 100</dd></div>
             <div><dt>추출 검증 통과 비율</dt><dd>{summary.extractionValidation.coverage == null ? '미측정' : `${(summary.extractionValidation.coverage * 100).toFixed(1)}%`} ({summary.extractionValidation.measured}건 측정)</dd></div>
-            <div><dt>문서 분류 통과 비율</dt><dd>{summary.classificationValidation.coverage == null ? '미측정' : `${(summary.classificationValidation.coverage * 100).toFixed(1)}%`} ({summary.classificationValidation.measured}건 측정)</dd></div>
-            <div><dt>최종 자동처리 가능 비율</dt><dd>{(summary.autoCoverage * 100).toFixed(1)}%</dd></div>
             <div><dt>단일 JSON 성공률</dt><dd>{(summary.schemaRate * 100).toFixed(1)}%</dd></div>
             <div><dt>총 결제액 정확도</dt><dd>{(summary.totalAmountRate * 100).toFixed(1)}%</dd></div>
             <div><dt>평균 응답시간</dt><dd>{summary.latency == null ? '미측정' : `${(summary.latency / 1000).toFixed(1)}초`}</dd></div>
@@ -1059,7 +1056,7 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
           </dl>
           <details><summary>단계별 검토 사유</summary>
             <p>단계별 비율은 해당 판정이 기록된 결과 기준입니다. 이전 결과는 재평가가 필요합니다. 한 영수증에 여러 사유가 있을 수 있습니다.</p>
-            {[['추출 검증', summary.extractionValidation], ['문서 분류', summary.classificationValidation]].map(([label, stage]) => <div key={label}>
+            {[['추출 검증', summary.extractionValidation]].map(([label, stage]) => <div key={label}>
               <strong>{label}</strong>
               {Object.keys(stage.reasons).length ? <ul>{Object.entries(stage.reasons).map(([reason, count]) => <li key={reason}>{reason}: {count}건</li>)}</ul> : <p>{stage.measured ? '검토 사유 없음' : '미측정'}</p>}
             </div>)}

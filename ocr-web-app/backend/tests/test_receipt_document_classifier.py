@@ -97,6 +97,7 @@ class DocumentClassifierTests(unittest.TestCase):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "_normalize")
         namespace = {"Any": object, "RECEIPTS_MODEL_NAME": "gemma", "classify_document_type": classifier.classify_document_type,
+                     "normalize_expense_category": lambda v: v,
                      "_category_evidence_text": lambda r, t: t, "_extract_explicit_merchant": lambda t: None,
                      "_normalize_expense_category": lambda v, t: v, "_clean_model_items": lambda v: v or [],
                      "_ground_masked_card_number": lambda v, t: (None, {}), "_payment_from_ocr": lambda t: (None, {}),

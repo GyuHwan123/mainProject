@@ -29,7 +29,8 @@ async def evaluate_models(
             system_score = score_fields(system_prediction, truth, pure, pages)
             pipeline_trace = {
                 "llm": structured.get("llm_trace") or {},
-                "validation": structured.get("automation_validation") or {},
+                "validation": {"extraction_validation": structured.get("extraction_validation") or
+                               (structured.get("automation_validation") or {}).get("extraction_validation")},
             }
             error_analysis = analyze_finance_evaluation_failure(
                 ocr_text=text,
@@ -48,12 +49,7 @@ async def evaluate_models(
                     "score": system_score,
                     "ocr_impact": estimate_ocr_impact(text, truth, system_score),
                     "automation": {
-                        **(structured.get("automation_validation") or {}),
-                        "auto_approved": (structured.get("automation_validation") or {}).get("decision") == "PASS",
-                        "auto_approved_correct": bool(
-                            (structured.get("automation_validation") or {}).get("decision") == "PASS"
-                            and system_score.get("complete_match")
-                        ),
+                        "extraction_validation": structured.get("extraction_validation") or (structured.get("automation_validation") or {}).get("extraction_validation"),
                     },
                     "workbook": verify_workbook(system),
                 },

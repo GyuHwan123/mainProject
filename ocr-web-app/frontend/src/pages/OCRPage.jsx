@@ -1,4 +1,5 @@
 import { groupFinanceRecords } from '../features/financeRecordGroups';
+import { canApplyFinanceTaxSplit, applyFinanceTaxSplit } from '../features/financeTaxSplit';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -2036,7 +2037,7 @@ export default function OCRPage() {
             <div className="text-tabs">
               <button className={resultTab === 'text' ? 'active' : ''} onClick={() => setResultTab('text')}>{processingMode === 'receipt' ? '2. 문서화 · 행 추가' : financeRecord ? '2. 재무 양식' : '문서 추출 워크시트'}</button>
               {processingMode !== 'receipt' && <button className={resultTab === 'raw' ? 'active' : ''} onClick={() => setResultTab('raw')}>OCR 원문</button>}
-              {processingMode === 'receipt' && <button type="button" className={`saved-finance-trigger ${savedFinanceOpen ? 'open' : ''}`} onClick={() => { setSavedFinanceOpen((open) => !open); if (!savedFinanceOpen) loadSavedFinanceRecords(); }}>저장된 기록 <b>{savedFinanceGroups.length}</b></button>}
+              {processingMode === 'receipt' && <button type="button" className={`saved-finance-trigger ${savedFinanceOpen ? 'open' : ''}`} aria-expanded={savedFinanceOpen} onClick={() => { setSavedFinanceOpen((open) => !open); if (!savedFinanceOpen) loadSavedFinanceRecords(); }}>엑셀파일 확인하기 <b>{savedFinanceGroups.length}</b></button>}
             </div>
             {processingMode === 'receipt' && savedFinanceOpen && <section className="saved-finance-panel">
               <header><div><strong>저장된 재무 기록</strong><small>최종 확정한 기록을 보관하며, 재무팀 미발송과 발송 완료 상태로 구분합니다.</small></div><button type="button" aria-label="닫기" onClick={() => setSavedFinanceOpen(false)}><IoCloseOutline /></button></header>
@@ -2117,6 +2118,18 @@ export default function OCRPage() {
                 <label><span>카테고리</span><select required value={financeReviewDraft.expense_category || ''} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, expense_category: event.target.value }))}><option value="" disabled>선택</option>{financeReviewCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>
                 <label><span>상호(가맹점)</span><input maxLength="200" value={financeReviewDraft.merchant} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, merchant: event.target.value }))} /></label>
                 <label><span>결제일</span><input type="date" value={financeReviewDraft.transaction_date} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, transaction_date: event.target.value }))} /></label>
+                {canApplyFinanceTaxSplit(financeReviewDraft) && <label className="wide finance-tax-split">
+                  <span>공급가액 자동계산</span>
+                  <select value="" aria-describedby="finance-tax-split-help" onChange={(event) => {
+                    const rate = event.target.value;
+                    if (rate !== '') setFinanceReviewDraft((draft) => applyFinanceTaxSplit(draft, Number(rate)));
+                  }}>
+                    <option value="">선택 안 함</option>
+                    <option value="0">부가세 0%</option>
+                    <option value="0.1">부가세 10%</option>
+                  </select>
+                  <small id="finance-tax-split-help">합계금액 기준으로 부가세 0%는 전액을 공급가액으로, 부가세 10%는 공급가액 90%와 부가세 10%로 채웁니다. 부가세는 원 단위로 반올림하며, 수정 내용 저장 시 반영됩니다.</small>
+                </label>}
                 <label><span>공급가액</span><input type="number" min="0" value={financeReviewDraft.supply_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, supply_amount: event.target.value }))} /></label>
                 <label><span>부가세</span><input type="number" min="0" value={financeReviewDraft.tax_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, tax_amount: event.target.value }))} /></label>
                 <label><span>합계금액</span><input type="number" min="0" value={financeReviewDraft.total_amount} onChange={(event) => setFinanceReviewDraft((draft) => ({ ...draft, total_amount: event.target.value }))} /></label>

@@ -1100,19 +1100,30 @@
     .text-panel {
       position: relative;
     }
-    .text-tabs .saved-finance-trigger {
-      min-height: 28px;
-      margin: auto 10px auto auto;
-      padding: 0 9px;
+    .ocr-editor.receipt-workspace .text-panel .text-tabs button.saved-finance-trigger {
+      align-self: flex-end;
+      min-height: 34px;
+      margin: 7px 10px 0 auto;
+      padding: 0 18px;
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      border: 1px solid #d5e0e9;
-      border-radius: 7px;
-      color: #285f8b;
-      background: #f5f9fc;
+      border: 1px solid $border-color;
+      border-top: 2px solid $main-color;
+      border-bottom: 0;
+      border-radius: 8px 8px 0 0;
+      color: $secondary-text-color;
+      background: $surface-color;
       font-size: 12px;
       font-weight: 800;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: none;
+      transition: none;
+      &:focus-visible {
+        outline: 2px solid $midel-color;
+        outline-offset: -3px;
+      }
 
       &::after {
         display: none;
@@ -1120,15 +1131,17 @@
       b {
         min-width: 18px;
         padding: 3px 5px;
-        border-radius: 9px;
-        color: #fff;
-        background: #2b70a3;
+        border-radius: 4px;
+        color: $secondary-text-color;
+        background: $page-background;
         font-size: 11px;
         text-align: center;
       }
       &.open {
-        border-color: #2b70a3;
-        background: #eaf4fb;
+        color: $main-color;
+        border-color: color.mix($main-color, $surface-color, 30%);
+        border-top-color: $main-color;
+        background: $surface-color;
       }
     }
 
@@ -3984,6 +3997,7 @@
   input, select, textarea { box-sizing: border-box; width: 100%; padding: 10px 11px; border: 1px solid #d7e0e8; border-radius: 8px; outline: 0; color: #20384d; background: #fbfcfe; font: inherit; font-size: 12px; }
   input:focus, select:focus, textarea:focus { border-color: #3b7ca9; box-shadow: 0 0 0 3px rgba(59, 124, 169, 0.11); }
   textarea { min-height: 78px; resize: vertical; }
+  .finance-tax-split small { color: $secondary-text-color; font-size: 12px; line-height: 1.5; }
   .finance-review-items { margin-top: 18px; }
   .finance-review-items-title { margin-bottom: 8px; display: flex; align-items: end; justify-content: space-between; gap: 12px; }
   .finance-review-items-title strong, .finance-review-items-title span { display: block; }

@@ -1,5 +1,60 @@
 @use "./variables" as *;
 
+.rag-evaluation-compact {
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 6px 10px;
+  border-bottom: 1px solid #e1e7ee;
+  background: #f8fafc;
+  color: #627187;
+  font-size: 11px;
+  .evaluation-compact-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 26px;
+    overflow-x: auto;
+    white-space: nowrap;
+    > * { flex-shrink: 0; }
+  }
+  .evaluation-compact-dataset {
+    flex: 0 1 160px;
+    min-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: $main-color;
+    font-weight: 700;
+  }
+  .evaluation-compact-status,
+  .evaluation-compact-time {
+    padding-left: 7px;
+    border-left: 1px solid #dfe6ee;
+  }
+  button {
+    padding: 5px 8px;
+    border: 0;
+    border-radius: 5px;
+    background: $main-color;
+    color: #fff;
+    font: inherit;
+    cursor: pointer;
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  a { color: $main-color; }
+  .evaluation-compact-progress {
+    height: 2px;
+    margin-top: 4px;
+    overflow: hidden;
+    background: #e1e9f3;
+    i { display: block; height: 100%; background: #20ae83; transition: width 0.3s ease; }
+  }
+  .evaluation-compact-error {
+    margin: 5px 0 0;
+    color: #a43f4a;
+    overflow-wrap: anywhere;
+  }
+}
+
 .rag-evaluation-panel {
   margin-top: 18px;
   padding: 20px;

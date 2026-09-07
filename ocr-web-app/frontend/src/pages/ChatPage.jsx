@@ -1,4 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoBookmarkOutline, IoCloseOutline, IoTrashOutline } from 'react-icons/io5';
@@ -892,6 +893,18 @@ function ChatPageContent() {
               </div>
             </div>
           </div>
+          {isDeveloper && (evaluationDataset || evaluationRunning || evaluationError || evaluationResult) && <section className="rag-evaluation-compact" aria-label="RAG 평가 실행 및 진행 상태">
+            <div className="evaluation-compact-row">
+              <span className="evaluation-compact-dataset" title={evaluationDataset?.dataset_name || '정답 데이터를 선택하세요'}>{evaluationDataset?.dataset_name || '정답 데이터 없음'}</span>
+              <span>{evaluationDataset?.cases.length ?? 0}문항</span>
+              <span className="evaluation-compact-status" role="status">{evaluationStatus}{evaluationRunning && ` · ${Number(evaluationProgress.progress_percent || 0).toFixed(1)}%`}</span>
+              <span className="evaluation-compact-time">경과 {formatEvaluationDuration(evaluationProgress.elapsed_seconds)} · 남은 {evaluationRunning ? formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds) : '—'}</span>
+              <button type="button" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button>
+              <Link to="/reports?view=developer&developerReport=rag&ragReportTab=overview">리포트 ↗</Link>
+            </div>
+            {evaluationRunning && <div className="evaluation-compact-progress" role="progressbar" aria-label="평가 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>}
+            {evaluationError && <p className="evaluation-compact-error" role="alert">{evaluationError}</p>}
+          </section>}
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
           <div className="evidence-workspace">
             <div className="preview-slot">
@@ -925,18 +938,7 @@ function ChatPageContent() {
         </section>
       </section>
 
-      {isDeveloper && <section className="rag-evaluation-panel">
-        <header><div><small>DEVELOPER ONLY</small><h2>RAG 성능 평가</h2><p>현재 BGE-M3 · Vector Search · Reranker · gemma2:2b 전체 파이프라인을 평가합니다.</p></div><span className={`evaluation-state ${evaluationStatus === '완료' ? 'complete' : ''}`}>{evaluationStatus}</span></header>
-        <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
-        {(evaluationDataset || evaluationRunning) && <section className="evaluation-progress" aria-live="polite">
-          <div className="evaluation-progress-heading"><strong>{evaluationRunning ? `현재 ${Math.min(evaluationProgress.current + 1, evaluationProgress.total || evaluationDataset?.cases.length || 0)}번째 문항 처리 중` : evaluationStatus}</strong><span>{evaluationProgress.current} / {evaluationProgress.total || evaluationDataset?.cases.length || 0} 완료 · {Number(evaluationProgress.progress_percent || 0).toFixed(1)}%</span></div>
-          <div className="evaluation-progress-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>
-          <div className="evaluation-progress-details"><span><small>현재 문항</small><strong>{evaluationProgress.question_id || '—'}</strong></span><span><small>경과 시간</small><strong>{formatEvaluationDuration(evaluationProgress.elapsed_seconds)}</strong></span><span><small>문항당 평균</small><strong>{formatEvaluationDuration(evaluationProgress.average_seconds_per_case)}</strong></span><span><small>예상 남은 시간</small><strong>{formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds)}</strong></span></div>
-          {evaluationRunning && evaluationProgress.current === 0 && <p>첫 문항이 끝나면 문항당 평균 시간과 예상 남은 시간이 계산됩니다.</p>}
-        </section>}
-        {evaluationError && <p className="evaluation-error">{evaluationError}</p>}
-        <footer>{evaluationResult ? '저장된 평가 결과는 AI 성능 리포트에서 확인하세요.' : '평가 완료 후 AI 성능 리포트에 결과가 표시됩니다.'} <a href="/reports?view=developer&developerReport=rag&ragReportTab=overview">RAG 성능 리포트 보기 →</a></footer>
-      </section>}
+
 
       <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
       {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}

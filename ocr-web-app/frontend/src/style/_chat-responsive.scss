@@ -1,5 +1,25 @@
 @use "./variables" as *;
 
+@media (min-width: 1281px) {
+  .chat-app-shell {
+    height: 100dvh;
+    min-height: 0;
+  }
+  .chat-workspace {
+    box-sizing: border-box;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .chat-page-header { flex-shrink: 0; }
+  .chat-workspace .rag-grid {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+}
+
 @media (max-width: 820px) {
   .rag-evaluation-panel .evaluation-toolbar {
     align-items: stretch;

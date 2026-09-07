@@ -21,6 +21,7 @@ PATTERNS = [
     re.compile(r"\b01[016789][ -]?\d{3,4}[ -]?\d{4}\b"),
     re.compile(r"\b0\d{1,2}[ -]?\d{3,4}[ -]?\d{4}\b"),
     re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"),
+    re.compile(r"(?<!\d)(?:\d[ -]?){15}\d(?!\d)"),
     re.compile(r"\b\d{2,4}[- ]\d{2,4}[- ]\d{3,6}\b"),
 ]
 SENSITIVE_LABEL = re.compile(r"(생년월일|생년|나이|성별|주소|거주지|연락처|휴대폰|핸드폰|전화|이메일|e-mail|계좌|주민등록)", re.I)

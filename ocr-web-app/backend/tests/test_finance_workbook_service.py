@@ -77,3 +77,16 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         row = _receipt_summary_rows([r])[0]
         self.assertEqual(row[10], 0)
         self.assertEqual(row[-1], '확인 필요: 금액 차이')
+
+    def test_untrusted_text_is_not_exported_as_a_formula(self):
+        r = self.record()
+        r['merchant'] = '=HYPERLINK("https://example.invalid")'
+        r['structured_data']['items'][0]['name'] = '=SUM(A1:A2)'
+        wb = load_workbook(BytesIO(build_finance_workbook([r])), data_only=False)
+        ws = wb[SHEET_NAMES['PURCHASE_REQUEST']]
+        name_cell = ws.cell(12, 5)
+        merchant_cell = ws.cell(12, 4)
+        self.assertEqual(name_cell.value, "'=SUM(A1:A2)")
+        self.assertEqual(merchant_cell.value, "'=HYPERLINK(\"https://example.invalid\")")
+        self.assertEqual(name_cell.data_type, 's')
+        wb.close()

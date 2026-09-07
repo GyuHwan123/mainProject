@@ -22,8 +22,10 @@ class TableStructureAnswerTests(unittest.TestCase):
         self.assertIn("4열: 평균", answer)
         self.assertTrue(answer.endswith("[근거 1]"))
 
-    def test_does_not_intercept_regular_table_value_question(self):
-        self.assertIsNone(_table_structure_answer("실험1의 평균은 얼마인가요?", CONTEXT))
+    def test_answers_regular_table_value_question_from_the_matching_row(self):
+        answer = _table_structure_answer("실험1의 평균은 얼마인가요?", CONTEXT)
+        self.assertIn("77.40", answer)
+        self.assertTrue(answer.endswith("[근거 1]"))
 
 
 class TableStructureChatTests(unittest.IsolatedAsyncioTestCase):

@@ -110,9 +110,6 @@ def _table_structure_answer(message: str, context: str) -> str | None:
         question,
     ))
     asks_size = bool(re.search(r"(몇\s*행|몇\s*열|몇\s*컬럼|행.*열|열.*행|표\s*크기)", question))
-    if not asks_columns and not asks_size:
-        return None
-
     blocks = re.findall(
         r"\[근거\s+(\d+)[^\]]*\]\s*(.*?)(?=\n\n\[근거\s+\d+|\Z)",
         str(context or ""),
@@ -124,6 +121,17 @@ def _table_structure_answer(message: str, context: str) -> str | None:
             content,
         )
         columns_match = re.search(r"\[표 테이블 열 컬럼명\]\s*([^\n]+)", content)
+        if not asks_columns and not asks_size and columns_match:
+            headers = [value.strip() for value in columns_match.group(1).split("|")]
+            header_names = [re.sub(r"^\d+열:\s*", "", value) for value in headers]
+            requested_column = next((index for index, name in enumerate(header_names) if name and name in question), None)
+            for row in re.findall(r"\[표 행\]\s*([^\n]+)", content):
+                cells = [re.sub(r"^\d+열(?:\([^)]*\))?:\s*", "", value.strip()) for value in row.split("|")]
+                if requested_column is not None and requested_column < len(cells) and any(
+                    value and value in question for index, value in enumerate(cells) if index != requested_column
+                ):
+                    return f"{header_names[requested_column]}은(는) {cells[requested_column]}입니다. [근거 {evidence_number}]"
+            continue
         if asks_columns and not columns_match:
             continue
         if asks_size and not size_match:

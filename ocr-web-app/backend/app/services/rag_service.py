@@ -486,6 +486,12 @@ def extract_document_title(pages: list[dict[str, Any]]) -> tuple[str, list[list[
     lines = _group_items_into_lines([
         item for item in pages[0].get("items", []) if str(item.get("text", "")).strip()
     ])
+    if not lines:
+        lines = [
+            {"text": line.strip(), "items": []}
+            for line in str(pages[0].get("text") or "").splitlines()
+            if line.strip()
+        ]
     candidates: list[tuple[int, dict[str, Any]]] = []
     for index, line in enumerate(lines[:30]):
         text = line["text"].strip(" |")
@@ -513,7 +519,8 @@ def extract_document_title(pages: list[dict[str, Any]]) -> tuple[str, list[list[
         if following_text.startswith((":", "-")) and len(following_text) <= 100:
             selected.append(following)
     title = " ".join(line["text"].strip(" |") for line in selected)
-    return title, _union_bbox([item for line in selected for item in line["items"]])
+    selected_items = [item for line in selected for item in line["items"]]
+    return title, _union_bbox(selected_items) if selected_items else None
 
 
 def extract_document_title_with_layout(
@@ -1188,14 +1195,13 @@ async def search(
         if rag_document:
             document = supabase_service.get_ocr_document(user_email, rag_document["document_id"])
             extracted = extract_document_title_with_layout(document.get("bounding_boxes") or [])
-            if extracted:
-                title, bbox = extracted
-                candidates.insert(0, {
+            title, bbox = extracted if extracted else (Path(document.get("file_name") or "document").stem, None)
+            candidates.insert(0, {
                     "id": f"title-{document['id']}", "document_id": document["id"],
                     "rag_document_id": rag_document_id, "chunk_index": -1, "page_number": 1,
                     "content": f"[문서 제목] {title}", "bbox": bbox, "similarity": 1.0,
                     "vector_similarity": 1.0, "source": document["file_name"],
-                })
+            })
     for candidate in candidates:
         candidate["original_query"] = query
         candidate["rewritten_query"] = rewritten_query if use_rewritten_query else None

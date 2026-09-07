@@ -36,6 +36,14 @@ SUMMARY_HEADERS = [
 ]
 
 
+def _excel_safe(value: Any) -> Any:
+    """Keep untrusted text from being interpreted as an Excel formula."""
+    if not isinstance(value, str):
+        return value
+    first = value.lstrip()[:1]
+    return "'" + value if first in {"=", "+", "-", "@"} else value
+
+
 def _number(value: Any) -> float:
     return _optional_number(value) or 0
 
@@ -57,7 +65,7 @@ def _record_rows(document_type: str, records: list[dict[str, Any]]) -> list[list
             row.extend([record.get("transaction_date"), record.get("merchant"), item.get("name"),
                         _optional_number(item.get("quantity")), _optional_number(item.get("unit_price")),
                         _optional_number(item.get("total_amount"))])
-            rows.append(row)
+            rows.append([_excel_safe(value) for value in row])
     return rows
 
 
@@ -135,7 +143,7 @@ def _style_summary_sheet(ws, records: list[dict[str, Any]]) -> None:
         cell.fill = PatternFill("solid", fgColor="1F4E78")
         cell.font = Font(bold=True, color="FFFFFF")
     for values in _receipt_summary_rows(records):
-        ws.append(values)
+        ws.append([_excel_safe(value) for value in values])
     for row in ws:
         for cell in row:
             cell.border = Border(top=line, bottom=line, left=line, right=line)
@@ -205,7 +213,7 @@ def _style_sheet(ws, document_type: str, records: list[dict[str, Any]], author: 
         metadata = [("신청일자", created_on, "소속부서", department), ("신청인", author_name, "작성자 이메일", author_email), ("신청기간", _record_period(records), "신청건수", f"{len(records)}건")]
 
     for row_number, (left_label, left_value, right_label, right_value) in enumerate(metadata, 6):
-        ws[f"A{row_number}"], ws[f"B{row_number}"], ws[f"E{row_number}"], ws[f"F{row_number}"] = left_label, left_value, right_label, right_value
+        ws[f"A{row_number}"], ws[f"B{row_number}"], ws[f"E{row_number}"], ws[f"F{row_number}"] = left_label, _excel_safe(left_value), right_label, _excel_safe(right_value)
         ws.merge_cells(f"B{row_number}:D{row_number}"); ws.merge_cells(f"F{row_number}:H{row_number}")
     for row_number in range(5, 9):
         for cell in ws[row_number]:

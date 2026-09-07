@@ -55,6 +55,13 @@ class DocumentLayoutTests(unittest.TestCase):
         _sort_document_items(items)
         self.assertEqual([item.text for item in items], ["L10", "L30", "L50", "L70", "L90", "R10", "R30", "R50", "R70", "R90"])
 
+    def test_orders_short_two_column_document_by_column(self):
+        items = []
+        for label, y in zip("ABC", (10, 30, 50)):
+            items.extend([self.item(label, 10, y), self.item(chr(ord(label) + 3), 200, y)])
+        _sort_document_items(items)
+        self.assertEqual([item.text for item in items], list("ABCDEF"))
+
 
 if __name__ == "__main__":
     unittest.main()

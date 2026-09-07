@@ -92,6 +92,16 @@ class RagTableChunkingTests(unittest.TestCase):
         self.assertEqual(title, "표1. 연구수행 결과표")
 
 
+    def test_extracts_title_from_text_only_page(self):
+        title, bbox = extract_document_title_with_layout([{
+            "page": 1,
+            "text": "분기별 연구 결과 보고서\n작성자 홍길동\n본문입니다.",
+            "items": [],
+        }])
+        self.assertEqual(title, "분기별 연구 결과 보고서")
+        self.assertIsNone(bbox)
+
+
 class RagStructuralEvidenceTests(unittest.IsolatedAsyncioTestCase):
     def test_detects_table_structure_questions(self):
         self.assertTrue(_is_table_structure_query("테이블의 컬럼명을 다 알려주세요"))

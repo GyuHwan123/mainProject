@@ -8,6 +8,7 @@ import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
 import { documentUploadGroups } from '../features/documentUploads';
+import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEvaluationProgress.mjs';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -502,12 +503,13 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (!evaluationRunning) return undefined;
+    let active = true;
     const updateProgress = () => apiClient.get('/rag/evaluate/status')
-      .then(({ data }) => setEvaluationProgress(data))
+      .then(({ data }) => { if (active && evaluationRunningRef.current) setEvaluationProgress(data); })
       .catch(() => {});
     updateProgress();
     const poller = window.setInterval(updateProgress, 1000);
-    return () => window.clearInterval(poller);
+    return () => { active = false; window.clearInterval(poller); };
   }, [evaluationRunning]);
 
   useEffect(() => {
@@ -818,6 +820,8 @@ function ChatPageContent() {
       try {
         const { data } = await apiClient.post('/rag/evaluate/checkpoint-status', parsed);
         setEvaluationProgress(data);
+        setEvaluationStatus(evaluationStatusLabel(data));
+        if (data.configuration_matches === false) setEvaluationError('RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.');
       } catch {
         setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
       }
@@ -837,10 +841,14 @@ function ChatPageContent() {
       ...progress, status: 'running', total: evaluationDataset.cases.length, question_id: null,
     }));
     try {
-      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 36000000 });
+      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, {
+        timeout: 36000000, params: { retry_failed: evaluationProgress.error_count > 0 },
+      });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
-      setEvaluationResult(data); setEvaluationStatus('완료');
-      setEvaluationProgress((progress) => ({ ...progress, status: 'completed', current: evaluationDataset.cases.length, total: evaluationDataset.cases.length, question_id: null, progress_percent: 100 }));
+      const completion = evaluationCompletion(data, evaluationDataset.cases.length);
+      setEvaluationResult(data);
+      setEvaluationStatus(evaluationStatusLabel({ ...completion, total: evaluationDataset.cases.length }));
+      setEvaluationProgress((progress) => ({ ...progress, ...completion, current: evaluationDataset.cases.length, total: evaluationDataset.cases.length, question_id: null, progress_percent: 100 }));
     } catch (error) {
       const detail = error.response?.data?.detail;
       setEvaluationError(typeof detail === 'string' ? detail : JSON.stringify(detail || error.message));
@@ -899,7 +907,7 @@ function ChatPageContent() {
               <span>{evaluationDataset?.cases.length ?? 0}문항</span>
               <span className="evaluation-compact-status" role="status">{evaluationStatus}{evaluationRunning && ` · ${Number(evaluationProgress.progress_percent || 0).toFixed(1)}%`}</span>
               <span className="evaluation-compact-time">경과 {formatEvaluationDuration(evaluationProgress.elapsed_seconds)} · 남은 {evaluationRunning ? formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds) : '—'}</span>
-              <button type="button" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button>
+              <button type="button" disabled={!evaluationDataset || evaluationRunning || evaluationProgress.configuration_matches === false} onClick={runRagEvaluation}>{evaluationRunning ? '평가 중…' : evaluationProgress.error_count > 0 ? `실패 ${evaluationProgress.error_count}문항 재시도` : '평가 실행'}</button>
               <Link to="/reports?view=developer&developerReport=rag&ragReportTab=overview">리포트 ↗</Link>
             </div>
             {evaluationRunning && <div className="evaluation-compact-progress" role="progressbar" aria-label="평가 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>}

@@ -157,6 +157,57 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result["cases"]), 4)
         self.assertEqual(result["summary"]["total"], 5)
         self.history_save.assert_not_called()
+        self.assertEqual(checkpoint["status"], "partial")
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["error_count"], 1)
+        self.assertEqual(rag_evaluations._rag_progress(self.user.email)["status"], "partial")
+
+    async def test_legacy_177_successes_retry_only_23_errors(self):
+        dataset = RagEvaluationDataset.model_validate({
+            "dataset_name": "200-case-resume", "question_count": 200,
+            "cases": [{**self.dataset.cases[0].model_dump(), "question_id": f"EVAL-{i:03d}"} for i in range(1, 201)],
+        })
+        checkpoint = rag_evaluations._load_checkpoint(dataset)
+        ids = [case.question_id for case in dataset.cases]
+        checkpoint.update(status="completed", completed_question_ids=ids[:177],
+                          results={qid: _case_result(qid) for qid in ids[:177]},
+                          errors={qid: {"error_type": "ConnectError"} for qid in ids[177:]})
+        original_results = dict(checkpoint["results"])
+        rag_evaluations._save_checkpoint(checkpoint)
+        status = rag_evaluations.rag_evaluation_checkpoint_status(dataset, self.user)
+        self.assertEqual((status["status"], status["completed_count"], status["error_count"]), ("partial", 177, 23))
+        progress = []
+        async def resumed(case, *_args):
+            progress.append(rag_evaluations._rag_progress(self.user.email))
+            return _case_result(case.question_id)
+        with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=resumed) as evaluator:
+            result = await evaluate_rag(dataset, self.user, retry_failed=True)
+        self.assertEqual([call.args[0].question_id for call in evaluator.await_args_list], ids[177:])
+        self.assertEqual(progress[0]["progress_percent"], 88.5)
+        self.assertIsNone(progress[0]["estimated_remaining_seconds"])
+        self.assertEqual((result["status"], result["completed_count"], result["error_count"]), ("completed", 200, 0))
+        saved = rag_evaluations._load_checkpoint(dataset)
+        self.assertEqual(saved["errors"], {})
+        self.assertEqual({qid: saved["results"][qid] for qid in ids[:177]}, original_results)
+        self.assertEqual(len(result["cases"]), 200)
+        # Legacy ownership metadata remains unchanged: do not invent DB attribution.
+        self.history_save.assert_not_called()
+
+    async def test_explicit_retry_rejects_missing_or_incompatible_checkpoint(self):
+        with self.assertRaises(HTTPException) as missing:
+            await evaluate_rag(self.dataset, self.user, retry_failed=True)
+        self.assertEqual(missing.exception.status_code, 409)
+        checkpoint = rag_evaluations._load_checkpoint(self.dataset)
+        checkpoint["configuration"] = {"old": "configuration"}
+        rag_evaluations._save_checkpoint(checkpoint)
+        path = next(self.checkpoint_directory.glob("*.json"))
+        before = path.read_bytes()
+        status = rag_evaluations.rag_evaluation_checkpoint_status(self.dataset, self.user)
+        self.assertFalse(status["configuration_matches"])
+        with self.assertRaises(HTTPException) as changed:
+            await evaluate_rag(self.dataset, self.user, retry_failed=True)
+        self.assertEqual(changed.exception.status_code, 409)
+        self.assertEqual(path.read_bytes(), before)
 
     async def test_repeated_completed_result_does_not_insert_again(self):
         evaluator = AsyncMock(side_effect=lambda case, *_args: _case_result(case.question_id))

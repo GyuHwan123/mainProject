@@ -52,7 +52,8 @@ def _rag_progress(user_email: str) -> dict[str, Any]:
     current = int(state.get("current") or 0)
     total = int(state.get("total") or 0)
     completed_elapsed = float(state.get("completed_elapsed_seconds") or elapsed)
-    average = completed_elapsed / current if current else None
+    attempted = current - int(state.get("resumed_count") or 0)
+    average = completed_elapsed / attempted if attempted > 0 else None
     remaining = average * max(0, total - current) if average is not None else None
     return {
         **state,
@@ -407,8 +408,16 @@ def _build_evaluation_result(dataset: RagEvaluationDataset, case_results: list[d
 async def evaluate_rag(
     dataset: RagEvaluationDataset,
     user: User = Depends(require_developer),
+    retry_failed: bool = False,
 ) -> dict[str, Any]:
     dataset_hash = _dataset_hash(dataset)
+    if retry_failed:
+        path = _checkpoint_path(dataset_hash)
+        if not path.exists():
+            raise HTTPException(status_code=409, detail="동일한 정답 JSON의 checkpoint가 필요합니다.")
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if saved.get("configuration") != _evaluation_configuration() or saved.get("total") != len(dataset.cases):
+            raise HTTPException(status_code=409, detail="RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.")
     with _rag_evaluation_lock:
         if dataset_hash in _running_rag_evaluations:
             raise HTTPException(status_code=409, detail="The same evaluation dataset is already running.")
@@ -423,13 +432,16 @@ async def evaluate_rag(
         "chunk_target_chars": settings.RAG_CHUNK_TARGET_CHARS,
         "answer_threshold": settings.RAG_EVALUATION_ANSWER_THRESHOLD,
     })
-    processed_ids = _processed_question_ids(checkpoint)
+    # Old errors are pending work for this attempt; successful results stay intact.
+    processed_ids = set(checkpoint.get("completed_question_ids") or [])
     checkpoint.update(status="running", configuration=_evaluation_configuration())
     _save_checkpoint(checkpoint)
     with _rag_evaluation_lock:
         _rag_evaluation_states[user.email] = {
             "status": "running", "current": len(processed_ids), "total": len(dataset.cases),
             "question_id": None, "started_at": started_at, "dataset_hash": dataset_hash,
+            "resumed_count": len(processed_ids),
+            "completed_count": len(processed_ids), "error_count": len(checkpoint.get("errors") or {}),
         }
 
     try:
@@ -478,6 +490,7 @@ async def evaluate_rag(
             with _rag_evaluation_lock:
                 _rag_evaluation_states[user.email].update(
                     current=len(processed_ids), completed_elapsed_seconds=time.time() - started_at,
+                    completed_count=len(completed_ids), error_count=len(checkpoint.get("errors") or {}),
                 )
 
         case_results = [
@@ -486,14 +499,16 @@ async def evaluate_rag(
             if case.question_id in checkpoint.get("results", {})
         ]
         result = _build_evaluation_result(dataset, case_results)
+        final_status = "partial" if checkpoint.get("errors") or len(case_results) != len(dataset.cases) else "completed"
+        result.update(status=final_status, completed_count=len(case_results), error_count=len(checkpoint.get("errors") or {}))
         _latest_evaluations[user.email] = result
-        checkpoint.update(status="completed", result=result)
+        checkpoint.update(status=final_status, result=result)
         _save_checkpoint(checkpoint)
         history_status = await _persist_completed_history(checkpoint, dataset, user)
         result["history"] = history_status
         with _rag_evaluation_lock:
             _rag_evaluation_states[user.email].update(
-                status="completed", current=len(processed_ids), question_id=None,
+                status=final_status, current=len(processed_ids), question_id=None,
                 finished_at=time.time(), error_count=len(checkpoint.get("errors") or {}),
                 history=history_status,
             )
@@ -539,14 +554,24 @@ def rag_evaluation_checkpoint_status(
     _user: User = Depends(require_developer),
 ) -> dict[str, Any]:
     checkpoint = _load_checkpoint(dataset)
+    # Expose an existing incompatible checkpoint instead of presenting a fresh
+    # evaluation that would silently replace its successful results.
+    path = _checkpoint_path(_dataset_hash(dataset))
+    if path.exists():
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if saved.get("dataset_hash") == _dataset_hash(dataset) and saved.get("total") == len(dataset.cases):
+            checkpoint = saved
     processed = len(_processed_question_ids(checkpoint))
     total = len(dataset.cases)
     return {
-        "status": "running" if checkpoint["dataset_hash"] in _running_rag_evaluations else checkpoint.get("status", "ready"),
+        "status": "running" if checkpoint["dataset_hash"] in _running_rag_evaluations else (
+            "partial" if checkpoint.get("errors") else checkpoint.get("status", "ready")
+        ),
         "current": processed,
         "total": total,
         "question_id": None,
         "dataset_hash": checkpoint["dataset_hash"],
+        "configuration_matches": checkpoint.get("configuration") == _evaluation_configuration(),
         "completed_count": len(checkpoint.get("completed_question_ids") or []),
         "error_count": len(checkpoint.get("errors") or {}),
         "progress_percent": round(processed / total * 100, 1) if total else 0.0,

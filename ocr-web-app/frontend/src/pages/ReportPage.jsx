@@ -4,8 +4,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import LoginLoading from '../components/LoginLoading';
 import apiClient from '../api/client';
+import { prepareRagReportPrint } from '../features/ragReportPrint.mjs';
 import { getAppUser } from '../features/appSession';
 import FinanceEvaluationPage from './FinanceEvaluationPage';
+import RagMonitoringChart from '../components/RagMonitoringChart';
 import '../style/ReportPage.scss';
 
 const percent = (value, digits = 1) => `${((value || 0) * 100).toFixed(digits)}%`;
@@ -126,7 +128,7 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
   </section>;
 }
 
-function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, onExportPdf }) {
+function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapData, umapError, onExportPdf, refreshVersion }) {
   const [dateRange, setDateRange] = useState(createInitialMonitoringDateRange);
   const [period, setPeriod] = useState('7');
   const changeDate = (field, value) => {
@@ -141,25 +143,39 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
     startDate.setDate(endDate.getDate() - Number(value) + 1);
     setDateRange({ startDate: dateInputValue(startDate), endDate: dateInputValue(endDate) });
   };
+  const [monitoring, setMonitoring] = useState(null);
+  const [monitoringLoading, setMonitoringLoading] = useState(true);
+  const [monitoringError, setMonitoringError] = useState('');
+  useEffect(() => {
+    let active = true;
+    setMonitoring(null);
+    setMonitoringError('');
+    if (!dateRange.startDate || !dateRange.endDate || dateRange.startDate > dateRange.endDate) {
+      setMonitoringLoading(false);
+      setMonitoringError('올바른 시작일과 종료일을 선택하세요.');
+      return;
+    }
+    setMonitoringLoading(true);
+    apiClient.get('/rag/evaluation/monitoring', { params: { start_date: dateRange.startDate, end_date: dateRange.endDate }, timeout: 60000 })
+      .then(({ data }) => { if (active) setMonitoring(data); })
+      .catch(error => { if (active) setMonitoringError(error.response?.data?.detail || 'RAG 평가 이력을 불러오지 못했습니다.'); })
+      .finally(() => { if (active) setMonitoringLoading(false); });
+    return () => { active = false; };
+  }, [dateRange.startDate, dateRange.endDate, refreshVersion]);
+  // Case details are not stored in the history table. Never mix a different
+  // latest/local result into the selected period's DB monitoring figures.
+  const evaluation = latestEvaluation?.history?.id && latestEvaluation.history.id === monitoring?.recent_runs?.[0]?.id ? latestEvaluation : null;
   const metrics = useMemo(() => {
-    if (!evaluation) return null;
-    const cases = Array.isArray(evaluation.cases) ? evaluation.cases : [];
-    const summary = evaluation.summary || {};
-    const retrievalCases = cases.filter((item) => Array.isArray(item.expected_documents) && item.expected_documents.length);
-    const hitAt = (k) => retrievalCases.length
-      ? retrievalCases.filter((item) => {
-        const expected = new Set(item.expected_documents || []);
-        return (item.retrieved_documents || []).slice(0, k).some((docId) => expected.has(docId));
-      }).length / retrievalCases.length
-      : null;
+    if (!monitoring) return null;
+    const summary = monitoring.summary;
     return {
-      total: Number(summary.total || cases.length),
+      total: summary.total,
       hitAtK: summary.hit_at_k,
       topK: summary.top_k,
       hitAt5: summary.hit_at_5,
-      hitAt1: summary.hit_at_1 ?? hitAt(1),
-      hitAt3: summary.hit_at_3 ?? hitAt(3),
-      hitAt4: summary.hit_at_4 ?? hitAt(4),
+      hitAt1: summary.hit_at_1,
+      hitAt3: summary.hit_at_3,
+      hitAt4: summary.hit_at_4,
       recall: summary.recall_at_k,
       mrr: summary.mrr,
       ndcg: summary.ndcg_at_k,
@@ -170,7 +186,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
       unanswerableRejectionRate: summary.unanswerable_rejection_rate,
       faithfulnessMethod: summary.faithfulness_method,
     };
-  }, [evaluation]);
+  }, [monitoring]);
   const metricValue = (value) => value == null ? '—' : percent(value);
   const retrievalMetrics = [
     ...(Number(metrics?.topK) === 1 ? [] : [['Hit@K', metrics?.hitAtK]]),
@@ -247,7 +263,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
 
   return <section className="receipt-monitoring rag-monitoring">
     <div className="receipt-monitoring-heading">
-      <div><p>RAG MONITORING</p><h2>RAG 서비스 성능 모니터링 대시보드</h2><span>{evaluation?.dataset_name || '저장된 평가 결과 없음'}{evaluation?.created_at ? ` · ${new Date(evaluation.created_at).toLocaleString('ko-KR')}` : ''}</span></div>
+      <div><p>RAG MONITORING</p><h2>RAG 서비스 성능 모니터링 대시보드</h2><span>{dateRange.startDate} ~ {dateRange.endDate} · {monitoring?.summary.run_count ?? 0}회 평가</span></div>
       <div className="receipt-monitoring-filters" aria-label="RAG 성능 기간 선택" aria-describedby="rag-period-note">
         <div className="receipt-date-range">
           <input type="date" aria-label="RAG 조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => changeDate('startDate', event.target.value)} />
@@ -260,17 +276,18 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
         <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
       </div>
     </div>
-    <p id="rag-period-note" className="rag-monitoring-note">기간 조회 연결 전입니다. 선택한 기간과 관계없이 최신 저장 평가 결과를 표시합니다.</p>
-    <div className="receipt-monitoring-kpis">{kpis.map(([label, value, format], index) => <article key={label}>
+    <p id="rag-period-note" className="rag-monitoring-note">한국 시간·평가 완료일 기준 · 지표는 저장된 실행별 점수의 평균, 문항 수는 합계입니다.</p>
+    {monitoringError && <p className="report-access-error" role="alert">{monitoringError}</p>}
+    <div className="receipt-monitoring-kpis" aria-busy={monitoringLoading}>{kpis.map(([label, value, format], index) => <article key={label}>
       <h3>{label}</h3>
-      <div className="monitoring-kpi-value"><strong style={{ color: value == null ? undefined : ['#1767df', '#079b62', '#7c3aed', '#f06a13', '#24599b', '#d45764'][index] }}>{format === 'cases' ? (value ?? '—') : metricValue(value)}</strong><small>최신 저장 평가 기준</small></div>
-      <div className="rag-sparkline-slot" aria-label={`${label} 추이 영역`}>추이 데이터 연결 예정</div>
+      <div className="monitoring-kpi-value"><strong style={{ color: value == null ? undefined : ['#1767df', '#079b62', '#7c3aed', '#f06a13', '#24599b', '#d45764'][index] }}>{monitoringLoading ? '…' : format === 'cases' ? (value ?? '—') : metricValue(value)}</strong><small>선택 기간 · {format === 'cases' ? '누적 문항' : '실행별 평균'}</small></div>
+      <RagMonitoringChart daily={monitoring?.daily || []} metric={['total', 'answer_accuracy', 'faithfulness', 'hit_at_1', 'context_precision', 'hallucination_rate'][index]} />
     </article>)}</div>
     <div className="receipt-monitoring-panels">
-      <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>연결 예정</span></header><div className="empty-monitoring-box"><span>평가 이력이 연결되면 추세를 표시합니다.</span></div></article>
-      <article><header><h3>Retrieval 상세 지표</h3><span>Top-K {metrics?.topK ?? '—'}</span></header><div className="rag-monitoring-metrics">{retrievalMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div></article>
-      <article><header><h3>평가 문항 구성</h3><span>{questionComposition.total}문항</span></header>{questionComposition.rows.length ? <div className="rag-monitoring-composition"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map((item) => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="empty-monitoring-box"><span>평가 문항 데이터가 없습니다.</span></div>}</article>
-      <article><header><h3>추가 평가 정보</h3><span>최신 평가</span></header><div className="rag-monitoring-metrics">{answerMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div>{metrics?.faithfulnessMethod && <p className="rag-monitoring-method">Faithfulness: {metrics.faithfulnessMethod}</p>}</article>
+      <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>일별 실행 평균</span></header>{monitoringLoading ? <div className="empty-monitoring-box"><span>불러오는 중</span></div> : <RagMonitoringChart daily={monitoring?.daily || []} />}</article>
+      <article><header><h3>Retrieval 상세 지표</h3><span>Top-K {metrics?.topK ?? (monitoring?.summary.run_count ? '혼합' : '—')}</span></header><div className="rag-monitoring-metrics">{retrievalMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div></article>
+      <article><header><h3>최근 실행 문항 구성</h3><span>{questionComposition.total}문항</span></header>{questionComposition.rows.length ? <div className="rag-monitoring-composition"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map((item) => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="empty-monitoring-box"><span>문항별 상세는 DB 이력에 저장하지 않습니다.</span></div>}</article>
+      <article><header><h3>추가 평가 정보</h3><span>선택 기간</span></header><div className="rag-monitoring-metrics">{answerMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div>{metrics?.faithfulnessMethod && <p className="rag-monitoring-method">Faithfulness: {metrics.faithfulnessMethod}</p>}</article>
     </div>
     <div className="receipt-monitoring-bottom">
       <article><header><h3>RAG 운영 설정</h3></header><details className="rag-runtime-details"><summary>{modelConfig.model || '모델 미설정'} · Top-K {modelConfig.top_k ?? '—'} · {modelConfig.ready ? 'ONLINE' : 'OFFLINE'}</summary><dl>
@@ -280,7 +297,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
         <div><dt>Reranker</dt><dd>{modelConfig.rerank_model || '미사용'}</dd></div>
         <div><dt>Query Rewriting</dt><dd>{modelConfig.query_rewriting ? '사용' : '미사용'}</dd></div>
       </dl></details></article>
-      <article className="recent-runs-card"><header><h3>최근 평가 실행 이력</h3><span>연결 예정</span></header><div className="empty-monitoring-row">평가 실행 이력이 연결되면 표시됩니다.</div></article>
+      <article className="recent-runs-card"><header><h3>최근 평가 실행 이력</h3><span>최근 {monitoring?.recent_runs.length || 0}회 / 전체 {monitoring?.summary.run_count || 0}회</span></header><div className="rag-detail-table-wrap"><table className="rag-monitoring-runs"><thead><tr><th>평가 완료일</th><th>데이터셋 / 모델</th><th>문항</th><th>Answer Accuracy</th><th>Faithfulness</th><th>평균 처리시간</th></tr></thead><tbody>{(monitoring?.recent_runs || []).map(run => <tr key={run.id}><td>{new Date(run.evaluated_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</td><td>{run.dataset_name}<small>{run.model_name}</small></td><td>{run.question_count}</td><td>{metricValue(run.answer_accuracy)}</td><td>{metricValue(run.faithfulness)}</td><td>{run.average_latency_ms == null ? '—' : `${(run.average_latency_ms / 1000).toFixed(2)}초`}</td></tr>)}</tbody></table>{!monitoringLoading && !monitoring?.recent_runs.length && <div className="empty-monitoring-row">{monitoringError ? '이력을 불러오지 못했습니다.' : '선택한 기간에 저장된 평가 이력이 없습니다.'}</div>}</div></article>
     </div>
     <details className="rag-monitoring-technical"><summary>평가 상세 분석</summary>
     <article className="report-card rag-umap-card"><header><div><span className="rag-card-eyebrow">VECTOR SPACE</span><h2>BGE-M3 Embedding 분석</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div className="rag-embedding-layout"><div className="rag-umap-visual"><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /></div><aside className="rag-embedding-stats"><h3>Embedding 통계</h3><dl><div><dt>Embedding Model</dt><dd>{modelConfig.embedding_model || '—'}</dd></div><div><dt>Dimension</dt><dd>{modelConfig.embedding_dimensions ?? '—'}</dd></div><div><dt>Vector Count</dt><dd>{umapData.chunk_count ?? '—'}</dd></div><div><dt>Document Count</dt><dd>{umapData.document_count ?? '—'}</dd></div><div><dt>Projection</dt><dd>{umapData.input_shape?.join(' × ') || '—'} → {umapData.output_shape?.join(' × ') || '—'}</dd></div></dl></aside></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
@@ -289,7 +306,7 @@ function RagPerformanceReport({ evaluation, modelConfig, umapData, umapError, on
 
     {evaluationCases.length > 0 && <article className="report-card rag-detail-card"><header><div><span className="rag-card-eyebrow">CASE INSPECTION</span><h2>질문별 평가 결과</h2><p>평가 응답에 포함된 실제 문항·문서·성능 값</p></div><span>{evaluationCases.length} ROWS</span></header><div className="rag-detail-table-wrap"><table><thead><tr><th>질문</th><th>Expected document</th><th>Retrieved document</th><th>Retrieval</th><th>Answer</th><th>Faithfulness</th><th>답변 상태</th></tr></thead><tbody>{evaluationCases.map((item, index) => <tr key={item.question_id || item.id || index}><td><strong>{item.question_id || item.id || `#${index + 1}`}</strong><span>{item.question || '—'}</span></td><td>{listDocuments(item.expected_documents)}</td><td>{listDocuments(item.retrieved_documents)}</td><td><span className={`rag-result-pill ${item.hit === true ? 'pass' : item.hit === false ? 'fail' : ''}`}>{booleanLabel(item.hit)}</span></td><td>{typeof item.answer_correct === 'boolean' ? booleanLabel(item.answer_correct) : metricValue(item.answer_score)}</td><td>{metricValue(item.faithfulness)}</td><td>{typeof item.rejected === 'boolean' ? (item.rejected ? '답변 거절' : '답변 생성') : '—'}</td></tr>)}</tbody></table></div></article>}
     </details>
-    {!evaluation && <p className="rag-report-empty">ChatPage에서 RAG 평가를 완료하면 실제 결과가 이 영역에 표시됩니다.</p>}
+    {!evaluation && <p className="rag-report-empty">전체 문항이 완료되어 DB에 저장된 실행만 모니터링에 표시됩니다.</p>}
   </section>;
 }
 
@@ -774,7 +791,9 @@ export default function ReportPage() {
     setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, enterpriseTasks: activity.enterprise_tasks || [], meetings, ragQuestions: activity.rag_questions || [], agentLogs: activity.agent_logs || [], enterpriseUserCount: Number(activity.enterprise_user_count || 0) });
   }, []);
 
+  const [ragRefreshVersion, setRagRefreshVersion] = useState(0);
   const loadRagReport = useCallback(async () => {
+    setRagRefreshVersion(value => value + 1);
     try {
       const { data } = await apiClient.get('/rag/evaluate/latest');
       setRagEvaluation(data);
@@ -882,7 +901,12 @@ export default function ReportPage() {
     const reportDate = new Date().toISOString().slice(0, 10);
     document.title = `${reportName}-${reportDate}`;
     document.body.classList.add('report-printing');
+    const restoreRagDetails = prepareRagReportPrint(reportElement);
+    let restored = false;
     const restore = () => {
+      if (restored) return;
+      restored = true;
+      restoreRagDetails();
       document.title = originalTitle;
       document.body.classList.remove('report-printing');
       setPdfExporting(false);
@@ -1007,7 +1031,7 @@ export default function ReportPage() {
       </div>
       {ragReportTab === 'ablation'
         ? <RagAblationReport evaluation={ragEvaluation} modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
-        : <RagPerformanceReport evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
+        : <RagPerformanceReport refreshVersion={ragRefreshVersion} evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
       {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
       {SHOW_LEGACY_EVALUATIONS && <>

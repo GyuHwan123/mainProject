@@ -1244,6 +1244,14 @@
   }
 }
 .rag-monitoring {
+  .rag-monitoring-runs {
+    width: 100%;
+    border-collapse: collapse;
+    white-space: nowrap;
+    th, td { padding: 10px 12px; border-bottom: 1px solid #e7edf3; text-align: left; font-size: 11px; color: #627187; }
+    th { background: #f8fafc; color: #263a55; }
+    small { display: block; margin-top: 4px; color: #8794a5; }
+  }
   .rag-monitoring-note {
     margin: -4px 0 12px;
     color: #8794a5;
@@ -2496,6 +2504,25 @@
 }
 
 @media print {
+  // The on-screen table is a 480px scroll viewport. Let print pagination
+  // consume every row, including when the screen was scrolled to the bottom.
+  .rag-monitoring .rag-monitoring-technical,
+  .rag-monitoring .rag-detail-card,
+  .rag-monitoring .rag-detail-table-wrap {
+    display: block !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    break-inside: auto !important;
+  }
+  .rag-monitoring .rag-detail-table-wrap {
+    table { width: 100% !important; min-width: 0 !important; table-layout: fixed; }
+    thead { display: table-header-group; }
+    tbody { display: table-row-group; }
+    tr { break-inside: avoid; }
+    th, td { min-width: 0 !important; white-space: normal; overflow-wrap: anywhere; }
+    th { position: static !important; }
+  }
   @page {
     size: A4 landscape;
     margin: 7mm;

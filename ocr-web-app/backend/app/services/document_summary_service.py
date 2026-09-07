@@ -1,3 +1,5 @@
+import logging
+from time import perf_counter
 from typing import Any
 
 import httpx
@@ -10,6 +12,7 @@ from app.services.supabase_service import supabase_service
 
 SUMMARY_BATCH_CHARS = 3_500
 SUMMARY_MAX_PREDICT = 650
+logger = logging.getLogger("uvicorn.error")
 
 
 def _group_texts(texts: list[str], max_chars: int = SUMMARY_BATCH_CHARS) -> list[str]:
@@ -44,15 +47,38 @@ async def _generate_summary(prompt: str) -> str:
             "repeat_penalty": 1.08,
         },
     }
+    started_at = perf_counter()
+    empty_response = False
     try:
         async with httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL.rstrip("/"), timeout=180) as client:
             response = await client.post("/api/generate", json=payload)
             response.raise_for_status()
             summary = str(response.json().get("response") or "").strip()
         if not summary:
+            empty_response = True
             raise ValueError("empty summary response")
         return summary
     except (httpx.HTTPError, ValueError) as exc:
+        if isinstance(exc, httpx.TimeoutException):
+            reason = "timeout"
+        elif isinstance(exc, httpx.ConnectError):
+            reason = "connect_error"
+        elif isinstance(exc, httpx.HTTPStatusError):
+            reason = "http_status"
+        elif empty_response:
+            reason = "empty_response"
+        elif isinstance(exc, ValueError):
+            reason = "invalid_response"
+        else:
+            reason = "http_error"
+        logger.error(
+            "Ollama document summary failed reason=%s exception_type=%s "
+            "model=%s endpoint=/api/generate elapsed_seconds=%.2f "
+            "timeout_seconds=180 status_code=%s",
+            reason, type(exc).__name__, settings.RAG_LLM_MODEL,
+            perf_counter() - started_at,
+            exc.response.status_code if isinstance(exc, httpx.HTTPStatusError) else None,
+        )
         raise HTTPException(status_code=503, detail="문서 요약에 실패했습니다.") from exc
 
 

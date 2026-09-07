@@ -15,6 +15,7 @@ class ValidationStagesTests(unittest.TestCase):
                 with self.subTest(extraction=extraction_status, routing=routing_status):
                     namespace = {
                         'Any': object, 'RECEIPTS_MODEL_NAME': 'test',
+                        'normalize_expense_category': lambda v: v,
                         '_category_evidence_text': lambda r, t: t,
                         '_normalize_expense_category': lambda v, t: v,
                         '_clean_model_items': lambda v: v or [],
@@ -38,8 +39,12 @@ class ValidationStagesTests(unittest.TestCase):
                     structured = normalized['structured_data']
                     self.assertEqual(validation, original)
                     self.assertEqual(structured['extraction_validation'], original)
-                    self.assertEqual(structured['classification_validation']['decision'], routing_status)
-                    expected = extraction_status == routing_status == 'PASS'
+                    self.assertNotIn('classification_validation', structured)
+                    self.assertNotIn('category_validation', structured)
+                    self.assertEqual(normalized['status'], 'REVIEW')
+                    expected = False
+                    self.assertEqual(structured['automation_validation']['decision'],
+                                     'USER_CONFIRM')
                     self.assertEqual(structured['automation_validation']['decision'] == 'PASS', expected)
                     self.assertEqual(structured['needs_review'], not expected)
                     again = namespace['_normalize'](dict(structured), 'test.png', '')['structured_data']

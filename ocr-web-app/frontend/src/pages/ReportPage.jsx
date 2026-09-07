@@ -599,6 +599,14 @@ const AUTOMATION_REASON_LABELS = {
   DOCUMENT_CLASSIFIER_LOW_CONFIDENCE: '문서 분류 신뢰도 기준 미달',
   DOCUMENT_CLASSIFIER_SYNTHETIC_VALIDATION_ONLY: '문서 분류 운영 검증 미완료',
   DOCUMENT_CLASSIFIER_UNAVAILABLE: '문서 분류 모델 사용 불가',
+  CATEGORY_INVALID_VALUE: '허용되지 않은 카테고리',
+  CATEGORY_INVALID_EVIDENCE: '카테고리 근거 형식 오류',
+  CATEGORY_EVIDENCE_LIMIT_EXCEEDED: '카테고리 근거 개수·길이 제한 초과',
+  CATEGORY_EVIDENCE_NOT_IN_OCR: '카테고리 근거가 OCR 원문에 없음',
+  CATEGORY_SUGGESTION_MISSING: '카테고리 후보 없음',
+  CATEGORY_EVIDENCE_MISSING: '구매 품목·서비스 근거 확인 필요',
+  CATEGORY_CONTEXT_CONFLICT: '카테고리 후보와 원문 문맥 차이',
+  CATEGORY_ACCEPTANCE_NOT_VALIDATED: '카테고리 자동 통과 기준 운영 검증 미완료',
   TOTAL_AMOUNT_NOT_IN_OCR: '총액의 OCR 근거 없음',
   TOTAL_AMOUNT_UNCONFIRMED: '총 결제액 미확정',
   AMOUNT_RELATION_MISMATCH: '공급가액·세액·총액 불일치',
@@ -617,7 +625,7 @@ function AutomationMonitoring({ automation, loading, error }) {
   if (loading || error || !automation?.total) return <div className="empty-monitoring-row">{loading ? '불러오는 중' : error ? '통계를 불러오지 못했습니다.' : '선택한 기간의 평가 데이터가 없습니다.'}</div>;
   const stages = automation.stages || {};
   const selected = stages[stageKey] || {};
-  const choices = [['extraction_validation', '추출 검증'], ['classification_validation', '문서 분류'], ['final', '최종 자동처리']];
+  const choices = [['extraction_validation', '추출 검증']];
   return <div className="automation-monitoring">
     <div className="automation-stage-grid">{choices.map(([key, label]) => {
       const stage = stages[key] || {};
@@ -626,11 +634,11 @@ function AutomationMonitoring({ automation, loading, error }) {
         <small>통과 {stage.passed || 0} / 측정 {stage.measured || 0}건</small>
       </button>;
     })}</div>
-    <div className="automation-review-heading"><strong>{choices.find(([key]) => key === stageKey)[1]} 검토 사유</strong><span>검토 {selected.review || 0}건 · 미측정 {selected.unmeasured || 0}건</span></div>
+    <div className="automation-review-heading"><strong>{choices.find(([key]) => key === stageKey)[1]} 검토 사유</strong><span>사용자 확인 {selected.user_confirm || 0}건 · 검토 {selected.review || 0}건 · 미측정 {selected.unmeasured || 0}건</span></div>
     <div className="automation-reason-list">{selected.reasons?.length ? selected.reasons.map(({ code, count }) => <div className="automation-reason" key={code}>
       <span title={code}>{AUTOMATION_REASON_LABELS[code] || code}</span><div className="automation-reason-track"><i style={{ width: `${selected.measured ? count / selected.measured * 100 : 0}%` }} /></div><b>{count}건</b>
     </div>) : <p>{selected.measured ? '기록된 검토 사유가 없습니다.' : '단계별 판정이 없습니다. 재평가 후 확인할 수 있습니다.'}</p>}</div>
-    <p className="automation-monitoring-note">통과율은 판정이 기록된 평가 기준입니다. 사유는 중복될 수 있으며 품목 합계 불일치는 통합 집계합니다. 추출 통과율은 정답 정확도와 다릅니다.</p>
+    <p className="automation-monitoring-note">추출 검증은 참고 정보이며 최종 확인은 항상 사용자가 합니다. 통과율은 정답 정확도와 다르며 검토 사유는 중복될 수 있습니다.</p>
   </div>;
 }
 
@@ -642,6 +650,7 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
   const hasInitialMonitoring = initialMonitoring != null || Boolean(initialMonitoringError);
   const [dateRange, setDateRange] = useState(() => initialDateRange || createInitialMonitoringDateRange());
   const [period, setPeriod] = useState('7');
+  const [customDays, setCustomDays] = useState('7');
   const [monitoring, setMonitoring] = useState(() => initialMonitoring || { summary: {}, details: {}, comparison: { summary: {}, details: {} }, recent_runs: [], daily: [] });
   const [monitoringLoading, setMonitoringLoading] = useState(!hasInitialMonitoring);
   const [monitoringError, setMonitoringError] = useState(initialMonitoringError || '');
@@ -668,13 +677,26 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
   const changeDate = (field, value) => {
     filtersChangedRef.current = true;
     setDateRange((current) => ({ ...current, [field]: value }));
+    setCustomDays('');
+    setPeriod('custom');
+  };
+
+  const changeCustomDays = (value) => {
+    const days = Number(value);
+    if (!Number.isInteger(days) || days < 1 || days > 180) return;
+    filtersChangedRef.current = true;
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - days + 1);
+    setDateRange({ startDate: dateInputValue(startDate), endDate: dateInputValue(endDate) });
+    setCustomDays(value);
     setPeriod('custom');
   };
 
   const changePeriod = (value) => {
     filtersChangedRef.current = true;
     if (value === 'custom') {
-      setPeriod(value);
+      changeCustomDays(customDays || '7');
       return;
     }
     const endDate = new Date();
@@ -700,7 +722,10 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
           <option value="90">최근 90일</option>
           <option value="custom">사용자 지정</option>
         </select>
-        <button type="button" className="receipt-model-filter" disabled>모델: gemma3-4b-trained</button>
+        {period === 'custom' && <select aria-label="사용자 지정 조회 일수" value={customDays} onChange={(event) => changeCustomDays(event.target.value)}>
+          <option value="" disabled>조회 일수 선택</option>
+          {Array.from({ length: 180 }, (_, index) => index + 1).map((days) => <option key={days} value={String(days)}>최근 {days}일</option>)}
+        </select>}
         <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
       </div>
     </div>
@@ -717,7 +742,7 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
       <article><header><h3>필드별 정확도</h3><span>{periodLabel}</span></header><FieldAccuracyList details={monitoring.details} previousDetails={monitoring.comparison?.details} /></article>
       <article><header><h3>시스템 성능</h3><span>{periodLabel}</span></header><SystemPerformance system={monitoring.details?.system} /></article>
     </div>
-    <div className="receipt-monitoring-bottom"><article className="automation-monitoring-card"><header><h3>자동처리 검증 현황</h3><span>자동처리 검증 · {periodLabel}</span></header><AutomationMonitoring automation={monitoring.details?.automation} loading={monitoringLoading} error={monitoringError} /></article><article className="recent-runs-card"><header><h3>최근 실행 이력</h3><span>{monitoring.recent_runs?.length || 0}회</span></header><RecentRuns runs={monitoring.recent_runs || []} /></article></div>
+    <div className="receipt-monitoring-bottom"><article className="automation-monitoring-card"><header><h3>추출 검증 현황</h3><span>최종 사용자 확인 · {periodLabel}</span></header><AutomationMonitoring automation={monitoring.details?.automation} loading={monitoringLoading} error={monitoringError} /></article><article className="recent-runs-card"><header><h3>최근 실행 이력</h3><span>{monitoring.recent_runs?.length || 0}회</span></header><RecentRuns runs={monitoring.recent_runs || []} /></article></div>
   </section>;
 }
 

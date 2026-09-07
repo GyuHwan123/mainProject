@@ -66,7 +66,8 @@ def _ocr_structure_diagnostics(pages: list[dict[str, Any]] | None) -> dict[str, 
 def _pipeline_trace(structured: dict[str, Any]) -> dict[str, Any]:
     return {
         "llm": structured.get("llm_trace") or {},
-        "validation": structured.get("automation_validation") or {},
+        "validation": {"extraction_validation": structured.get("extraction_validation") or
+                       (structured.get("automation_validation") or {}).get("extraction_validation")},
     }
 
 
@@ -145,22 +146,24 @@ def _monitoring_metrics(evaluations: list[dict[str, Any]], items: list[dict[str,
 
 def _monitoring_automation(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
     stages = {}
-    for name in ("extraction_validation", "classification_validation", "final"):
-        measured = passed = 0
+    for name in ("extraction_validation",):
+        measured = passed = user_confirm = 0
         reasons: Counter[str] = Counter()
         for row in evaluations:
             validation = row.get("validation") or (row.get("pipeline_trace") or {}).get("validation") or {}
             stage = validation if name == "final" else validation.get(name)
-            if not isinstance(stage, dict) or stage.get("decision") not in {"PASS", "REVIEW"}:
+            if not isinstance(stage, dict) or stage.get("decision") not in {"PASS", "USER_CONFIRM", "REVIEW"}:
                 continue
             measured += 1
             passed += stage["decision"] == "PASS"
-            if stage["decision"] == "REVIEW":
+            user_confirm += stage["decision"] == "USER_CONFIRM"
+            if stage["decision"] != "PASS":
                 # Two validators report the same item sum issue. Count once per receipt.
                 reasons.update({"ITEM_SUM_TOTAL_MISMATCH" if code == "ITEM_SUM_MISMATCH" else code
                                 for code in stage.get("reasons", []) if isinstance(code, str)})
         stages[name] = {
-            "measured": measured, "passed": passed, "review": measured - passed,
+            "measured": measured, "passed": passed, "review": measured - passed - user_confirm,
+            "user_confirm": user_confirm,
             "unmeasured": len(evaluations) - measured,
             "rate": passed / measured if measured else None,
             "reasons": [{"code": code, "count": count} for code, count in reasons.most_common()],
@@ -375,12 +378,7 @@ def evaluate_existing_finance_record(
                 "score": score,
                 "ocr_impact": estimate_ocr_impact(text, truth, score),
                 "automation": {
-                    **(structured.get("automation_validation") or {}),
-                    "auto_approved": (structured.get("automation_validation") or {}).get("decision") == "PASS",
-                    "auto_approved_correct": bool(
-                        (structured.get("automation_validation") or {}).get("decision") == "PASS"
-                        and score.get("complete_match")
-                    ),
+                    "extraction_validation": structured.get("extraction_validation") or (structured.get("automation_validation") or {}).get("extraction_validation"),
                 },
                 "workbook": verify_workbook(record),
             },

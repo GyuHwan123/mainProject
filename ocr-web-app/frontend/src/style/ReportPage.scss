@@ -830,7 +830,7 @@
   font-size: 11px;
   .automation-stage-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     button {
       display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
@@ -863,7 +863,13 @@
 @media print {
   .automation-monitoring .automation-reason-list { max-height: none; overflow: visible; }
 }
+.recent-runs-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
 .recent-runs-card header {
+  flex-shrink: 0;
   justify-content: space-between;
   span {
     color: #8794a5;
@@ -871,7 +877,9 @@
   }
 }
 .recent-runs-scroll {
+  flex: 1 1 auto;
   height: 190px;
+  min-height: 0;
   overflow: auto;
 }
 .recent-runs-table {

@@ -267,6 +267,11 @@ def update_record(record_id: str, payload: FinanceRecordUpdate, user: User = Dep
         structured_data = dict(current.get("structured_data") or {})
         previous_decision = dict(structured_data.get("classification_decision") or {})
         structured_data["expense_category"] = expense_category
+        structured_data["category_confirmation"] = {
+            "confirmed_category": expense_category,
+            "confirmed_by": user.email,
+            "confirmed_at": datetime.now(timezone.utc).isoformat(),
+        }
         structured_data["doc_type"] = document_type
         if items is not None:
             structured_data["items"] = items

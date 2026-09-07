@@ -23,9 +23,15 @@ class MonitoringAutomationTests(unittest.TestCase):
         self.assertEqual(result['extraction_validation']['rate'], .5)
         self.assertEqual(result['extraction_validation']['unmeasured'], 2)
         self.assertEqual(result['extraction_validation']['reasons'], [{'code': 'ITEM_SUM_TOTAL_MISMATCH', 'count': 1}])
-        self.assertEqual(result['classification_validation']['measured'], 1)
-        self.assertEqual(result['final']['rate'], 1 / 3)
-        self.assertIsNone(aggregate([])['stages']['final']['rate'])
+        self.assertEqual(set(result), {'extraction_validation'})
+        self.assertIsNone(aggregate([])['stages']['extraction_validation']['rate'])
+        pending = aggregate([{'validation': {
+            'decision': 'USER_CONFIRM', 'reasons': ['CATEGORY_EVIDENCE_MISSING'],
+            'category_validation': {'decision': 'USER_CONFIRM', 'reasons': ['CATEGORY_EVIDENCE_MISSING']},
+        }}, {}])['stages']
+        self.assertEqual(set(pending), {'extraction_validation'})
+        self.assertEqual(pending['extraction_validation']['measured'], 0)
+        self.assertEqual(pending['extraction_validation']['unmeasured'], 2)
 
 
 if __name__ == '__main__':

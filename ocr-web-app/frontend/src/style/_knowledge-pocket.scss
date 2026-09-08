@@ -3,8 +3,8 @@
 .knowledge-pocket {
   position: fixed;
   z-index: 20;
-  right: max(28px, env(safe-area-inset-right));
-  bottom: max(28px, env(safe-area-inset-bottom));
+  right: calc(32px + env(safe-area-inset-right, 0px));
+  bottom: calc(144px + env(safe-area-inset-bottom, 0px));
   width: 52px;
   height: 52px;
   padding: 0;

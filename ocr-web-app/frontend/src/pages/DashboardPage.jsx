@@ -128,6 +128,7 @@ export default function DashboardPage() {
     const item = await updateDashboardMeeting(id, values);
     setMeetings((list) => list.map((old) => (old.id === id ? item : old)));
     setSelectedMeeting((old) => (old?.id === id ? item : old));
+    return item;
   };
 
   const removeMeeting = async (id) => {

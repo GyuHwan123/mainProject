@@ -891,6 +891,8 @@ export default function ReportPage() {
   const [ragReportTab, setRagReportTab] = useState(() => new URLSearchParams(window.location.search).get('ragReportTab') === 'overview' ? 'overview' : localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], enterpriseTasks: [], meetings: [], ragQuestions: [], agentLogs: [], enterpriseUserCount: 0 });
+  const [businessError, setBusinessError] = useState('');
+  const [financeHistoryError, setFinanceHistoryError] = useState('');
   const [loading, setLoading] = useState(SHOW_LEGACY_EVALUATIONS);
   const [initialLoading, setInitialLoading] = useState(true);
   const [initialMonitoring, setInitialMonitoring] = useState(null);
@@ -936,11 +938,13 @@ export default function ReportPage() {
       const { data } = await apiClient.get('/reports/evaluations', { params: { refresh: Date.now() } });
       setRuns(Array.isArray(data) ? data : []); setLastUpdated(new Date());
     } catch (requestError) {
+      setRuns([]);
       setEvaluationsError(requestError.response?.data?.detail || '평가 기록을 불러오지 못했습니다.');
     } finally { setLoading(false); }
   }, []);
 
   const loadBusinessStats = useCallback(async () => {
+    setBusinessError('');
     const results = await Promise.allSettled([
       apiClient.get('/ocr/history'), apiClient.get('/rag/documents'), apiClient.get('/chatbot/sessions'), apiClient.get('/chatbot/scraps'),
       apiClient.get('/finance/records'), apiClient.get('/dashboard/schedules'), apiClient.get('/dashboard/tasks'), apiClient.get('/dashboard/meetings'), apiClient.get('/reports/business-activity'),
@@ -949,16 +953,21 @@ export default function ReportPage() {
     const [documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, meetings] = values;
     const activity = results[8].status === 'fulfilled' && results[8].value.data ? results[8].value.data : {};
     setBusinessStats({ documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, enterpriseTasks: activity.enterprise_tasks || [], meetings, ragQuestions: activity.rag_questions || [], agentLogs: activity.agent_logs || [], enterpriseUserCount: Number(activity.enterprise_user_count || 0) });
+    const failedCount = results.filter((result) => result.status === 'rejected').length;
+    if (failedCount) setBusinessError(failedCount === results.length ? '기업 리포트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' : `일부 리포트 데이터를 불러오지 못했습니다. (${failedCount}개 요청 실패)`);
   }, []);
 
   const [ragRefreshVersion, setRagRefreshVersion] = useState(0);
   const loadRagReport = useCallback(async () => {
     setRagRefreshVersion(value => value + 1);
+    setError('');
     try {
       const { data } = await apiClient.get('/rag/evaluate/latest');
       setRagEvaluation(data);
       localStorage.setItem(RAG_EVALUATION_STORAGE_KEY, JSON.stringify(data));
     } catch (requestError) {
+      setRagEvaluation(null);
+      localStorage.removeItem(RAG_EVALUATION_STORAGE_KEY);
       if (requestError.response?.status !== 404) setError(requestError.response?.data?.detail || 'RAG 평가 결과를 불러오지 못했습니다.');
     }
   }, []);
@@ -970,11 +979,13 @@ export default function ReportPage() {
       setUmapData(data);
       localStorage.setItem('pic_to_text_rag_umap_latest', JSON.stringify(data));
     } catch (requestError) {
+      setUmapData(null);
       setUmapError(requestError.response?.data?.detail || 'UMAP 데이터를 불러오지 못했습니다.');
     }
   }, []);
 
   const loadInitialMonitoring = useCallback(async () => {
+    setInitialMonitoringError('');
     try {
       const { data } = await apiClient.get('/finance-evaluations/monitoring', {
         params: {
@@ -989,12 +1000,15 @@ export default function ReportPage() {
   }, [initialMonitoringDateRange]);
 
   const loadInitialFinanceHistory = useCallback(async () => {
+    setFinanceHistoryError('');
     const [batchResult, singleResult] = await Promise.allSettled([
       apiClient.get('/finance-evaluations/batches'),
       apiClient.get('/finance-evaluations/runs', { params: { evaluation_mode: 'SINGLE', limit: 30 } }),
     ]);
     setInitialBatchHistory(batchResult.status === 'fulfilled' && Array.isArray(batchResult.value.data) ? batchResult.value.data : []);
     setInitialSingleHistory(singleResult.status === 'fulfilled' && Array.isArray(singleResult.value.data) ? singleResult.value.data : []);
+    const failedCount = [batchResult, singleResult].filter((result) => result.status === 'rejected').length;
+    if (failedCount) setFinanceHistoryError(failedCount === 2 ? '평가 이력을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' : '일부 평가 이력을 불러오지 못했습니다.');
   }, []);
 
   useEffect(() => {
@@ -1164,6 +1178,7 @@ export default function ReportPage() {
         </div>
       </header>
       {error && <div className="report-access-error">{error}</div>}
+      {reportView === 'business' && businessError && <div className="report-access-error" role="alert">{businessError}</div>}
       {pdfExportError && <div className="report-access-error">{pdfExportError}</div>}
       {reportView === 'business' ? <BusinessReportDashboard stats={businessStats} loading={loading} onExportPdf={exportDashboardPdf} pdfExporting={pdfExporting} demoMode={isDeveloper} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
@@ -1171,11 +1186,11 @@ export default function ReportPage() {
           <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>
         </div>
         {receiptTab === 'experiment' ? (
-          <FinanceEvaluationPage
+          <>{financeHistoryError && <div className="report-access-error" role="alert">{financeHistoryError}</div>}<FinanceEvaluationPage
             embedded
             initialBatchHistory={initialBatchHistory}
             initialSingleHistory={initialSingleHistory}
-          />
+          /></>
         ) : (
           <ReceiptMonitoringDashboard
             onExportPdf={exportDashboardPdf}

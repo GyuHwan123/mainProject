@@ -37,3 +37,32 @@ def test_titleless_task_proposal_requires_clarification():
 
     assert result == {"requires_clarification": True, "missing": ["title"]}
     assert proposals == []
+
+
+def test_recent_meeting_can_be_prepared_as_today_schedule(monkeypatch):
+    meeting = SimpleNamespace(
+        title="검색 품질 개선 회의",
+        meetingAt="2026-09-08T11:00:00+09:00",
+        summary="진행 현황과 다음 액션 아이템을 합의했습니다.",
+    )
+    monkeypatch.setattr(agent_service.dashboard_service, "list_meetings", lambda _email: [meeting])
+
+    answer, used, proposals = agent_service._direct_dashboard_response(
+        "user@example.com", "최근 회의 오늘 일정에 반영해줘", [],
+    )
+
+    assert "일정으로 준비" in answer
+    assert used == ["get_recent_meetings"]
+    assert proposals[0]["type"] == "schedule"
+    assert proposals[0]["payload"]["title"] == meeting.title
+    assert proposals[0]["payload"]["date"] == "2026-09-08"
+
+
+def test_recent_meeting_task_request_is_not_downgraded_to_summary(monkeypatch):
+    monkeypatch.setattr(agent_service.dashboard_service, "list_meetings", lambda _email: [])
+
+    result = agent_service._direct_dashboard_response(
+        "user@example.com", "최근 회의 내용을 TASK에 반영해줘", [],
+    )
+
+    assert result is None

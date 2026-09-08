@@ -51,17 +51,25 @@ class SupabaseBase:
             raise HTTPException(status_code=502, detail=f"{message}: {response.text}")
 
     def get_public_user_id(self, email: str) -> str:
-        response = httpx.get(
-            f"{self.url}/rest/v1/{self.users_table}",
-            params={"select": "id", "email": f"eq.{email}", "limit": "1"},
-            headers=self._service_headers(),
-            timeout=15,
-        )
-        self._raise_for_supabase(response, "Supabase 사용자 조회 실패")
-        rows = response.json()
-        if not rows:
-            raise HTTPException(status_code=409, detail="Supabase users 테이블에서 사용자를 찾을 수 없습니다.")
-        return rows[0]["id"]
+        normalized_email = (email or "").strip().lower()
+        candidates = list(dict.fromkeys(filter(None, [normalized_email, (email or "").strip()])))
+        last_error = None
+        for candidate in candidates:
+            response = httpx.get(
+                f"{self.url}/rest/v1/{self.users_table}",
+                params={"select": "id", "email": f"eq.{candidate}", "limit": "1"},
+                headers=self._service_headers(),
+                timeout=15,
+            )
+            try:
+                self._raise_for_supabase(response, "Supabase 사용자 조회 실패")
+            except HTTPException as exc:
+                last_error = exc
+                continue
+            rows = response.json()
+            if rows:
+                return rows[0]["id"]
+        raise HTTPException(status_code=409, detail="Supabase users 테이블에서 사용자를 찾을 수 없습니다.") from last_error
 
     def get_subscription(self, user_email: str) -> dict[str, Any] | None:
         user_id = self.get_public_user_id(user_email)

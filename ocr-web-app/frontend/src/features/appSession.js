@@ -20,7 +20,7 @@ export function saveAppSession(session) {
   localStorage.setItem(EMAIL_KEY, session.user_email);
   if (session.user_name) localStorage.setItem(NAME_KEY, session.user_name);
   localStorage.setItem(ROLE_KEY, session.user_role || 'USER');
-  localStorage.setItem(SUBSCRIPTION_TIER_KEY, session.user_subscription_tier || 'FREE');
+  localStorage.setItem(SUBSCRIPTION_TIER_KEY, session.user_subscription_tier || session.subscription_tier || 'FREE');
 }
 
 export function clearAppSession() {
@@ -35,11 +35,13 @@ export function clearAppSession() {
 }
 
 export function getAppUser() {
+  const subscriptionTier = localStorage.getItem(SUBSCRIPTION_TIER_KEY) || 'FREE';
   return {
     name: localStorage.getItem(NAME_KEY) || '',
     email: localStorage.getItem(EMAIL_KEY) || '',
     role: localStorage.getItem(ROLE_KEY) || 'USER',
-    subscriptionTier: localStorage.getItem(SUBSCRIPTION_TIER_KEY) || 'FREE',
+    subscriptionTier,
+    subscription_tier: subscriptionTier,
   };
 }
 
@@ -47,7 +49,8 @@ export function saveAppUser(user) {
   if (user?.name) localStorage.setItem(NAME_KEY, user.name);
   if (user?.email) localStorage.setItem(EMAIL_KEY, user.email);
   if (user?.role) localStorage.setItem(ROLE_KEY, user.role);
-  if (user?.subscription_tier) localStorage.setItem(SUBSCRIPTION_TIER_KEY, user.subscription_tier);
+  const subscriptionTier = user?.subscription_tier || user?.subscriptionTier || 'FREE';
+  localStorage.setItem(SUBSCRIPTION_TIER_KEY, subscriptionTier);
 }
 
 export async function exchangeSocialSession(session) {

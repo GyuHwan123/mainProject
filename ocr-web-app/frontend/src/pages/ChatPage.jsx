@@ -438,6 +438,7 @@ function ChatPageContent() {
   });
   const [evaluationStatus, setEvaluationStatus] = useState('대기');
   const [evaluationRunning, setEvaluationRunning] = useState(false);
+  const [evaluationForceRestart, setEvaluationForceRestart] = useState(false);
   const [evaluationError, setEvaluationError] = useState('');
   const [evaluationProgress, setEvaluationProgress] = useState({
     status: 'idle', current: 0, total: 0, question_id: null,
@@ -911,7 +912,7 @@ function ChatPageContent() {
         if (typeof item.answerable !== 'boolean') throw new Error(`${label}: answerable은 boolean이어야 합니다.`);
       });
       if (Number(parsed.question_count) !== parsed.cases.length) throw new Error('question_count와 cases 개수가 일치하지 않습니다.');
-      setEvaluationDataset(parsed); setEvaluationStatus('대기');
+      setEvaluationDataset(parsed); setEvaluationForceRestart(false); setEvaluationStatus('대기');
       try {
         const { data } = await apiClient.post('/rag/evaluate/checkpoint-status', parsed);
         setEvaluationProgress(data);
@@ -937,7 +938,10 @@ function ChatPageContent() {
     }));
     try {
       const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, {
-        timeout: 36000000, params: { retry_failed: evaluationProgress.error_count > 0 },
+        timeout: 36000000, params: {
+          retry_failed: !evaluationForceRestart && evaluationProgress.error_count > 0,
+          force_restart: evaluationForceRestart,
+        },
       });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
       const completion = evaluationCompletion(data, evaluationDataset.cases.length);
@@ -1034,6 +1038,7 @@ function ChatPageContent() {
               <span className="evaluation-compact-status" role="status">{evaluationStatus}{evaluationRunning && ` · ${Number(evaluationProgress.progress_percent || 0).toFixed(1)}%`}</span>
               <span className="evaluation-compact-time">경과 {formatEvaluationDuration(evaluationProgress.elapsed_seconds)} · 남은 {evaluationRunning ? formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds) : '—'}</span>
               <button type="button" disabled={!evaluationDataset || evaluationRunning || evaluationProgress.configuration_matches === false} onClick={runRagEvaluation}>{evaluationRunning ? '평가 중…' : evaluationProgress.error_count > 0 ? `실패 ${evaluationProgress.error_count}문항 재시도` : '평가 실행'}</button>
+              <label><input type="checkbox" checked={evaluationForceRestart} disabled={evaluationRunning} onChange={(event) => setEvaluationForceRestart(event.target.checked)} /> 처음부터 다시 평가</label>
               <Link to="/reports?view=developer&developerReport=rag&ragReportTab=overview">리포트 ↗</Link>
             </div>
             {evaluationRunning && <div className="evaluation-compact-progress" role="progressbar" aria-label="평가 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>}

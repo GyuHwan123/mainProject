@@ -1295,6 +1295,11 @@
   }
 }
 .rag-monitoring {
+  // Reuse receipt panel, donut and field-list dimensions; only RAG row columns differ.
+  .rag-retrieval-bars > div {
+    grid-template-columns: minmax(62px, 1fr) minmax(28px, 1fr) 44px;
+  }
+
   .rag-monitoring-runs {
     width: 100%;
     border-collapse: collapse;

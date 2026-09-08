@@ -4,6 +4,19 @@ import httpx
 
 
 class RagEvaluationMixin:
+    def latest_rag_evaluation_run(self, user_email: str) -> dict | None:
+        """Read the user's latest persisted run without any date-window limit."""
+        user_id = self.get_public_user_id(user_email)
+        response = httpx.get(
+            f"{self.url}/rest/v1/rag_evaluation_runs",
+            params={"select": "*", "user_id": f"eq.{user_id}",
+                    "order": "evaluated_at.desc,id.desc", "limit": "1"},
+            headers=self._service_headers(), timeout=20,
+        )
+        self._raise_for_supabase(response, "RAG 최신 평가 이력 조회 실패")
+        rows = response.json()
+        return rows[0] if rows else None
+
     def list_rag_evaluation_runs(self, user_email: str, start_at: str, end_at: str) -> list[dict]:
         user_id = self.get_public_user_id(user_email)
         rows = []

@@ -129,22 +129,14 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
 }
 
 const RAG_KPI_COLORS = ['#1767df', ...RAG_TREND_METRICS.map(([, , color]) => color)];
+const RAG_DEMO_BATCH_ID = import.meta.env.VITE_RAG_DEMO_BATCH_ID || 'rag-demo-v1';
 
-function RagResponseDistribution({ evaluation, demoMode, monitoring, loading }) {
+function RagResponseDistribution({ demoMode, monitoring, loading }) {
   if (loading) return <div className="empty-monitoring-box"><span>불러오는 중</span></div>;
-  // These categories use explicit case outcomes, never inferred summary rates.
-  const counts = [0, 0, 0, 0];
-  if (demoMode && monitoring?.summary?.run_count > 0) {
-    // Independent illustrative sample; not measured outcomes or KPI-derived counts.
-    counts.splice(0, counts.length, 76, 9, 12, 3);
-  } else if (!demoMode) {
-    (evaluation?.cases || []).forEach((item) => {
-      if (item.rejected === true) counts[2] += 1;
-      else if (item.answer_correct === true) counts[0] += 1;
-      else if (item.answer_correct === false) counts[1] += 1;
-      else counts[3] += 1;
-    });
-  }
+  // Read the latest selected DB run; never infer absent distribution counts.
+  const distribution = monitoring?.recent_runs?.[0]?.summary_metrics?.response_distribution;
+  const counts = ['correct', 'incorrect', 'rejected', 'unknown'].map(key => distribution?.[key]);
+  if (!counts.every(count => Number.isInteger(count) && count >= 0)) return <div className="empty-monitoring-box"><span>응답 유형을 집계할 문항별 결과가 없습니다.</span></div>;
   const total = counts.reduce((sum, count) => sum + count, 0);
   if (!total) return <div className="empty-monitoring-box"><span>응답 유형을 집계할 문항별 결과가 없습니다.</span></div>;
   const labels = ['정답', '오답', '답변 거절', '판정 정보 없음'];
@@ -164,7 +156,7 @@ function RagResponseDistribution({ evaluation, demoMode, monitoring, loading }) 
 function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapData, umapError, onExportPdf, refreshVersion, demoMode = false }) {
   const [dateRange, setDateRange] = useState(() => {
     if (!demoMode) return createInitialMonitoringDateRange();
-    // Match the memory fixture's Korean calendar dates, regardless of browser timezone.
+    // Match the stored evaluation's Korean calendar dates, regardless of browser timezone.
     const endDate = new Date(Date.now() + 9 * 60 * 60 * 1000);
     const startDate = new Date(endDate);
     startDate.setUTCDate(startDate.getUTCDate() - 6);
@@ -196,7 +188,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
       return;
     }
     setMonitoringLoading(true);
-    apiClient.get('/rag/evaluation/monitoring', { params: { start_date: dateRange.startDate, end_date: dateRange.endDate, ...(demoMode ? { demo: true } : {}) }, timeout: 60000 })
+    apiClient.get('/rag/evaluation/monitoring', { params: { start_date: dateRange.startDate, end_date: dateRange.endDate, ...(demoMode ? { demo: true, demo_batch_id: RAG_DEMO_BATCH_ID } : {}) }, timeout: 60000 })
       .then(({ data }) => { if (active) setMonitoring(data); })
       .catch(error => { if (active) setMonitoringError(error.response?.data?.detail || 'RAG 평가 이력을 불러오지 못했습니다.'); })
       .finally(() => { if (active) setMonitoringLoading(false); });
@@ -316,7 +308,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
         <button type="button" className="receipt-pdf-download" onClick={onExportPdf}><IoDownloadOutline /> PDF 다운로드</button>
       </div>
     </div>
-    {/* <p id="rag-period-note" className="rag-monitoring-note">{demoMode ? 'DEMO · 메모리 시연 이력 · 응답 유형 분포는 별도의 100문항 예시입니다.' : '한국 시간·평가 완료일 기준 · 지표는 저장된 실행별 점수의 평균, 문항 수는 합계입니다.'}</p> */}
+    {/* <p id="rag-period-note" className="rag-monitoring-note">{demoMode ? 'DEMO · DB 시연 이력 · 응답 유형 분포는 별도의 100문항 예시입니다.' : '한국 시간·평가 완료일 기준 · 지표는 저장된 실행별 점수의 평균, 문항 수는 합계입니다.'}</p> */}
     {monitoringError && <p className="report-access-error" role="alert">{monitoringError}</p>}
     <div className="receipt-monitoring-kpis" aria-busy={monitoringLoading}>{kpis.map(([label, value, format], index) => <article key={label}>
       <h3>{label}</h3>

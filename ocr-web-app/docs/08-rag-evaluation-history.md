@@ -2,23 +2,37 @@
 
 ## 개발자 모니터링 시연
 
-개발자 또는 관리자 계정으로 개발자 모드의 RAG 종합 리포트를 열면 기본으로 최근 7일의 연속 메모리 시연 이력을 표시합니다. 별도 URL 파라미터 입력은 필요하지 않습니다. 메모리 생성 범위는 30일로 유지하여 기간 선택을 확장할 수 있습니다.
+개발자 또는 관리자 계정의 RAG 종합 리포트는 최근 7일의 DB 시연 배치를 조회합니다. 요청 중 메모리 데이터 생성은 하지 않습니다. 이번 전환에서는 seed 도구만 구현했으며 DB INSERT와 테스트/빌드는 실행하지 않았습니다. 저장 전에는 빈 화면이 정상입니다.
 
 `/reports?view=developer&developerReport=rag&ragReportTab=overview`
 
-API는 `GET /api/v1/rag/evaluation/monitoring?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&demo=true`입니다.
-화면이 자동으로 `demo=true`를 전달합니다. API 자체의 기본값은 `demo=false`이며 기존 DB 이력 조회 동작을 유지합니다. 서버의 개발자 권한 검사는 시연에도 동일하게 적용합니다. 일반 사용자 화면에는 적용하지 않습니다.
+API는 `GET /api/v1/rag/evaluation/monitoring?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&demo=true&demo_batch_id=rag-demo-v1`입니다.
+화면은 `demo=true`와 배치 ID를 자동 전달합니다. 기본 배치는 `rag-demo-v1`이며 프론트 환경변수 `VITE_RAG_DEMO_BATCH_ID`로 변경할 수 있습니다. 서버는 개발자 권한과 사용자 소유 범위 및 배치를 확인합니다. `demo=false` 조회와 최신 실제값 조회는 `configuration.demo=true` 행을 제외하고, demo 필드가 없는 기존 실제 행을 포함합니다.
 
-- 한국 시간 오늘까지 최근 30일의 연속 데이터를 생성하고, 요청 기간으로 필터링합니다.
-- 시연 응답에는 더미 행만 집계합니다. 실제 행과 섞어 실제 기간 평균을 변경하지 않습니다.
-- 사용자 본인의 최신 DB 평가를 읽기 전용으로 조회하고 마지막 시연 날짜의 기준으로 사용합니다.
-  원본 완료일은 `configuration.demo_anchor_evaluated_at`, 원본 ID는 `demo_anchor_id`에 기록합니다.
-- 실제 평가가 있으면 누락된 지표는 `null`로 유지합니다. 실제 이력이 전혀 없으면 그래프의 5개 지표만 합성 기본값을 사용합니다.
-  DB 조회 실패는 기존 오류 처리로 전달하며 실제 이력이 없는 것으로 간주하지 않습니다.
-- 행 ID는 `demo-rag-날짜`, 데이터셋명은 `[DEMO]` 접두사, 평가기 버전은 `rag-monitoring-demo-v1`로 구분합니다.
-- 기존 `summarize_runs()`와 차트를 그대로 사용합니다. DB 저장, checkpoint 접근, 평가 실행은 하지 않습니다.
-- `ragDemo` URL 파라미터는 사용하지 않습니다. 실제 이력은 개발자 권한으로 API에 `demo=false`를 전달하여 조회할 수 있습니다. 시연 옵션은 저장하지 않습니다.
-- 응답 유형 도넛은 시연 모드에서 별도의 100문항 예시(정답 76, 오답 9, 답변 거절 12, 판정 정보 없음 3)를 표시하며 실제 지표에서 역산하지 않습니다. 실제 모드에서는 실행 ID가 일치하는 최신 문항 결과의 `rejected`와 `answer_correct`만 집계하고, 문항 결과가 없으면 빈 상태를 표시합니다. 답변 거절 여부를 먼저 분류하므로 유형은 서로 중복되지 않습니다.
+- `rag_evaluation_demo.py`는 seed 전용 순수 payload 생성기입니다. 종료일을 명시하여 한국 시간 연속 7일의 7건을 준비합니다. 날짜는 저장 후 자동 이동하지 않습니다.
+- 사용자 본인의 최신 실제 DB 이력을 기준으로 마지막 값을 고정합니다. 누락 지표는 null이며, 실제 이력이 전혀 없을 때만 그래프 5개 지표에 합성 기본값을 사용합니다. DB 조회 오류는 무시하지 않습니다.
+- 사용자 UUID/배치 ID/7개 슬롯 기준 UUIDv5를 사용합니다. `[DEMO]` 데이터셋명, `configuration.demo=true`, `demo_batch_id`, 실제 기준 실행 정보, `evaluator_version=rag-monitoring-demo-v1`을 기록합니다.
+- `hit_at_4`는 DB 최상위 컬럼이 없어 `summary_metrics`에만 저장합니다. 다른 지표는 최상위 컬럼과 요약 JSON을 일치시킵니다.
+- 도넛은 최신 선택 DB 행의 `summary_metrics.response_distribution`에 저장된 `correct`/`incorrect`/`rejected`/`unknown`을 읽습니다. Seed는 기존 별도 100문항 예시 76/9/12/3과 예시 표식을 저장합니다. 실제 지표에서 역산하지 않으며, 실제 행에 분포가 없으면 빈 상태를 표시합니다.
+- 기존 `summarize_runs()`와 UI 디자인을 유지합니다. 실제 평가 저장 함수, 평가 실행, checkpoint는 변경하지 않습니다.
+
+### Seed 준비 및 저장
+
+백엔드 환경(의존성 및 Supabase 설정이 있는 `ocr-web-app/backend`)에서 실행합니다. 이메일은 실제 개발자/관리자 계정으로 바꾸고 종료일은 시연 날짜로 지정합니다.
+
+```powershell
+python scripts/seed_rag_monitoring_demo.py prepare --email developer@docunex.com --batch-id rag-demo-v1 --end-date 2026-09-08 --output rag-demo-v1.json
+```
+
+`prepare`는 사용자와 최신 실제값을 SELECT하고 검토용 JSON 파일만 만듭니다. 기존 파일은 덮어쓰지 않습니다. 생성 파일에 대상 사용자, 배치, 기준 실제값과 7건의 payload가 포함됩니다.
+
+아래는 검토한 파일을 실제 저장하는 별도 명령이며 이번 작업에서는 실행하지 않았습니다.
+
+```powershell
+python scripts/seed_rag_monitoring_demo.py insert --input rag-demo-v1.json
+```
+
+`insert`는 소유자/생성 규칙/기존 UUID의 데이터를 확인한 후 7건을 단일 POST로 INSERT합니다. `on_conflict=id`와 `resolution=ignore-duplicates`로 기존 UUID는 변경하지 않습니다. 같은 JSON 재실행은 중복을 만들지 않습니다. 같은 배치를 다른 날짜나 값으로 재사용하면 거부하므로 새 배치 ID와 새 파일을 준비하고 화면의 환경변수도 맞춰야 합니다. UPDATE/DELETE 및 checkpoint 접근은 없습니다.
 
 ## 적용 상태
 

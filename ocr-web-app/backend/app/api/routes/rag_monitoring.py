@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.routes.rag_evaluations import require_developer
 from app.models.user import User
 from app.services.rag_evaluation_history import METRIC_KEYS
-from app.services.rag_evaluation_demo import create_demo_runs
 from app.services.supabase_service import supabase_service
 
 router = APIRouter()
@@ -25,18 +24,17 @@ def summarize_runs(runs: list[dict]) -> dict:
 
 
 @router.get("/evaluation/monitoring")
-def rag_monitoring(start_date: date, end_date: date, user: User = Depends(require_developer), demo: bool = False) -> dict:
+def rag_monitoring(start_date: date, end_date: date, user: User = Depends(require_developer),
+                   demo: bool = False, demo_batch_id: str | None = None) -> dict:
     if end_date < start_date or (end_date - start_date).days > 365:
         raise HTTPException(status_code=422, detail="시작일~종료일은 최대 366일 범위로 선택하세요.")
-    if demo:
-        # Keep demo aggregates separate from real runs; no storage or evaluator calls.
-        latest = supabase_service.latest_rag_evaluation_run(user.email)
-        rows = create_demo_runs(start_date, end_date, latest)
-    else:
-        rows = supabase_service.list_rag_evaluation_runs(
-            user.email, datetime.combine(start_date, time.min, KST).isoformat(),
-            datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
-        )
+    if demo and (not demo_batch_id or not demo_batch_id.strip()):
+        raise HTTPException(status_code=422, detail="시연 이력 조회에는 demo_batch_id가 필요합니다.")
+    rows = supabase_service.list_rag_evaluation_runs(
+        user.email, datetime.combine(start_date, time.min, KST).isoformat(),
+        datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
+        **({"demo_batch_id": demo_batch_id} if demo else {}),
+    )
     runs = [row for row in rows if row.get("question_count", 0) > 0 and row.get("completed_count") == row.get("question_count")]
     daily = []
     grouped = {}

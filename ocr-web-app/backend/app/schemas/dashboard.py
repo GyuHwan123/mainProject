@@ -70,6 +70,7 @@ class Meeting(BaseModel):
     date:str
     title:str
     participants:str
+    manualParticipants:list[str]=Field(default_factory=list)
     summary:str
     tag:str
     taskIds:list[str]

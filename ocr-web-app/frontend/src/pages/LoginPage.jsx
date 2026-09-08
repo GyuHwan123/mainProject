@@ -146,7 +146,7 @@ export default function LoginPage() {
 
   return <div className="login-shell"><div className="login-window">
     <div className="login-visual" aria-hidden="true"><div className="login-illustration"><div className="cloud" /><div className="desktop-card" /><div className="person" /><div className="plant" /></div></div>
-    <div className="login-panel">{loading && <LoginLoading overlay />}<h1><img src="/DocAI.png" alt="DocAI" />환영합니다.</h1>
+    <div className="login-panel">{loading && <LoginLoading overlay title={recovering ? '재설정 메일을 보내는 중입니다' : '로그인 중입니다'} description={recovering ? '입력한 이메일을 확인하고 있습니다.' : '잠시만 기다려 주세요.'} ariaLabel={recovering ? '비밀번호 재설정 메일 전송 중' : '로그인 처리 중'} />}<h1><img src="/DocAI.png" alt="DocAI" />환영합니다.</h1>
       {!recovering && <div className="auth-toggle" role="group" aria-label="인증 방식 선택"><button type="button" className={mode === 'login' ? 'active' : ''} aria-pressed={mode === 'login'} disabled={loading} onClick={() => changeMode('login')}>로그인</button><button type="button" className={mode === 'signup' ? 'active' : ''} aria-pressed={mode === 'signup'} disabled={loading} onClick={() => changeMode('signup')}>회원가입</button></div>}
       {recovering && <div className="recover-heading">
         <strong>비밀번호 찾기</strong>

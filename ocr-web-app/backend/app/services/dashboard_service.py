@@ -33,12 +33,13 @@ class DashboardService:
     def _meeting(self,row:dict,participants:list[dict],tasks:list[dict],uid:str)->Meeting:
         when=datetime.fromisoformat(row["meeting_at"].replace("Z","+00:00")).astimezone(KST)
         names=[item["display_name"] for item in participants if item["meeting_id"]==row["id"] and item.get("invitation_status","ACCEPTED")!="DECLINED"]
+        manual_names=[item["display_name"] for item in participants if item["meeting_id"]==row["id"] and not item.get("user_id")]
         ids=[str(item["id"]) for item in tasks if item.get("meeting_id")==row["id"]]
         tag=f"업무 {len(ids)}건" if ids else row["status"]
         owned=str(row["created_by"])==str(uid)
         membership=next((item for item in participants if item["meeting_id"]==row["id"] and str(item.get("user_id"))==str(uid) and item.get("invitation_status","ACCEPTED")=="ACCEPTED"),None)
         permission="OWNER" if owned else (membership or {}).get("permission","VIEWER")
-        return Meeting(id=str(row["id"]),date=when.strftime("%Y.%m.%d"),meetingAt=when.isoformat(),title=row["title"],participants=", ".join(names) or "참석자 없음",summary=row.get("summary") or "요약이 없습니다.",tag=tag,taskIds=ids,content=row.get("content"),status=row["status"],canEdit=owned or permission=="EDITOR",canDelete=owned,accessLevel=permission,createdAt=row.get("created_at"))
+        return Meeting(id=str(row["id"]),date=when.strftime("%Y.%m.%d"),meetingAt=when.isoformat(),title=row["title"],participants=", ".join(names) or "참석자 없음",manualParticipants=manual_names,summary=row.get("summary") or "요약이 없습니다.",tag=tag,taskIds=ids,content=row.get("content"),status=row["status"],canEdit=owned or permission=="EDITOR",canDelete=owned,accessLevel=permission,createdAt=row.get("created_at"))
 
     def _share(self,row:dict)->dict:
         user_id=str(row["user_id"]) if row.get("user_id") else None
@@ -80,7 +81,7 @@ class DashboardService:
         rows=self._check(httpx.delete(self._url("schedules"),params={"id":f"eq.{item_id}","user_id":f"eq.{self._user_id(email)}"},headers=self._headers(True),timeout=15),"일정 삭제 실패");self._one(rows,"일정을 찾을 수 없습니다.")
 
     def list_tasks(self,email:str)->list[Task]:
-        uid=self._user_id(email);rows=self._check(httpx.get(self._url("tasks"),params={"select":"*","or":f"(owner_id.eq.{uid},assignee_id.eq.{uid})","order":"due_at.asc.nullslast"},headers=self._headers(),timeout=15),"업무 조회 실패");return [self._task(row) for row in rows]
+        uid=self._user_id(email);rows=self._check(httpx.get(self._url("tasks"),params={"select":"*","or":f"(owner_id.eq.{uid},assignee_id.eq.{uid})","order":"created_at.desc"},headers=self._headers(),timeout=15),"업무 조회 실패");return [self._task(row) for row in rows]
     def create_task(self,email:str,payload:TaskCreate,source:str="MANUAL")->Task:
         status=payload.status;body={"owner_id":self._user_id(email),"assignee_id":payload.assigneeId,"assignee_name":payload.assignee.strip(),"meeting_id":payload.meetingId,"title":payload.title.strip(),"description":payload.description,"due_at":self._due(payload.due),"status":status,"priority":payload.priority,"progress":100 if status=="DONE" else 0,"completed_at":datetime.now(timezone.utc).isoformat() if status=="DONE" else None,"source":source}
         rows=self._check(httpx.post(self._url("tasks"),json=body,headers=self._headers(True),timeout=15),"업무 저장 실패");return self._task(rows[0])
@@ -119,7 +120,8 @@ class DashboardService:
         return self._meeting(row,participant_rows,[],uid)
     def update_meeting(self,email:str,item_id:str,payload:MeetingUpdate)->Meeting:
         uid,row=self._meeting_access(email,item_id,edit=True);values=payload.model_dump(exclude_unset=True);participants=values.pop("participants",None);mapping={"meetingAt":"meeting_at"};body={mapping.get(k,k):(self._meeting_at(v) if k=="meetingAt" else v) for k,v in values.items()}
-        rows=self._check(httpx.patch(self._url("meetings"),params={"id":f"eq.{item_id}"},json=body,headers=self._headers(True),timeout=15),"회의록 수정 실패");row=self._one(rows,"회의록을 찾을 수 없습니다.")
+        if body:
+            rows=self._check(httpx.patch(self._url("meetings"),params={"id":f"eq.{item_id}"},json=body,headers=self._headers(True),timeout=15),"회의록 수정 실패");row=self._one(rows,"회의록을 찾을 수 없습니다.")
         if participants is not None:
             self._check(httpx.delete(self._url("meeting_participants"),params={"meeting_id":f"eq.{item_id}","user_id":"is.null"},headers=self._headers(),timeout=15),"참석자 수정 실패")
             if participants:self._check(httpx.post(self._url("meeting_participants"),json=[{"meeting_id":item_id,"display_name":name,"role":"ATTENDEE"} for name in dict.fromkeys(participants)],headers=self._headers(True),timeout=15),"참석자 저장 실패")

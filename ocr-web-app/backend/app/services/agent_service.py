@@ -21,6 +21,57 @@ REFERENCE_WORDS=("그거","그것","그 일","그 일정","방금","위 내용",
 def _history_text(history:list[dict])->str:
     return " ".join(str(item.get("content", "")) for item in history)
 
+def _direct_dashboard_response(email:str,message:str,history:list[dict])->tuple[str,list[str],list[dict]]|None:
+    """Handle common dashboard requests without a slow local-LLM round trip."""
+    normalized=" ".join(message.split())
+    context=_history_text(history)
+    wants_task=any(word in normalized for word in ("할 일","할일","업무","task","TASK"))
+    wants_schedule=any(word in normalized for word in ("일정","캘린더","schedule","SCHEDULE"))
+    wants_create=any(word in normalized for word in ("추가","넣어","등록","반영"))
+
+    # 회의를 일정에 반영하라는 요청은 최근 회의 조회 답변을 반복하지 않고
+    # 바로 확인 가능한 캘린더 제안으로 반환한다.
+    if wants_schedule and wants_create and "회의" in normalized:
+        meetings=dashboard_service.list_meetings(email)
+        if not meetings:return "반영할 회의록이 없습니다.",["get_recent_meetings"],[]
+        meeting=next((item for item in meetings if item.title and item.title in context),meetings[0])
+        meeting_at=datetime.fromisoformat(meeting.meetingAt)
+        target_date=datetime.now(meeting_at.tzinfo).date().isoformat() if "오늘" in normalized else meeting_at.date().isoformat()
+        proposal={"type":"schedule","payload":{"title":meeting.title,"date":target_date,"time":meeting_at.strftime("%H:%M"),"description":meeting.summary}}
+        return "최근 회의를 일정으로 준비했습니다. 아래 내용을 확인한 뒤 캘린더에 추가해 주세요.",["get_recent_meetings"],[proposal]
+
+    if wants_task and wants_create and any(word in normalized for word in REFERENCE_WORDS):
+        tasks=dashboard_service.list_tasks(email)
+        schedules=dashboard_service.list_schedules(email)
+        candidates=[]
+        for item in [*tasks,*schedules]:
+            position=context.rfind(item.title) if item.title else -1
+            if position>=0:candidates.append((position,item))
+        if candidates:
+            item=max(candidates,key=lambda value:value[0])[1]
+            due=getattr(item,"date",None) or (f"{datetime.now().year}-{item.due.replace('.', '-')}" if getattr(item,"due",None) else None)
+            proposal={"type":"task","payload":{"title":item.title,"assignee":getattr(item,"assignee",None) or "담당자 미정","due":due,"priority":getattr(item,"priority",None) or "NORMAL"}}
+            return "방금 안내한 항목을 할 일로 준비했습니다. 제목을 확인한 뒤 추가해 주세요.",["get_week_tasks","get_today_schedules"],[proposal]
+
+    if wants_task and any(word in normalized for word in ("알려","뭔지","목록","확인","이번 주","오늘")):
+        tasks=[item for item in dashboard_service.list_tasks(email) if item.status!="DONE"][:5]
+        if not tasks:return "현재 진행할 할 일이 없습니다.",["get_week_tasks"],[]
+        lines=[f"{index}. {item.title} · {item.assignee} · {item.due or '마감일 미정'}" for index,item in enumerate(tasks,1)]
+        return "진행할 할 일을 알려드릴게요.\n\n"+"\n".join(lines),["get_week_tasks"],[]
+
+    if "오늘" in normalized and "일정" in normalized and any(word in normalized for word in ("알려","뭔지","확인")):
+        today=datetime.now().date().isoformat()
+        events=[item for item in dashboard_service.list_schedules(email) if item.date==today]
+        if not events:return "오늘 등록된 일정은 없습니다.",["get_today_schedules"],[]
+        return "오늘 일정을 알려드릴게요.\n\n"+"\n".join(f"{index}. {item.time} {item.title}" for index,item in enumerate(events,1)),["get_today_schedules"],[]
+
+    if "최근" in normalized and "회의" in normalized and not wants_create:
+        meetings=dashboard_service.list_meetings(email)
+        if not meetings:return "아직 등록된 회의록이 없습니다.",["get_recent_meetings"],[]
+        meeting=meetings[0]
+        return f"최근 회의를 정리해 드릴게요.\n\n📌 {meeting.title}\n🗓️ {meeting.date} · 👥 {meeting.participants}\n\n핵심 내용\n{meeting.summary}",["get_recent_meetings"],[]
+    return None
+
 def _referenced_schedule(email:str,message:str,history:list[dict]):
     """Resolve short follow-up requests such as '그거 할 일에 넣어줘'."""
     if not any(word in message for word in REFERENCE_WORDS):return None
@@ -61,6 +112,11 @@ async def chat(email:str,message:str,history:list[dict]|None=None)->AgentChatRes
     started=time.perf_counter();used:list[str]=[];proposals:list[dict]=[];model=settings.DASHBOARD_AGENT_MODEL
     system="당신은 사내 AI 업무 비서입니다. 반드시 제공된 도구로 로그인 사용자의 실제 일정, 업무, 회의를 조회하세요. 생성 요청은 내용을 확인한 뒤 create 도구를 사용하세요. 답변은 간결한 한국어로 작성하세요."
     safe_history=[{"role":item.get("role"),"content":str(item.get("content",""))[:2000]} for item in (history or [])[-8:] if item.get("role") in {"user","assistant"}]
+    direct=_direct_dashboard_response(email,message,safe_history)
+    if direct:
+        answer,used,proposals=direct
+        dashboard_service.save_agent_log(email,message,answer,used,model,latency=round((time.perf_counter()-started)*1000))
+        return AgentChatResponse(answer=answer,usedTools=used,proposedActions=proposals)
     messages=[{"role":"system","content":system},*safe_history,{"role":"user","content":message}]
     try:
         async with httpx.AsyncClient(base_url=settings.OLLAMA_BASE_URL,timeout=90) as client:
@@ -102,8 +158,9 @@ async def chat(email:str,message:str,history:list[dict]|None=None)->AgentChatRes
         if wants_meeting_actions and not reference_task_applied:
             recent=dashboard_service.list_meetings(email)
             if recent:
+                selected_meeting=next((item for item in recent if item.title and item.title in context_text),recent[0])
                 if "get_recent_meetings" not in used:used.append("get_recent_meetings")
-                extracted=await extract_meeting_actions(email,recent[0].id)
+                extracted=await extract_meeting_actions(email,selected_meeting.id)
                 for task in extracted.tasks:
                     proposals.append({"type":"task","payload":{"title":task.get("title") or "회의 후속 업무","assignee":task.get("assignee") or "담당자 미정","due":task.get("due"),"priority":task.get("priority") or "NORMAL"}})
                 for schedule in extracted.schedules:
@@ -114,8 +171,8 @@ async def chat(email:str,message:str,history:list[dict]|None=None)->AgentChatRes
                 wants_calendar="캘린더" in message or "일정" in message
                 has_schedule=any(item["type"]=="schedule" for item in proposals)
                 if wants_calendar and not has_schedule:
-                    meeting_at=datetime.fromisoformat(recent[0].meetingAt)
-                    proposals.append({"type":"schedule","payload":{"title":recent[0].title,"date":meeting_at.date().isoformat(),"time":meeting_at.strftime("%H:%M"),"description":recent[0].summary}})
+                    meeting_at=datetime.fromisoformat(selected_meeting.meetingAt)
+                    proposals.append({"type":"schedule","payload":{"title":selected_meeting.title,"date":meeting_at.date().isoformat(),"time":meeting_at.strftime("%H:%M"),"description":selected_meeting.summary}})
                     answer="최근 회의 자체를 캘린더 일정으로 준비했습니다. 아래 날짜와 시간을 확인한 뒤 추가해 주세요."
         elif "get_recent_meetings" in used:
             recent=dashboard_service.list_meetings(email)

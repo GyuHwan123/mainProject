@@ -226,6 +226,22 @@
   .receipt-confidence-card.is-review .confidence-score-summary > em { color: #a65a09; background: #fff0d8; }
 
   .receipt-matching-issues {
+    .receipt-format-review {
+      margin: 12px;
+      padding: 14px;
+      display: flex;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px solid #dfe9f3;
+      border-radius: 8px;
+      background: #f5f9fd;
+      .receipt-format-review-icon { flex: 0 0 auto; width: 18px; height: 18px; color: #477ca7; }
+      .receipt-format-review-copy { flex: 1 1 200px; min-width: 0; }
+      strong { display: block; color: #304e6c; font-size: 11px; font-weight: 750; line-height: 1.6; }
+      p { margin: 4px 0 0; color: #697e93; font-size: 10px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+      .receipt-format-review-badge { flex: 0 0 auto; padding: 4px 7px; border-radius: 5px; background: #e7eff8; color: #486b90; font-size: 9px; font-weight: 700; line-height: 1.5; }
+    }
     > header > span.warning { color: #ad6518; }
     > header > span.ok { color: #14835b; }
     ul { margin: 0; padding: 0; list-style: none; }
@@ -4023,6 +4039,9 @@
   .finance-review-check span { flex: 1; }
   .finance-review-check em { padding: 4px 7px; border-radius: 12px; color: #9a6100; background: #fff0cb; font-style: normal; font-weight: 800; }
   .finance-review-check em.valid { color: #19734a; background: #dff3e9; }
+  .finance-review-check em.invalid { color: #b33c32; background: #fce9e6; }
+  .finance-review-check + .finance-review-check { margin-top: 8px; }
+  .finance-review-check .finance-review-difference { display: block; margin-top: 4px; color: #b33c32; font-size: 11px; }
   footer { position: sticky; bottom: -22px; z-index: 2; margin: 19px -24px -22px; padding: 13px 24px 22px; display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #e6ebf0; background: rgba(255, 255, 255, .96); box-shadow: 0 -8px 18px rgba(28, 55, 78, .05); backdrop-filter: blur(5px); }
   footer button { padding: 10px 16px; border: 1px solid #d2dce5; border-radius: 8px; color: #476074; background: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
   footer button.save { border-color: #1f659a; color: #fff; background: #1f659a; }

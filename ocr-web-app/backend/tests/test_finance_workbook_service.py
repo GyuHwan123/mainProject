@@ -16,7 +16,8 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
         for kind, name in SHEET_NAMES.items():
             with self.subTest(kind=kind):
                 wb = load_workbook(BytesIO(build_finance_workbook([self.record(kind)])))
-                self.assertEqual(len(wb.sheetnames), 5)
+                self.assertEqual(wb.sheetnames, [name, '영수증요약'])
+                self.assertEqual(wb.active.title, name)
                 ws = wb[name]
                 headers = [c.value for c in ws[11]]
                 self.assertNotIn('공급가액', headers)
@@ -30,7 +31,7 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
                 wb.close()
 
     def test_finance_status_dropdown_survives_excel_export(self):
-        wb = load_workbook(BytesIO(build_finance_workbook([self.record()])))
+        wb = load_workbook(BytesIO(build_finance_workbook([self.record(kind) for kind in SHEET_NAMES])))
         for name in SHEET_NAMES.values():
             with self.subTest(sheet=name):
                 ws = wb[name]
@@ -41,6 +42,19 @@ class FinanceWorkbookServiceTests(unittest.TestCase):
                 self.assertIn('F5', validation.sqref)
                 self.assertFalse(validation.showDropDown)
                 self.assertTrue(validation.showErrorMessage)
+        wb.close()
+
+    def test_mixed_export_keeps_only_selected_types_and_summary(self):
+        records = [self.record('WELFARE_BENEFIT'), self.record('EXPENSE_REPORT')]
+        wb = load_workbook(BytesIO(build_finance_workbook(records)))
+        self.assertEqual(wb.sheetnames, [SHEET_NAMES['EXPENSE_REPORT'], SHEET_NAMES['WELFARE_BENEFIT'], '영수증요약'])
+        self.assertEqual(wb.active.title, SHEET_NAMES['WELFARE_BENEFIT'])
+        self.assertEqual(wb['영수증요약'].max_row, 3)
+        wb.close()
+
+    def test_empty_export_keeps_summary(self):
+        wb = load_workbook(BytesIO(build_finance_workbook([])))
+        self.assertEqual(wb.sheetnames, ['영수증요약'])
         wb.close()
 
     def test_missing_values_and_zero(self):

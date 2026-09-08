@@ -10,7 +10,7 @@ from app.services.rag_service import can_access_company_rag
 from app.services.supabase_service import supabase_service
 
 
-SUMMARY_BATCH_CHARS = 3_500
+SUMMARY_BATCH_CHARS = 6_000
 SUMMARY_MAX_PREDICT = 650
 logger = logging.getLogger("uvicorn.error")
 

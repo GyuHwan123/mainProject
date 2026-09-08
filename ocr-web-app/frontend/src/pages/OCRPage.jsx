@@ -692,6 +692,9 @@ export default function OCRPage() {
   const [sessionReceiptCategory, setSessionReceiptCategory] = useState('ALL');
   const [sessionReceiptDateOrder, setSessionReceiptDateOrder] = useState('desc');
   const [receiptArchiveLoading, setReceiptArchiveLoading] = useState(false);
+  const [receiptArchiveError, setReceiptArchiveError] = useState('');
+  const receiptArchiveRequestRef = useRef(null);
+  useEffect(() => () => receiptArchiveRequestRef.current?.abort(), []);
   const [receiptArchiveDeleteRequest, setReceiptArchiveDeleteRequest] = useState(null);
   const [receiptArchiveDeleting, setReceiptArchiveDeleting] = useState(false);
   const [receiptArchiveDeleteError, setReceiptArchiveDeleteError] = useState('');
@@ -1637,14 +1640,27 @@ export default function OCRPage() {
   };
 
   const loadReceiptArchive = async (category = receiptArchiveCategory) => {
+    receiptArchiveRequestRef.current?.abort();
+    const controller = new AbortController();
+    receiptArchiveRequestRef.current = controller;
     setReceiptArchiveLoading(true);
+    setReceiptArchiveError('');
     try {
-      const { data } = await apiClient.get('/finance/receipt-archive', { params: category === 'ALL' ? {} : { category } });
+      const { data } = await apiClient.get('/finance/receipt-archive', {
+        params: category === 'ALL' ? {} : { category },
+        timeout: 60000,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      if (!Array.isArray(data)) throw new Error('Invalid receipt archive response');
       setReceiptArchive(Array.isArray(data) ? data : []);
-    } catch {
-      setReceiptArchive([]);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      setReceiptArchiveError(error.code === 'ECONNABORTED'
+        ? '기록 조회 시간이 초과되었습니다. 다시 시도해 주세요.'
+        : '영수증 기록을 불러오지 못했습니다. 다시 시도해 주세요.');
     } finally {
-      setReceiptArchiveLoading(false);
+      if (receiptArchiveRequestRef.current === controller) setReceiptArchiveLoading(false);
     }
   };
 
@@ -1988,10 +2004,10 @@ export default function OCRPage() {
                 </div>
               </section>
               <section className="receipt-saved-section">
-                <div className="receipt-saved-heading"><span>기록 보관함</span><div><button type="button" disabled={receiptArchiveLoading || receiptArchiveDeleting || !receiptArchive.length} onClick={() => requestReceiptArchiveDelete('all')} title="기록 보관함 전체 삭제" aria-label="기록 보관함 전체 삭제"><IoTrashOutline /></button><b>{filteredReceiptArchive.length}</b></div></div>
+                <div className="receipt-saved-heading"><span>기록 보관함</span><div><button type="button" disabled={receiptArchiveLoading || receiptArchiveDeleting || Boolean(receiptArchiveError) || !receiptArchive.length} onClick={() => requestReceiptArchiveDelete('all')} title="기록 보관함 전체 삭제" aria-label="기록 보관함 전체 삭제"><IoTrashOutline /></button><b>{receiptArchiveLoading || receiptArchiveError ? '-' : filteredReceiptArchive.length}</b></div></div>
                 <div className="receipt-archive-filter"><select aria-label="영수증 카테고리" value={receiptArchiveCategory} onChange={(event) => setReceiptArchiveCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="날짜 정렬" value={receiptArchiveDateOrder} onChange={(event) => setReceiptArchiveDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
                 <div className="receipt-archive-list">
-                  {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : filteredReceiptArchive.map((item) => {
+                  {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : receiptArchiveError ? <p role="alert">{receiptArchiveError}<button type="button" onClick={() => loadReceiptArchive()}>다시 시도</button></p> : filteredReceiptArchive.map((item) => {
                     const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
                     return <div className="receipt-saved-item" key={item.id}><button type="button" className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
                       {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
@@ -1999,7 +2015,7 @@ export default function OCRPage() {
                       <em>{financeMoney(item.total_amount)}</em>
                     </button><button type="button" className="receipt-saved-delete" disabled={receiptArchiveLoading || receiptArchiveDeleting} onClick={() => requestReceiptArchiveDelete('single', item)} title="기록 삭제" aria-label={`${item.source_file_name || item.merchant || '영수증'} 기록 삭제`}>×</button></div>;
                   })}
-                  {!receiptArchiveLoading && !filteredReceiptArchive.length && <p>선택한 카테고리에 저장된 영수증이 없습니다.</p>}
+                  {!receiptArchiveLoading && !receiptArchiveError && !filteredReceiptArchive.length && <p>선택한 카테고리에 저장된 영수증이 없습니다.</p>}
                 </div>
               </section>
             </div>

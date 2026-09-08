@@ -1,6 +1,7 @@
 """Finance HTTP endpoints; receipt processing lives in the service layer."""
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, Field
 from app.services.finance_email_review import create_review, activate_review, read_review, confirm_review
 from threading import Lock
@@ -199,11 +200,25 @@ def receipt_archive(category: str | None = None, user: User = Depends(require_cu
         document = item.get("ocr_documents") or {}
         if isinstance(document, list):
             document = document[0] if document else {}
-        storage_path = item.get("source_storage_path") or document.get("file_url")
         if not item.get("source_file_name") and document.get("file_name"):
             item["source_file_name"] = document["file_name"]
-        item["image_url"] = supabase_service.create_document_signed_url(storage_path) if storage_path else None
+        item["image_url"] = None
         unique_archive.append(item)
+    def attach_image_url(item: dict[str, Any]) -> None:
+        document = item.get("ocr_documents") or {}
+        if isinstance(document, list):
+            document = document[0] if document else {}
+        storage_path = item.get("source_storage_path") or document.get("file_url")
+        if storage_path:
+            try:
+                item["image_url"] = supabase_service.create_document_signed_url(storage_path)
+            except Exception:
+                # An unavailable preview must not hide the receipt itself.
+                item["image_url"] = None
+
+    if unique_archive:
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            list(executor.map(attach_image_url, unique_archive))
     return unique_archive
 
 

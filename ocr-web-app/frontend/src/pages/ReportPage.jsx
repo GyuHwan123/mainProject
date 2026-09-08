@@ -15,6 +15,7 @@ const RAG_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_evaluation_latest';
 const RAG_LLM_EVALUATION_STORAGE_KEY = 'pic_to_text_rag_llm_evaluation_latest';
 const SHOW_RAG_LLM_EVALUATION = false;
 const SHOW_LEGACY_EVALUATIONS = false;
+const MONITORING_REQUEST_TIMEOUT_MS = 60000;
 
 const createInitialMonitoringDateRange = () => {
   const endDate = new Date();
@@ -798,7 +799,10 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
     if (hasInitialMonitoring && !filtersChangedRef.current) return undefined;
     let active = true;
     setMonitoringLoading(true); setMonitoringError('');
-    apiClient.get('/finance-evaluations/monitoring', { params: monitoringQueryParams }).then(({ data }) => {
+    apiClient.get('/finance-evaluations/monitoring', {
+      params: monitoringQueryParams,
+      timeout: MONITORING_REQUEST_TIMEOUT_MS,
+    }).then(({ data }) => {
       if (active) setMonitoring(data);
     }).catch((requestError) => {
       if (active) setMonitoringError(requestError.response?.data?.detail || '모니터링 데이터를 불러오지 못했습니다.');
@@ -883,11 +887,12 @@ export default function ReportPage() {
   const navigate = useNavigate();
   const user = getAppUser();
   const isDeveloper = ['DEVELOPER', 'ADMIN'].includes(user.role) || user.email === 'developer@docunex.com';
-  const requestedDeveloperReport = new URLSearchParams(window.location.search).get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
-  const requestedReceiptTab = new URLSearchParams(window.location.search).get('receiptTab') || localStorage.getItem('pic_to_text_receipt_report_tab');
   const [reportView, setReportView] = useState(isDeveloper ? 'developer' : 'business');
-  const [developerReport, setDeveloperReport] = useState(requestedDeveloperReport === 'receipt' ? 'receipt' : 'rag');
-  const [receiptTab, setReceiptTab] = useState(requestedReceiptTab === 'experiment' ? 'experiment' : 'monitoring');
+  // Developers start from the operational health view on every report-page
+  // entry. Saved choices and deep-link parameters must not hide current
+  // receipt failures, but users can still switch reports after the page loads.
+  const [developerReport, setDeveloperReport] = useState('receipt');
+  const [receiptTab, setReceiptTab] = useState('monitoring');
   const [ragReportTab, setRagReportTab] = useState(() => new URLSearchParams(window.location.search).get('ragReportTab') === 'overview' ? 'overview' : localStorage.getItem('pic_to_text_rag_report_tab') === 'ablation' ? 'ablation' : 'overview');
   const [runs, setRuns] = useState([]);
   const [businessStats, setBusinessStats] = useState({ documentCount: 0, ragCount: 0, readyRagCount: 0, sessionCount: 0, scrapCount: 0, recentDocuments: [], documents: [], ragDocuments: [], sessions: [], scraps: [], financeRecords: [], schedules: [], tasks: [], enterpriseTasks: [], meetings: [], ragQuestions: [], agentLogs: [], enterpriseUserCount: 0 });
@@ -922,14 +927,12 @@ export default function ReportPage() {
 
   useEffect(() => {
     if (location.pathname !== '/reports') return;
-    const params = new URLSearchParams(location.search);
-    const requestedView = params.get('view');
-    const requestedReport = params.get('developerReport') || localStorage.getItem('pic_to_text_developer_report');
-    const requestedTab = params.get('receiptTab') || localStorage.getItem('pic_to_text_receipt_report_tab');
-    if (isDeveloper && (requestedView === 'developer' || requestedReport === 'receipt')) setReportView('developer');
-    if (isDeveloper && requestedReport === 'receipt') setDeveloperReport('receipt');
-    if (isDeveloper && requestedReport === 'receipt') setReceiptTab(requestedTab === 'experiment' ? 'experiment' : 'monitoring');
-  }, [isDeveloper, location.pathname, location.search]);
+    if (isDeveloper) {
+      setReportView('developer');
+      setDeveloperReport('receipt');
+      setReceiptTab('monitoring');
+    }
+  }, [isDeveloper, location.pathname]);
   const [modelConfig, setModelConfig] = useState({ model: '미설정', embedding_model: '미설정', embedding_dimensions: null, rerank_model: null, prompt_version: '미설정', top_k: null, chunk_target_chars: null, ready: false });
 
   const loadEvaluations = useCallback(async () => {
@@ -992,6 +995,7 @@ export default function ReportPage() {
           start_date: initialMonitoringDateRange.startDate,
           end_date: initialMonitoringDateRange.endDate,
         },
+        timeout: MONITORING_REQUEST_TIMEOUT_MS,
       });
       setInitialMonitoring(data);
     } catch (requestError) {

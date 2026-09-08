@@ -1,4 +1,5 @@
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta
 from math import ceil
 from typing import Any, Literal
@@ -244,23 +245,34 @@ def get_finance_monitoring(
         raise HTTPException(status_code=422, detail="종료일은 시작일보다 빠를 수 없습니다.")
     if (end_date - start_date).days > 365:
         raise HTTPException(status_code=422, detail="조회 기간은 최대 366일까지 선택할 수 있습니다.")
-    start_at = datetime.combine(start_date, time.min, KST).isoformat()
-    end_exclusive = datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat()
-    data = supabase_service.list_finance_monitoring_data(
-        user.email, start_at=start_at, end_at=end_exclusive, model_name=model_name,
-    )
-    evaluations = data["evaluations"]
-    items = data["items"]
-    details = _monitoring_details(evaluations, items)
     period_days = (end_date - start_date).days + 1
     previous_end_date = start_date - timedelta(days=1)
     previous_start_date = previous_end_date - timedelta(days=period_days - 1)
-    previous_data = supabase_service.list_finance_monitoring_data(
-        user.email,
-        start_at=datetime.combine(previous_start_date, time.min, KST).isoformat(),
-        end_at=datetime.combine(start_date, time.min, KST).isoformat(),
-        model_name=model_name,
-    )
+    current_range = {
+        "start_at": datetime.combine(start_date, time.min, KST).isoformat(),
+        "end_at": datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
+    }
+    previous_range = {
+        "start_at": datetime.combine(previous_start_date, time.min, KST).isoformat(),
+        "end_at": datetime.combine(start_date, time.min, KST).isoformat(),
+    }
+
+    def load_period(date_range: dict[str, str]) -> dict[str, Any]:
+        return supabase_service.list_finance_monitoring_data(
+            user.email, **date_range, model_name=model_name,
+        )
+
+    # Current and comparison periods are independent; each repository call also
+    # runs its three table reads concurrently, so all six reads can overlap.
+    with ThreadPoolExecutor(max_workers=2, thread_name_prefix="finance-monitoring-period") as executor:
+        current_future = executor.submit(load_period, current_range)
+        previous_future = executor.submit(load_period, previous_range)
+        data = current_future.result()
+        previous_data = previous_future.result()
+
+    evaluations = data["evaluations"]
+    items = data["items"]
+    details = _monitoring_details(evaluations, items)
 
     daily = []
     cursor = start_date

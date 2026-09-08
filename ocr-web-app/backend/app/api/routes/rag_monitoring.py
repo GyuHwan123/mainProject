@@ -33,9 +33,29 @@ def rag_monitoring(start_date: date, end_date: date, user: User = Depends(requir
     rows = supabase_service.list_rag_evaluation_runs(
         user.email, datetime.combine(start_date, time.min, KST).isoformat(),
         datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
-        **({"demo_batch_id": demo_batch_id} if demo else {}),
     )
     runs = [row for row in rows if row.get("question_count", 0) > 0 and row.get("completed_count") == row.get("question_count")]
+    recent_runs = list(runs)
+    if demo:
+        demo_rows = supabase_service.list_rag_evaluation_runs(
+            user.email, datetime.combine(start_date, time.min, KST).isoformat(),
+            datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
+            demo_batch_id=demo_batch_id,
+        )
+        demo_runs = [row for row in demo_rows if row.get("question_count", 0) > 0
+                     and row.get("completed_count") == row.get("question_count")]
+        actual_days = {
+            datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date()
+            for row in runs
+        }
+        # Select whole runs by Korean calendar day. Never fill missing metrics
+        # on an actual evaluation with synthetic scores or average both sources.
+        runs.extend(row for row in demo_runs if
+                    datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date()
+                    not in actual_days)
+        recent_runs.extend(demo_runs)
+        recent_runs.sort(key=lambda row: (
+            datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")), row["id"]), reverse=True)
     daily = []
     grouped = {}
     for row in runs:
@@ -46,4 +66,5 @@ def rag_monitoring(start_date: date, end_date: date, user: User = Depends(requir
         daily.append({"date": day.isoformat(), **summarize_runs(grouped.get(day.isoformat(), []))})
         day += timedelta(days=1)
     return {"start_date": start_date, "end_date": end_date, "summary": summarize_runs(runs),
-            "daily": daily, "recent_runs": runs[:50], "aggregation": "run_mean", "timezone": "Asia/Seoul"}
+            "daily": daily, "recent_runs": recent_runs[:50], "recent_run_count": len(recent_runs),
+            "aggregation": "run_mean", "timezone": "Asia/Seoul"}

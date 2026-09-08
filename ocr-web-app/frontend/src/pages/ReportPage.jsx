@@ -129,12 +129,11 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
 }
 
 const RAG_KPI_COLORS = ['#1767df', ...RAG_TREND_METRICS.map(([, , color]) => color)];
-const RAG_DEMO_BATCH_ID = import.meta.env.VITE_RAG_DEMO_BATCH_ID || 'rag-demo-v1';
 
 function RagResponseDistribution({ demoMode, monitoring, loading }) {
   if (loading) return <div className="empty-monitoring-box"><span>불러오는 중</span></div>;
   // Read the latest selected DB run; never infer absent distribution counts.
-  const distribution = monitoring?.recent_runs?.[0]?.summary_metrics?.response_distribution;
+  const distribution = (demoMode ? monitoring?.baseline_runs?.[0] : monitoring?.recent_runs?.[0])?.summary_metrics?.response_distribution;
   const counts = ['correct', 'incorrect', 'rejected', 'unknown'].map(key => distribution?.[key]);
   if (!counts.every(count => Number.isInteger(count) && count >= 0)) return <div className="empty-monitoring-box"><span>응답 유형을 집계할 문항별 결과가 없습니다.</span></div>;
   const total = counts.reduce((sum, count) => sum + count, 0);
@@ -188,7 +187,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
       return;
     }
     setMonitoringLoading(true);
-    apiClient.get('/rag/evaluation/monitoring', { params: { start_date: dateRange.startDate, end_date: dateRange.endDate, ...(demoMode ? { demo: true, demo_batch_id: RAG_DEMO_BATCH_ID } : {}) }, timeout: 60000 })
+    apiClient.get('/rag/evaluation/monitoring', { params: { start_date: dateRange.startDate, end_date: dateRange.endDate, ...(demoMode ? { demo: true } : {}) }, timeout: 60000 })
       .then(({ data }) => { if (active) setMonitoring(data); })
       .catch(error => { if (active) setMonitoringError(error.response?.data?.detail || 'RAG 평가 이력을 불러오지 못했습니다.'); })
       .finally(() => { if (active) setMonitoringLoading(false); });
@@ -231,7 +230,6 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
     ['Unanswerable Rejection', metrics?.unanswerableRejectionRate],
   ];
   const questionTypeMetrics = useMemo(() => {
-    if (!evaluation || !Array.isArray(evaluation.cases)) return [];
     const labels = {
       single_document_fact: '단일 문서 사실 검색',
       paraphrase_semantic: '의미 변형 질문',
@@ -240,6 +238,33 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
       unanswerable: '답변 불가 질문',
     };
     const order = Object.keys(labels);
+    // These cards select their own source; do not change recent_runs or KPI data.
+    const actualRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true);
+    const readTypeSummary = (run) => {
+      const storedTypes = run?.summary_metrics?.question_type_metrics;
+      if (!Array.isArray(storedTypes)) return [];
+      return storedTypes.filter(item => item && typeof item.question_type === 'string'
+        && Number.isInteger(item.count) && item.count > 0
+        && (item.answer_accuracy == null || (Number.isFinite(item.answer_accuracy)
+          && item.answer_accuracy >= 0 && item.answer_accuracy <= 1)))
+        .map(item => ({
+          type: item.question_type,
+          label: labels[item.question_type] || item.question_type,
+          count: item.count, accuracy: item.answer_accuracy, hit: null, mrr: null,
+        }));
+    };
+    const actualTypes = readTypeSummary(actualRun);
+    if (actualTypes.length) return actualTypes;
+    // Only use case details belonging to the latest actual run, never an older result.
+    if (!evaluation || evaluation.history?.id !== actualRun?.id || !evaluation.cases?.length) {
+      if (!demoMode) return [];
+      for (const run of monitoring?.baseline_runs || []) {
+        if (run.configuration?.demo !== true) continue;
+        const fallbackTypes = readTypeSummary(run);
+        if (fallbackTypes.length) return fallbackTypes;
+      }
+      return [];
+    }
     const grouped = evaluation.cases.reduce((result, item) => {
       const type = item.question_type || 'unspecified';
       if (!result[type]) result[type] = [];
@@ -261,7 +286,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
         const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
         return { type, label: labels[type] || type, count: cases.length, accuracy: average(correctness), hit: average(hitValues), mrr: average(mrrValues) };
       });
-  }, [evaluation]);
+  }, [evaluation, monitoring, demoMode]);
   const questionComposition = useMemo(() => {
     const colors = ['#4f7fe8', '#43aa78', '#8b68d8', '#ef9d45', '#e0636d'];
     const total = questionTypeMetrics.reduce((sum, item) => sum + item.count, 0);
@@ -332,10 +357,11 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
       <article className="recent-runs-card"><header><h3>최근 평가 실행 이력</h3><span>최근 {monitoring?.recent_runs.length || 0}회 / 전체 {monitoring?.recent_run_count ?? monitoring?.summary.run_count ?? 0}회</span></header><div className="rag-detail-table-wrap"><table className="rag-monitoring-runs"><thead><tr><th>평가 완료일</th><th>데이터셋 / 모델</th><th>문항</th><th>Answer Accuracy</th><th>Faithfulness</th><th>평균 처리시간</th></tr></thead><tbody>{(monitoring?.recent_runs || []).map(run => <tr key={run.id}><td>{new Date(run.evaluated_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })}</td><td>{run.dataset_name}<small>{run.model_name}</small></td><td>{run.question_count}</td><td>{metricValue(run.answer_accuracy)}</td><td>{metricValue(run.faithfulness)}</td><td>{run.average_latency_ms == null ? '—' : `${(run.average_latency_ms / 1000).toFixed(2)}초`}</td></tr>)}</tbody></table>{!monitoringLoading && !monitoring?.recent_runs.length && <div className="empty-monitoring-row">{monitoringError ? '이력을 불러오지 못했습니다.' : '선택한 기간에 저장된 평가 이력이 없습니다.'}</div>}</div></article>
     </div>
     <details className="rag-monitoring-technical"><summary>평가 상세 분석</summary>
-    <article className="report-card"><header><h3>최근 실행 문항 구성</h3><span>{questionComposition.total}문항</span></header>{questionComposition.rows.length ? <div className="rag-monitoring-composition"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map(item => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="empty-monitoring-box"><span>문항별 상세는 DB 이력에 저장하지 않습니다.</span></div>}</article>
-    <article className="report-card rag-umap-card"><header><div><span className="rag-card-eyebrow">VECTOR SPACE</span><h2>BGE-M3 Embedding 분석</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div className="rag-embedding-layout"><div className="rag-umap-visual"><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /></div><aside className="rag-embedding-stats"><h3>Embedding 통계</h3><dl><div><dt>Embedding Model</dt><dd>{modelConfig.embedding_model || '—'}</dd></div><div><dt>Dimension</dt><dd>{modelConfig.embedding_dimensions ?? '—'}</dd></div><div><dt>Vector Count</dt><dd>{umapData.chunk_count ?? '—'}</dd></div><div><dt>Document Count</dt><dd>{umapData.document_count ?? '—'}</dd></div><div><dt>Projection</dt><dd>{umapData.input_shape?.join(' × ') || '—'} → {umapData.output_shape?.join(' × ') || '—'}</dd></div></dl></aside></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
-
+    <div className="rag-question-summary-row">
+    <article className="report-card rag-composition-card"><header><div><span className="rag-card-eyebrow">QUESTION COMPOSITION</span><h2>최근 실행 문항 구성</h2><p>문항 유형별 구성과 비율</p></div><span>{questionComposition.total}문항</span></header>{questionComposition.rows.length ? <div className="rag-monitoring-composition"><div className="rag-composition-donut" style={{ background: questionComposition.gradient }}><span>총 평가<strong>{questionComposition.total}문항</strong></span></div><div className="rag-composition-legend">{questionComposition.rows.map(item => <div key={item.type}><i style={{ background: item.color }} /><span>{item.label}</span><strong>{item.count}문항 · {item.percentage.toFixed(1)}%</strong></div>)}</div></div> : <div className="empty-monitoring-box"><span>문항별 상세는 DB 이력에 저장하지 않습니다.</span></div>}</article>
     <article className="report-card rag-type-card"><header><div><span className="rag-card-eyebrow">QUESTION CATEGORIES</span><h2>문항 유형별 성능</h2><p>각 문항 유형별 최종 답변 정확도</p></div><span>{questionTypeMetrics.length ? `${questionTypeMetrics.length} TYPES` : 'NO DATA'}</span></header>{questionTypeMetrics.length ? <div className="rag-type-bars">{questionTypeMetrics.map((item) => <section key={item.type} title={`${item.label} · ${item.count}문항 · Hit@K ${metricValue(item.hit)} · MRR ${metricValue(item.mrr)}`}><div><strong>{item.label}</strong><span>{item.count}문항</span></div><i><b style={{ width: item.accuracy == null ? '0%' : `${Math.max(0, Math.min(100, item.accuracy * 100))}%` }} /></i><em>{metricValue(item.accuracy)}</em><small>Hit@K {metricValue(item.hit)} · MRR {metricValue(item.mrr)}</small></section>)}</div> : <div className="model-evaluation-empty"><strong>평가 결과 없음</strong><p>문항별 question_type 평가 결과가 필요합니다.</p></div>}</article>
+    </div>
+    <article className="report-card rag-umap-card"><header><div><span className="rag-card-eyebrow">VECTOR SPACE</span><h2>BGE-M3 Embedding 분석</h2><p>현재 Supabase 기업 공용문서 embedding 기준</p></div><span>CURRENT CORPUS</span></header>{umapData?.image_data_url ? <div className="rag-embedding-layout"><div className="rag-umap-visual"><img src={umapData.image_data_url} alt="현재 기업 RAG corpus BGE-M3 임베딩 UMAP" /></div><aside className="rag-embedding-stats"><h3>Embedding 통계</h3><dl><div><dt>Embedding Model</dt><dd>{modelConfig.embedding_model || '—'}</dd></div><div><dt>Dimension</dt><dd>{modelConfig.embedding_dimensions ?? '—'}</dd></div><div><dt>Vector Count</dt><dd>{umapData.chunk_count ?? '—'}</dd></div><div><dt>Document Count</dt><dd>{umapData.document_count ?? '—'}</dd></div><div><dt>Projection</dt><dd>{umapData.input_shape?.join(' × ') || '—'} → {umapData.output_shape?.join(' × ') || '—'}</dd></div></dl></aside></div> : <div className="model-evaluation-empty"><strong>현재 corpus UMAP을 생성할 수 없습니다.</strong><p>{umapError || 'UMAP 데이터를 불러오는 중입니다.'}</p></div>}</article>
 
     {evaluationCases.length > 0 && <article className="report-card rag-detail-card"><header><div><span className="rag-card-eyebrow">CASE INSPECTION</span><h2>질문별 평가 결과</h2><p>평가 응답에 포함된 실제 문항·문서·성능 값</p></div><span>{evaluationCases.length} ROWS</span></header><div className="rag-detail-table-wrap"><table><thead><tr><th>질문</th><th>Expected document</th><th>Retrieved document</th><th>Retrieval</th><th>Answer</th><th>Faithfulness</th><th>답변 상태</th></tr></thead><tbody>{evaluationCases.map((item, index) => <tr key={item.question_id || item.id || index}><td><strong>{item.question_id || item.id || `#${index + 1}`}</strong><span>{item.question || '—'}</span></td><td>{listDocuments(item.expected_documents)}</td><td>{listDocuments(item.retrieved_documents)}</td><td><span className={`rag-result-pill ${item.hit === true ? 'pass' : item.hit === false ? 'fail' : ''}`}>{booleanLabel(item.hit)}</span></td><td>{typeof item.answer_correct === 'boolean' ? booleanLabel(item.answer_correct) : metricValue(item.answer_score)}</td><td>{metricValue(item.faithfulness)}</td><td>{typeof item.rejected === 'boolean' ? (item.rejected ? '답변 거절' : '답변 생성') : '—'}</td></tr>)}</tbody></table></div></article>}
     </details>

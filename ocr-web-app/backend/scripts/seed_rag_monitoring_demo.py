@@ -1,16 +1,17 @@
-"""Prepare a reviewable seven-row JSON seed; INSERT only with the insert command."""
+"""Prepare a fixed 30-day pre-experiment baseline; INSERT only explicitly."""
 
 import argparse
 import json
 import sys
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.services.rag_evaluation_demo import create_demo_seed
+from app.services.rag_evaluation_demo import create_demo_seed, KST
+from app.services.rag_demo_baseline import BASELINE_ID
 from app.services.supabase_service import supabase_service as repository
 
 
@@ -26,8 +27,6 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     prepare = commands.add_parser("prepare", help="SELECT only; write a new local JSON file")
     prepare.add_argument("--email", required=True)
-    prepare.add_argument("--batch-id", default="rag-demo-v1")
-    prepare.add_argument("--end-date", required=True, type=date.fromisoformat)
     prepare.add_argument("--output", required=True, type=Path)
     insert = commands.add_parser("insert", help="Explicitly INSERT the reviewed JSON; never UPDATE")
     insert.add_argument("--input", required=True, type=Path)
@@ -35,18 +34,25 @@ def main() -> None:
 
     if args.command == "prepare":
         user_id = developer_id(args.email)
-        anchor = repository.latest_rag_evaluation_run(args.email)
-        rows = create_demo_seed(user_id, args.batch_id, args.end_date, anchor)
-        manifest = {"format": "rag-demo-seed-v1", "email": args.email,
-                    "user_id": user_id, "batch_id": args.batch_id,
-                    "end_date": args.end_date.isoformat(), "anchor": anchor, "rows": rows}
+        existing_baseline = repository.list_rag_evaluation_runs(args.email, None, None, demo_batch_id=BASELINE_ID)
+        if existing_baseline:
+            raise ValueError("Baseline already exists. Keep it fixed; reuse the original JSON for an idempotent retry.")
+        actual = repository.list_rag_evaluation_runs(args.email, None, None)
+        if not actual:
+            raise ValueError("An actual evaluation is required to establish the experiment start date")
+        anchor = min(actual, key=lambda row: (datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")), row["id"]))
+        end_date = datetime.fromisoformat(anchor["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date() - timedelta(days=1)
+        rows = create_demo_seed(user_id, BASELINE_ID, end_date, anchor)
+        manifest = {"format": "rag-demo-baseline", "email": args.email,
+                    "user_id": user_id, "batch_id": BASELINE_ID,
+                    "end_date": end_date.isoformat(), "anchor": anchor, "rows": rows}
         with args.output.open("x", encoding="utf-8") as output:
             json.dump(manifest, output, ensure_ascii=False, indent=2, allow_nan=False)
         print(f"Prepared {len(rows)} rows: {args.output}. No database writes.")
         return
 
     manifest = json.loads(args.input.read_text(encoding="utf-8"))
-    if manifest.get("format") != "rag-demo-seed-v1":
+    if manifest.get("format") != "rag-demo-baseline" or manifest.get("batch_id") != BASELINE_ID:
         raise ValueError("Unsupported seed format")
     user_id = developer_id(manifest["email"])
     if user_id != manifest["user_id"]:
@@ -55,10 +61,14 @@ def main() -> None:
                             date.fromisoformat(manifest["end_date"]), manifest["anchor"])
     if rows != manifest["rows"]:
         raise ValueError("Seed rows differ from the declared seed metadata; prepare a new file")
+    actual = repository.list_rag_evaluation_runs(manifest["email"], None, None)
+    first_day = min((datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date()
+                     for row in actual), default=None)
+    if first_day != date.fromisoformat(manifest["end_date"]) + timedelta(days=1):
+        raise ValueError("Actual experiment start differs from the prepared baseline; no rows written")
     url = f"{repository.url}/rest/v1/rag_evaluation_runs"
     headers = repository._service_headers()
-    # UUIDs identify the seven slots of a user/batch. Reject changed dates or
-    # values under the same batch rather than silently mixing old and new seeds.
+    # UUIDs identify fixed baseline slots. Never replace existing dates/values.
     existing = httpx.get(url, params={"select": "*", "id": f"in.({','.join(row['id'] for row in rows)})"},
                          headers=headers, timeout=20)
     repository._raise_for_supabase(existing, "시연 배치 중복 확인 실패")
@@ -70,7 +80,7 @@ def main() -> None:
                 actual = datetime.fromisoformat(actual.replace("Z", "+00:00"))
                 value = datetime.fromisoformat(value)
             if actual != value:
-                raise ValueError("Existing UUID has different data; use a new batch ID. No rows written.")
+                raise ValueError("Existing baseline differs. Keep the original baseline; no rows written.")
     response = httpx.post(
         url, params={"on_conflict": "id"},
         headers={**headers, "Prefer": "resolution=ignore-duplicates,return=minimal"},

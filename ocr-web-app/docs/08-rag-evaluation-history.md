@@ -1,42 +1,33 @@
 # RAG 평가 실행 이력
 
-## 개발자 모니터링 시연
+## 고정 DEMO baseline과 실제 이력
 
-개발자 시연 조회는 선택 기간의 실제 이력과 지정 DEMO 배치를 함께 읽습니다. 그래프/KPI는 한국 시간 날짜별로 실제 완료 평가가 있으면 그날의 실제 실행만 사용하고, 실제 완료 평가가 없는 날짜만 DEMO로 채웁니다. 같은 날 실제 실행이 여러 건이면 기존 `summarize_runs()`의 실행별 평균을 그대로 사용하며, 실제 행의 누락 지표를 DEMO로 보충하지 않습니다. 새 실제 평가가 DB에 저장되면 다음 조회/새로고침부터 해당 날짜에 우선 반영됩니다.
+- 최근 실행 목록은 로그인 사용자 본인의 실제 DB 이력을 날짜/50건 제한 없이 최신순으로 표시합니다. 새 평가가 저장되면 다음 조회/새로고침에 포함됩니다. DEMO가 실제 행을 밀어내지 않습니다.
+- 그래프/KPI는 선택 기간의 실제 완료 실행을 기존 `summarize_runs()`로 집계합니다. 한국 시간 최초 실제 평가일 이전 30일만 고정 baseline으로 보완합니다. 실제 실험 시작 후 빈 날짜는 DEMO로 채우지 않습니다.
+- `recent_runs`는 실제 이력 전용, `baseline_runs`는 문항 유형/시연 분포 카드용 별도 데이터입니다. 실제 상세 결과가 있으면 기존 문항 분석은 그대로 사용할 수 있습니다.
+- 고정 식별자는 `rag-monitoring-baseline`입니다. 프론트의 `VITE_RAG_DEMO_BATCH_ID`와 요청의 배치 선택은 더 이상 사용하지 않습니다. 예전 v1/v2/v3 DEMO는 DB에 그대로 두되 baseline으로 조회하지 않습니다.
+- `latest actual`은 DEMO를 제외합니다. 조회 중 데이터 생성/INSERT/UPDATE/DELETE는 없습니다. 실제 행, checkpoint, 평가 실행 로직은 변경하지 않습니다.
+- 실제 이력이 없으면 baseline도 생성/표시하지 않습니다. 새 평가가 추가돼도 baseline 날짜나 UUID를 이동시키지 않습니다. 기본 최근 7일에 baseline 기간이 포함되지 않으면 실제 데이터만 표시되는 것이 정상이며, 기간을 넓히면 과거 baseline을 볼 수 있습니다.
 
-`recent_runs`는 같은 기간의 실제 이력과 지정 DEMO 배치를 최신순으로 합친 최근 50건입니다. `recent_run_count`는 이 목록의 제한 전 전체 건수이며, 그래프에 선택된 실행 수인 `summary.run_count`와 구분합니다. `demo=false` 및 최신 실제값 조회의 DEMO 제외 조건은 유지합니다. 저장된 DEMO가 없는 날짜는 새로 생성하지 않습니다.
+## 일회성 baseline 준비
 
-개발자 또는 관리자 계정의 RAG 종합 리포트는 최근 7일의 DB 시연 배치를 조회합니다. 요청 중 메모리 데이터 생성은 하지 않습니다. 이번 전환에서는 seed 도구만 구현했으며 DB INSERT와 테스트/빌드는 실행하지 않았습니다. 저장 전에는 빈 화면이 정상입니다.
+이번 구조 변경에서는 DB 쓰기나 seed 실행을 하지 않았습니다. baseline이 아직 DB에 없으면 기존 실제 데이터만 표시됩니다.
 
-`/reports?view=developer&developerReport=rag&ragReportTab=overview`
-
-API는 `GET /api/v1/rag/evaluation/monitoring?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD&demo=true&demo_batch_id=rag-demo-v1`입니다.
-화면은 `demo=true`와 배치 ID를 자동 전달합니다. 기본 배치는 `rag-demo-v1`이며 프론트 환경변수 `VITE_RAG_DEMO_BATCH_ID`로 변경할 수 있습니다. 서버는 개발자 권한과 사용자 소유 범위 및 배치를 확인합니다. `demo=false` 조회와 최신 실제값 조회는 `configuration.demo=true` 행을 제외하고, demo 필드가 없는 기존 실제 행을 포함합니다.
-
-- `rag_evaluation_demo.py`는 seed 전용 순수 payload 생성기입니다. 종료일을 명시하여 한국 시간 연속 7일의 7건을 준비합니다. 날짜는 저장 후 자동 이동하지 않습니다.
-- 사용자 본인의 최신 실제 DB 이력을 기준으로 마지막 값을 고정합니다. 누락 지표는 null이며, 실제 이력이 전혀 없을 때만 그래프 5개 지표에 합성 기본값을 사용합니다. DB 조회 오류는 무시하지 않습니다.
-- 사용자 UUID/배치 ID/7개 슬롯 기준 UUIDv5를 사용합니다. `[DEMO]` 데이터셋명, `configuration.demo=true`, `demo_batch_id`, 실제 기준 실행 정보, `evaluator_version=rag-monitoring-demo-v1`을 기록합니다.
-- `hit_at_4`는 DB 최상위 컬럼이 없어 `summary_metrics`에만 저장합니다. 다른 지표는 최상위 컬럼과 요약 JSON을 일치시킵니다.
-- 도넛은 최신 선택 DB 행의 `summary_metrics.response_distribution`에 저장된 `correct`/`incorrect`/`rejected`/`unknown`을 읽습니다. Seed는 기존 별도 100문항 예시 76/9/12/3과 예시 표식을 저장합니다. 실제 지표에서 역산하지 않으며, 실제 행에 분포가 없으면 빈 상태를 표시합니다.
-- 기존 `summarize_runs()`와 UI 디자인을 유지합니다. 실제 평가 저장 함수, 평가 실행, checkpoint는 변경하지 않습니다.
-
-### Seed 준비 및 저장
-
-백엔드 환경(의존성 및 Supabase 설정이 있는 `ocr-web-app/backend`)에서 실행합니다. 이메일은 실제 개발자/관리자 계정으로 바꾸고 종료일은 시연 날짜로 지정합니다.
+백엔드 환경에서 아래 명령은 최초 실제 평가를 SELECT하여 그 전날까지 30일의 검토용 JSON만 만듭니다. 이메일은 대상 개발자 계정으로 지정합니다. 배치 ID와 종료일을 입력하지 않습니다.
 
 ```powershell
-python scripts/seed_rag_monitoring_demo.py prepare --email developer@docunex.com --batch-id rag-demo-v1 --end-date 2026-09-08 --output rag-demo-v1.json
+python scripts/seed_rag_monitoring_demo.py prepare --email developer@docunex.com --output rag-baseline.json
 ```
 
-`prepare`는 사용자와 최신 실제값을 SELECT하고 검토용 JSON 파일만 만듭니다. 기존 파일은 덮어쓰지 않습니다. 생성 파일에 대상 사용자, 배치, 기준 실제값과 7건의 payload가 포함됩니다.
-
-아래는 검토한 파일을 실제 저장하는 별도 명령이며 이번 작업에서는 실행하지 않았습니다.
+별도 저장 명령(이번 작업에서 미실행):
 
 ```powershell
-python scripts/seed_rag_monitoring_demo.py insert --input rag-demo-v1.json
+python scripts/seed_rag_monitoring_demo.py insert --input rag-baseline.json
 ```
 
-`insert`는 소유자/생성 규칙/기존 UUID의 데이터를 확인한 후 7건을 단일 POST로 INSERT합니다. `on_conflict=id`와 `resolution=ignore-duplicates`로 기존 UUID는 변경하지 않습니다. 같은 JSON 재실행은 중복을 만들지 않습니다. 같은 배치를 다른 날짜나 값으로 재사용하면 거부하므로 새 배치 ID와 새 파일을 준비하고 화면의 환경변수도 맞춰야 합니다. UPDATE/DELETE 및 checkpoint 접근은 없습니다.
+UUID는 사용자와 고정 baseline 슬롯으로 결정됩니다. 최초 실제값을 기준으로 합성 추이를 준비하고 누락된 실제 지표는 null로 둡니다. 문항 유형은 `question_type/count/answer_accuracy` 집계만, 응답 분포는 명시적 시연 예시만 저장합니다. 상세 문항은 저장하지 않습니다.
+
+동일 JSON의 재실행은 `ignore-duplicates`로 기존 행을 유지합니다. baseline이 이미 있으면 재준비를 거부하고 기존 파일을 재사용합니다. 기존 UUID의 날짜/값이 다르면 INSERT를 거부하며 새 배치 전환이나 자동 덮어쓰기를 하지 않습니다.
 
 ## 적용 상태
 

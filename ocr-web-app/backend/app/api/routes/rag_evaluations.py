@@ -1021,8 +1021,10 @@ def rag_evaluation_umap(user: User = Depends(require_developer)) -> dict[str, An
         point_metadata.append(metadata)
         signature_rows.append((chunk.get("id"), metadata["doc_id"], metadata["chunk_index"], raw_embedding))
     matrix = np.vstack(vectors)
+    projection_style = {"n_neighbors": min(10, len(matrix) - 1), "min_dist": 0.05,
+                        "padding": 40, "point_radius": 5}
     signature = hashlib.sha256(
-        json.dumps(signature_rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        json.dumps([signature_rows, projection_style], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     ).hexdigest()
 
     with _umap_cache_lock:
@@ -1034,15 +1036,15 @@ def rag_evaluation_umap(user: User = Depends(require_developer)) -> dict[str, An
 
             coordinates = umap.UMAP(
                 n_components=2,
-                n_neighbors=min(15, len(matrix) - 1),
-                min_dist=0.1,
+                n_neighbors=projection_style["n_neighbors"],
+                min_dist=projection_style["min_dist"],
                 metric="cosine",
                 random_state=42,
             ).fit_transform(matrix)
         except Exception as exc:
             raise HTTPException(status_code=503, detail="현재 corpus UMAP을 생성할 수 없습니다.") from exc
 
-        width, height, padding = 960, 540, 54
+        width, height, padding = 960, 540, projection_style["padding"]
         minimum = coordinates.min(axis=0)
         span = np.maximum(coordinates.max(axis=0) - minimum, 1e-6)
         scaled = (coordinates - minimum) / span
@@ -1061,7 +1063,7 @@ def rag_evaluation_umap(user: User = Depends(require_developer)) -> dict[str, An
                 f'{metadata["doc_id"]} · {metadata["filename"]} · chunk {metadata["chunk_index"]}'
             )
             svg_parts.append(
-                f'<circle cx="{x_value:.2f}" cy="{y_value:.2f}" r="6" fill="{_UMAP_COLORS.get(group, "#64748b")}" fill-opacity="0.78" stroke="#ffffff" stroke-width="1"><title>{tooltip}</title></circle>'
+                f'<circle cx="{x_value:.2f}" cy="{y_value:.2f}" r="{projection_style["point_radius"]}" fill="{_UMAP_COLORS.get(group, "#64748b")}" fill-opacity="0.78" stroke="#ffffff" stroke-width="1"><title>{tooltip}</title></circle>'
             )
         legend_x = width - 250
         for index, group in enumerate(_UMAP_COLORS):

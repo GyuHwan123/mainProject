@@ -18,19 +18,24 @@ class RagEvaluationMixin:
         rows = response.json()
         return rows[0] if rows else None
 
-    def list_rag_evaluation_runs(self, user_email: str, start_at: str, end_at: str,
+    def list_rag_evaluation_runs(self, user_email: str, start_at: str | None, end_at: str | None,
                                  demo_batch_id: str | None = None) -> list[dict]:
         user_id = self.get_public_user_id(user_email)
         filters = ([("configuration->>demo", "eq.true"),
                     ("configuration->>demo_batch_id", f"eq.{demo_batch_id}")]
                    if demo_batch_id else
                    [("or", "(configuration->>demo.is.null,configuration->>demo.neq.true)")])
+        date_filters = []
+        if start_at is not None:
+            date_filters.append(("evaluated_at", f"gte.{start_at}"))
+        if end_at is not None:
+            date_filters.append(("evaluated_at", f"lt.{end_at}"))
         rows = []
         while True:
             response = httpx.get(
                 f"{self.url}/rest/v1/rag_evaluation_runs",
                 params=[("select", "*"), ("user_id", f"eq.{user_id}"),
-                        ("evaluated_at", f"gte.{start_at}"), ("evaluated_at", f"lt.{end_at}"),
+                        *date_filters,
                         ("order", "evaluated_at.desc,id.desc"), ("offset", str(len(rows))), ("limit", "500"), *filters],
                 headers=self._service_headers(), timeout=20,
             )

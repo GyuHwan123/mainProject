@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.api.routes.rag_evaluations import require_developer
 from app.models.user import User
 from app.services.rag_evaluation_history import METRIC_KEYS
+from app.services.rag_demo_baseline import BASELINE_ID, BASELINE_DAYS
 from app.services.supabase_service import supabase_service
 
 router = APIRouter()
@@ -24,22 +25,40 @@ def summarize_runs(runs: list[dict]) -> dict:
 
 
 @router.get("/evaluation/monitoring")
-def rag_monitoring(start_date: date, end_date: date, user: User = Depends(require_developer)) -> dict:
+def rag_monitoring(start_date: date, end_date: date, user: User = Depends(require_developer),
+                   demo: bool = False) -> dict:
     if end_date < start_date or (end_date - start_date).days > 365:
         raise HTTPException(status_code=422, detail="시작일~종료일은 최대 366일 범위로 선택하세요.")
-    rows = supabase_service.list_rag_evaluation_runs(
-        user.email, datetime.combine(start_date, time.min, KST).isoformat(),
-        datetime.combine(end_date + timedelta(days=1), time.min, KST).isoformat(),
-    )
-    runs = [row for row in rows if row.get("question_count", 0) > 0 and row.get("completed_count") == row.get("question_count")]
-    daily = []
+    # Read every actual run: the selected chart window never hides history.
+    actual = supabase_service.list_rag_evaluation_runs(user.email, None, None)
+    actual.sort(key=lambda row: (datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")), row["id"]), reverse=True)
+
+    def completed(row):
+        return row.get("question_count", 0) > 0 and row.get("completed_count") == row.get("question_count")
+
+    def run_day(row):
+        return datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date()
+
+    runs = [row for row in actual if completed(row) and start_date <= run_day(row) <= end_date]
+    baseline = []
+    if demo and actual:
+        first_day = min(run_day(row) for row in actual)
+        baseline = supabase_service.list_rag_evaluation_runs(
+            user.email, datetime.combine(first_day - timedelta(days=BASELINE_DAYS), time.min, KST).isoformat(),
+            datetime.combine(first_day, time.min, KST).isoformat(), demo_batch_id=BASELINE_ID,
+        )
+        baseline = [row for row in baseline if completed(row)]
+        actual_days = {run_day(row) for row in actual}
+        runs.extend(row for row in baseline if start_date <= run_day(row) <= end_date
+                    and run_day(row) not in actual_days)
     grouped = {}
     for row in runs:
-        day = datetime.fromisoformat(row["evaluated_at"].replace("Z", "+00:00")).astimezone(KST).date().isoformat()
-        grouped.setdefault(day, []).append(row)
+        grouped.setdefault(run_day(row).isoformat(), []).append(row)
+    daily = []
     day = start_date
     while day <= end_date:
         daily.append({"date": day.isoformat(), **summarize_runs(grouped.get(day.isoformat(), []))})
         day += timedelta(days=1)
     return {"start_date": start_date, "end_date": end_date, "summary": summarize_runs(runs),
-            "daily": daily, "recent_runs": runs[:50], "aggregation": "run_mean", "timezone": "Asia/Seoul"}
+            "daily": daily, "recent_runs": actual, "recent_run_count": len(actual),
+            "baseline_runs": baseline, "aggregation": "run_mean", "timezone": "Asia/Seoul"}

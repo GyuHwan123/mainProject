@@ -1,0 +1,3042 @@
+{
+  "format": "rag-demo-baseline",
+  "email": "developer@docunex.com",
+  "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+  "batch_id": "rag-monitoring-baseline",
+  "end_date": "2026-09-06",
+  "anchor": {
+    "id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+    "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+    "dataset_name": "NeoWorksTech RAG Retrieval Evaluation 200",
+    "dataset_hash": "e7b07c279b45def16ab7df2a33086b58242189376f037417a576e54796cb2b80",
+    "question_count": 200,
+    "completed_count": 200,
+    "started_at": "2026-09-07T12:59:56+00:00",
+    "evaluated_at": "2026-09-07T13:47:23+00:00",
+    "created_at": "2026-09-07T13:47:24.281939+00:00",
+    "model_name": "gemma2:2b",
+    "prompt_version": "baseline-v1",
+    "configuration": {
+      "top_k": 4,
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "reranker_model": "BAAI/bge-reranker-v2-m3",
+      "embedding_model": "BAAI/bge-m3",
+      "query_rewriting": false,
+      "answer_threshold": 0.75,
+      "retrieval_method": "dense_bm25_hybrid",
+      "chunk_target_chars": 380,
+      "query_rewrite_model": "gemma2:2b",
+      "bm25_candidate_count": 12,
+      "embedding_dimensions": 1024,
+      "dense_candidate_count": 12
+    },
+    "evaluator_version": "rag-evaluator-v1",
+    "summary_metrics": {
+      "mrr": 0.801904761904762,
+      "top_k": 4,
+      "total": 200,
+      "hit_at_1": 0.7828571428571428,
+      "hit_at_3": 0.8228571428571428,
+      "hit_at_4": 0.8228571428571428,
+      "hit_at_5": 0.8228571428571428,
+      "hit_at_k": 0.8228571428571428,
+      "ndcg_at_k": 0.8073461629795927,
+      "recall_at_k": 0.8228571428571428,
+      "faithfulness": 0.7117192641658217,
+      "answer_accuracy": 0.5942857142857143,
+      "answer_threshold": 0.75,
+      "citation_accuracy": 0.38625,
+      "context_precision": 0.38625,
+      "hallucination_rate": 0.28828073583417835,
+      "faithfulness_method": "BGE-M3 cosine(answer, context); grounded rejection=1.0",
+      "retrieval_evaluated": 175,
+      "unanswerable_rejection_rate": 0.88
+    },
+    "average_latency_ms": 14194.72,
+    "answer_accuracy": 0.594285714285714,
+    "faithfulness": 0.711719264165822,
+    "hit_at_1": 0.782857142857143,
+    "hit_at_k": 0.822857142857143,
+    "hit_at_3": 0.822857142857143,
+    "hit_at_5": 0.822857142857143,
+    "recall_at_k": 0.822857142857143,
+    "mrr": 0.801904761904762,
+    "ndcg_at_k": 0.807346162979593,
+    "context_precision": 0.38625,
+    "hallucination_rate": 0.288280735834178,
+    "unanswerable_rejection_rate": 0.88
+  },
+  "rows": [
+    {
+      "id": "f1238b8b-9eca-5103-bd06-fb4295609090",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-06T00:00:00+09:00",
+      "evaluated_at": "2026-09-06T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.594285714285714,
+        "faithfulness": 0.711719264165822,
+        "hit_at_1": 0.782857142857143,
+        "hit_at_k": 0.822857142857143,
+        "hit_at_3": 0.822857142857143,
+        "hit_at_5": 0.822857142857143,
+        "recall_at_k": 0.822857142857143,
+        "mrr": 0.801904761904762,
+        "ndcg_at_k": 0.807346162979593,
+        "context_precision": 0.38625,
+        "hallucination_rate": 0.288280735834178,
+        "unanswerable_rejection_rate": 0.88,
+        "hit_at_4": 0.8228571428571428,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.9
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.84
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.73
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.76
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.92
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.594285714285714,
+      "faithfulness": 0.711719264165822,
+      "hit_at_1": 0.782857142857143,
+      "hit_at_k": 0.822857142857143,
+      "hit_at_3": 0.822857142857143,
+      "hit_at_5": 0.822857142857143,
+      "recall_at_k": 0.822857142857143,
+      "mrr": 0.801904761904762,
+      "ndcg_at_k": 0.807346162979593,
+      "context_precision": 0.38625,
+      "hallucination_rate": 0.288280735834178,
+      "unanswerable_rejection_rate": 0.88
+    },
+    {
+      "id": "fb3f0533-0b5a-5ab3-8b4e-95fd84281ff3",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-05T00:00:00+09:00",
+      "evaluated_at": "2026-09-05T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.594285714285714,
+        "faithfulness": 0.711719264165822,
+        "hit_at_1": 0.782857142857143,
+        "hit_at_k": 0.822857142857143,
+        "hit_at_3": 0.822857142857143,
+        "hit_at_5": 0.822857142857143,
+        "recall_at_k": 0.822857142857143,
+        "mrr": 0.801904761904762,
+        "ndcg_at_k": 0.807346162979593,
+        "context_precision": 0.38625,
+        "hallucination_rate": 0.288280735834178,
+        "unanswerable_rejection_rate": 0.88,
+        "hit_at_4": 0.8228571428571428,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.9
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.84
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.73
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.76
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.92
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.594285714285714,
+      "faithfulness": 0.711719264165822,
+      "hit_at_1": 0.782857142857143,
+      "hit_at_k": 0.822857142857143,
+      "hit_at_3": 0.822857142857143,
+      "hit_at_5": 0.822857142857143,
+      "recall_at_k": 0.822857142857143,
+      "mrr": 0.801904761904762,
+      "ndcg_at_k": 0.807346162979593,
+      "context_precision": 0.38625,
+      "hallucination_rate": 0.288280735834178,
+      "unanswerable_rejection_rate": 0.88
+    },
+    {
+      "id": "a0a8ebdb-ca51-5808-9f84-482f37d25784",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-04T00:00:00+09:00",
+      "evaluated_at": "2026-09-04T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5837934975369455,
+        "faithfulness": 0.6991537378467564,
+        "hit_at_1": 0.7690356650246307,
+        "hit_at_k": 0.8083294581280789,
+        "hit_at_3": 0.8083294581280789,
+        "hit_at_5": 0.8083294581280789,
+        "recall_at_k": 0.8083294581280789,
+        "mrr": 0.7877469950738917,
+        "ndcg_at_k": 0.793092327274574,
+        "context_precision": 0.3794306896551724,
+        "hallucination_rate": 0.30084626215324356,
+        "unanswerable_rejection_rate": 0.8644634482758621,
+        "hit_at_4": 0.8083294581280788,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8841103448275862
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8251696551724138
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.717111724137931
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7465820689655173
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.9037572413793103
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5837934975369455,
+      "faithfulness": 0.6991537378467564,
+      "hit_at_1": 0.7690356650246307,
+      "hit_at_k": 0.8083294581280789,
+      "hit_at_3": 0.8083294581280789,
+      "hit_at_5": 0.8083294581280789,
+      "recall_at_k": 0.8083294581280789,
+      "mrr": 0.7877469950738917,
+      "ndcg_at_k": 0.793092327274574,
+      "context_precision": 0.3794306896551724,
+      "hallucination_rate": 0.30084626215324356,
+      "unanswerable_rejection_rate": 0.8644634482758621
+    },
+    {
+      "id": "e9af797f-4b47-5c46-af15-0ff5ae1020c1",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-03T00:00:00+09:00",
+      "evaluated_at": "2026-09-03T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5910273891625613,
+        "faithfulness": 0.7078170792347059,
+        "hit_at_1": 0.7785649261083745,
+        "hit_at_k": 0.8183456157635468,
+        "hit_at_3": 0.8183456157635468,
+        "hit_at_5": 0.8183456157635468,
+        "recall_at_k": 0.8183456157635468,
+        "mrr": 0.7975081116584566,
+        "ndcg_at_k": 0.8029196788446359,
+        "context_precision": 0.3841322844827586,
+        "hallucination_rate": 0.29218292076529406,
+        "unanswerable_rejection_rate": 0.8751751724137931,
+        "hit_at_4": 0.8183456157635467,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8950655172413793
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8353944827586206
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.7259975862068965
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7558331034482758
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.9149558620689655
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5910273891625613,
+      "faithfulness": 0.7078170792347059,
+      "hit_at_1": 0.7785649261083745,
+      "hit_at_k": 0.8183456157635468,
+      "hit_at_3": 0.8183456157635468,
+      "hit_at_5": 0.8183456157635468,
+      "recall_at_k": 0.8183456157635468,
+      "mrr": 0.7975081116584566,
+      "ndcg_at_k": 0.8029196788446359,
+      "context_precision": 0.3841322844827586,
+      "hallucination_rate": 0.29218292076529406,
+      "unanswerable_rejection_rate": 0.8751751724137931
+    },
+    {
+      "id": "372f2764-82ad-515b-868e-3774e9b80004",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-02T00:00:00+09:00",
+      "evaluated_at": "2026-09-02T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5828098522167484,
+        "faithfulness": 0.697975719754344,
+        "hit_at_1": 0.7677399014778327,
+        "hit_at_k": 0.8069674876847291,
+        "hit_at_3": 0.8069674876847291,
+        "hit_at_5": 0.8069674876847291,
+        "recall_at_k": 0.8069674876847291,
+        "mrr": 0.7864197044334976,
+        "ndcg_at_k": 0.7917560301772285,
+        "context_precision": 0.3787913793103448,
+        "hallucination_rate": 0.302024280245656,
+        "unanswerable_rejection_rate": 0.8630068965517241,
+        "hit_at_4": 0.806967487684729,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8826206896551725
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8237793103448275
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.715903448275862
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7453241379310345
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.9022344827586207
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5828098522167484,
+      "faithfulness": 0.697975719754344,
+      "hit_at_1": 0.7677399014778327,
+      "hit_at_k": 0.8069674876847291,
+      "hit_at_3": 0.8069674876847291,
+      "hit_at_5": 0.8069674876847291,
+      "recall_at_k": 0.8069674876847291,
+      "mrr": 0.7864197044334976,
+      "ndcg_at_k": 0.7917560301772285,
+      "context_precision": 0.3787913793103448,
+      "hallucination_rate": 0.302024280245656,
+      "unanswerable_rejection_rate": 0.8630068965517241
+    },
+    {
+      "id": "6258809c-6cab-54ac-be88-1c4df027f104",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-09-01T00:00:00+09:00",
+      "evaluated_at": "2026-09-01T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5734037438423641,
+        "faithfulness": 0.6867109217456505,
+        "hit_at_1": 0.7553491625615765,
+        "hit_at_k": 0.7939436453201971,
+        "hit_at_3": 0.7939436453201971,
+        "hit_at_5": 0.7939436453201971,
+        "recall_at_k": 0.7939436453201971,
+        "mrr": 0.7737274876847291,
+        "ndcg_at_k": 0.7789776891838618,
+        "context_precision": 0.37267797413793097,
+        "hallucination_rate": 0.3132890782543495,
+        "unanswerable_rejection_rate": 0.8490786206896551,
+        "hit_at_4": 0.793943645320197,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8683758620689654
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8104841379310344
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.7043493103448275
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.733295172413793
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8876731034482759
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5734037438423641,
+      "faithfulness": 0.6867109217456505,
+      "hit_at_1": 0.7553491625615765,
+      "hit_at_k": 0.7939436453201971,
+      "hit_at_3": 0.7939436453201971,
+      "hit_at_5": 0.7939436453201971,
+      "recall_at_k": 0.7939436453201971,
+      "mrr": 0.7737274876847291,
+      "ndcg_at_k": 0.7789776891838618,
+      "context_precision": 0.37267797413793097,
+      "hallucination_rate": 0.3132890782543495,
+      "unanswerable_rejection_rate": 0.8490786206896551
+    },
+    {
+      "id": "b8683ede-8eed-5711-82a5-1142f88dda37",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-31T00:00:00+09:00",
+      "evaluated_at": "2026-08-31T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5800433497536943,
+        "faithfulness": 0.6946625438694342,
+        "hit_at_1": 0.7640955665024632,
+        "hit_at_k": 0.803136945812808,
+        "hit_at_3": 0.803136945812808,
+        "hit_at_5": 0.803136945812808,
+        "recall_at_k": 0.803136945812808,
+        "mrr": 0.7826866995073892,
+        "ndcg_at_k": 0.7879976945909442,
+        "context_precision": 0.37699331896551724,
+        "hallucination_rate": 0.30533745613056584,
+        "unanswerable_rejection_rate": 0.8589103448275862,
+        "hit_at_4": 0.8031369458128079,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8784310344827586
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8198689655172413
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.7125051724137931
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7417862068965517
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8979517241379311
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5800433497536943,
+      "faithfulness": 0.6946625438694342,
+      "hit_at_1": 0.7640955665024632,
+      "hit_at_k": 0.803136945812808,
+      "hit_at_3": 0.803136945812808,
+      "hit_at_5": 0.803136945812808,
+      "recall_at_k": 0.803136945812808,
+      "mrr": 0.7826866995073892,
+      "ndcg_at_k": 0.7879976945909442,
+      "context_precision": 0.37699331896551724,
+      "hallucination_rate": 0.30533745613056584,
+      "unanswerable_rejection_rate": 0.8589103448275862
+    },
+    {
+      "id": "ada04cbe-b95d-5ee9-b83b-36f839b7b391",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-30T00:00:00+09:00",
+      "evaluated_at": "2026-08-30T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5694486699507386,
+        "faithfulness": 0.6819743073324089,
+        "hit_at_1": 0.7501391133004928,
+        "hit_at_k": 0.7884673891625616,
+        "hit_at_3": 0.7884673891625616,
+        "hit_at_5": 0.7884673891625616,
+        "recall_at_k": 0.7884673891625616,
+        "mrr": 0.7683906732348113,
+        "ndcg_at_k": 0.7736046612716183,
+        "context_precision": 0.3701074137931034,
+        "hallucination_rate": 0.318025692667591,
+        "unanswerable_rejection_rate": 0.8432220689655172,
+        "hit_at_4": 0.7884673891625615,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8623862068965517
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8048937931034482
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6994910344827585
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7282372413793103
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8815503448275862
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5694486699507386,
+      "faithfulness": 0.6819743073324089,
+      "hit_at_1": 0.7501391133004928,
+      "hit_at_k": 0.7884673891625616,
+      "hit_at_3": 0.7884673891625616,
+      "hit_at_5": 0.7884673891625616,
+      "recall_at_k": 0.7884673891625616,
+      "mrr": 0.7683906732348113,
+      "ndcg_at_k": 0.7736046612716183,
+      "context_precision": 0.3701074137931034,
+      "hallucination_rate": 0.318025692667591,
+      "unanswerable_rejection_rate": 0.8432220689655172
+    },
+    {
+      "id": "f51fdd8c-2450-5107-ab1e-8a7e4dc66b67",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-29T00:00:00+09:00",
+      "evaluated_at": "2026-08-29T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5766825615763543,
+        "faithfulness": 0.6906376487203585,
+        "hit_at_1": 0.7596683743842366,
+        "hit_at_k": 0.7984835467980297,
+        "hit_at_3": 0.7984835467980297,
+        "hit_at_5": 0.7984835467980297,
+        "recall_at_k": 0.7984835467980297,
+        "mrr": 0.7781517898193762,
+        "ndcg_at_k": 0.7834320128416803,
+        "context_precision": 0.37480900862068967,
+        "hallucination_rate": 0.3093623512796415,
+        "unanswerable_rejection_rate": 0.8539337931034483,
+        "hit_at_4": 0.7984835467980296,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8733413793103448
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.8151186206896551
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.7083768965517241
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.737488275862069
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8927489655172415
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5766825615763543,
+      "faithfulness": 0.6906376487203585,
+      "hit_at_1": 0.7596683743842366,
+      "hit_at_k": 0.7984835467980297,
+      "hit_at_3": 0.7984835467980297,
+      "hit_at_5": 0.7984835467980297,
+      "recall_at_k": 0.7984835467980297,
+      "mrr": 0.7781517898193762,
+      "ndcg_at_k": 0.7834320128416803,
+      "context_precision": 0.37480900862068967,
+      "hallucination_rate": 0.3093623512796415,
+      "unanswerable_rejection_rate": 0.8539337931034483
+    },
+    {
+      "id": "36d73166-26fc-5974-bf7e-4a1dea296e92",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-28T00:00:00+09:00",
+      "evaluated_at": "2026-08-28T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5684650246305415,
+        "faithfulness": 0.6807962892399966,
+        "hit_at_1": 0.7488433497536947,
+        "hit_at_k": 0.7871054187192119,
+        "hit_at_3": 0.7871054187192119,
+        "hit_at_5": 0.7871054187192119,
+        "recall_at_k": 0.7871054187192119,
+        "mrr": 0.7670633825944172,
+        "ndcg_at_k": 0.7722683641742728,
+        "context_precision": 0.36946810344827585,
+        "hallucination_rate": 0.31920371076000337,
+        "unanswerable_rejection_rate": 0.8417655172413793,
+        "hit_at_4": 0.7871054187192118,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8608965517241379
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.803503448275862
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6982827586206896
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7269793103448275
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8800275862068966
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5684650246305415,
+      "faithfulness": 0.6807962892399966,
+      "hit_at_1": 0.7488433497536947,
+      "hit_at_k": 0.7871054187192119,
+      "hit_at_3": 0.7871054187192119,
+      "hit_at_5": 0.7871054187192119,
+      "recall_at_k": 0.7871054187192119,
+      "mrr": 0.7670633825944172,
+      "ndcg_at_k": 0.7722683641742728,
+      "context_precision": 0.36946810344827585,
+      "hallucination_rate": 0.31920371076000337,
+      "unanswerable_rejection_rate": 0.8417655172413793
+    },
+    {
+      "id": "4b98fd98-e2bb-5541-9973-b954b0a48152",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-27T00:00:00+09:00",
+      "evaluated_at": "2026-08-27T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5590589162561573,
+        "faithfulness": 0.6695314912313031,
+        "hit_at_1": 0.7364526108374386,
+        "hit_at_k": 0.7740815763546799,
+        "hit_at_3": 0.7740815763546799,
+        "hit_at_5": 0.7740815763546799,
+        "recall_at_k": 0.7740815763546799,
+        "mrr": 0.7543711658456487,
+        "ndcg_at_k": 0.7594900231809062,
+        "context_precision": 0.36335469827586203,
+        "hallucination_rate": 0.33046850876869693,
+        "unanswerable_rejection_rate": 0.8278372413793104,
+        "hit_at_4": 0.7740815763546798,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8466517241379311
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.790208275862069
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6867286206896551
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7149503448275862
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8654662068965517
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5590589162561573,
+      "faithfulness": 0.6695314912313031,
+      "hit_at_1": 0.7364526108374386,
+      "hit_at_k": 0.7740815763546799,
+      "hit_at_3": 0.7740815763546799,
+      "hit_at_5": 0.7740815763546799,
+      "recall_at_k": 0.7740815763546799,
+      "mrr": 0.7543711658456487,
+      "ndcg_at_k": 0.7594900231809062,
+      "context_precision": 0.36335469827586203,
+      "hallucination_rate": 0.33046850876869693,
+      "unanswerable_rejection_rate": 0.8278372413793104
+    },
+    {
+      "id": "92f7d30c-b3e7-5dbf-aca0-b2ce977cffae",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-26T00:00:00+09:00",
+      "evaluated_at": "2026-08-26T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5656985221674874,
+        "faithfulness": 0.6774831133550867,
+        "hit_at_1": 0.7451990147783253,
+        "hit_at_k": 0.7832748768472907,
+        "hit_at_3": 0.7832748768472907,
+        "hit_at_5": 0.7832748768472907,
+        "recall_at_k": 0.7832748768472907,
+        "mrr": 0.7633303776683088,
+        "ndcg_at_k": 0.7685100285879884,
+        "context_precision": 0.36767004310344825,
+        "hallucination_rate": 0.32251688664491324,
+        "unanswerable_rejection_rate": 0.8376689655172413,
+        "hit_at_4": 0.7832748768472906,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8567068965517242
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7995931034482758
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6948844827586207
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7234413793103448
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8757448275862069
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5656985221674874,
+      "faithfulness": 0.6774831133550867,
+      "hit_at_1": 0.7451990147783253,
+      "hit_at_k": 0.7832748768472907,
+      "hit_at_3": 0.7832748768472907,
+      "hit_at_5": 0.7832748768472907,
+      "recall_at_k": 0.7832748768472907,
+      "mrr": 0.7633303776683088,
+      "ndcg_at_k": 0.7685100285879884,
+      "context_precision": 0.36767004310344825,
+      "hallucination_rate": 0.32251688664491324,
+      "unanswerable_rejection_rate": 0.8376689655172413
+    },
+    {
+      "id": "4c2942f1-df4c-5d18-a355-70cf5196eb73",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-25T00:00:00+09:00",
+      "evaluated_at": "2026-08-25T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5551038423645317,
+        "faithfulness": 0.6647948768180616,
+        "hit_at_1": 0.7312425615763548,
+        "hit_at_k": 0.7686053201970444,
+        "hit_at_3": 0.7686053201970444,
+        "hit_at_5": 0.7686053201970444,
+        "recall_at_k": 0.7686053201970444,
+        "mrr": 0.7490343513957308,
+        "ndcg_at_k": 0.7541169952686626,
+        "context_precision": 0.3607841379310345,
+        "hallucination_rate": 0.3352051231819384,
+        "unanswerable_rejection_rate": 0.8219806896551725,
+        "hit_at_4": 0.7686053201970443,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8406620689655173
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7846179310344827
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6818703448275862
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7098924137931034
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8593434482758621
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5551038423645317,
+      "faithfulness": 0.6647948768180616,
+      "hit_at_1": 0.7312425615763548,
+      "hit_at_k": 0.7686053201970444,
+      "hit_at_3": 0.7686053201970444,
+      "hit_at_5": 0.7686053201970444,
+      "recall_at_k": 0.7686053201970444,
+      "mrr": 0.7490343513957308,
+      "ndcg_at_k": 0.7541169952686626,
+      "context_precision": 0.3607841379310345,
+      "hallucination_rate": 0.3352051231819384,
+      "unanswerable_rejection_rate": 0.8219806896551725
+    },
+    {
+      "id": "a3475819-95d9-5a8a-8b9f-454ce3618ae7",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-24T00:00:00+09:00",
+      "evaluated_at": "2026-08-24T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5623377339901475,
+        "faithfulness": 0.673458218206011,
+        "hit_at_1": 0.7407718226600987,
+        "hit_at_k": 0.7786214778325123,
+        "hit_at_3": 0.7786214778325123,
+        "hit_at_5": 0.7786214778325123,
+        "recall_at_k": 0.7786214778325123,
+        "mrr": 0.7587954679802956,
+        "ndcg_at_k": 0.7639443468387246,
+        "context_precision": 0.3654857327586207,
+        "hallucination_rate": 0.32654178179398896,
+        "unanswerable_rejection_rate": 0.8326924137931034,
+        "hit_at_4": 0.7786214778325122,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8516172413793104
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7948427586206896
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6907562068965517
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7191434482758621
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8705420689655172
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5623377339901475,
+      "faithfulness": 0.673458218206011,
+      "hit_at_1": 0.7407718226600987,
+      "hit_at_k": 0.7786214778325123,
+      "hit_at_3": 0.7786214778325123,
+      "hit_at_5": 0.7786214778325123,
+      "recall_at_k": 0.7786214778325123,
+      "mrr": 0.7587954679802956,
+      "ndcg_at_k": 0.7639443468387246,
+      "context_precision": 0.3654857327586207,
+      "hallucination_rate": 0.32654178179398896,
+      "unanswerable_rejection_rate": 0.8326924137931034
+    },
+    {
+      "id": "4a8e5727-76e9-538e-b1a1-8dfd5e74b977",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-23T00:00:00+09:00",
+      "evaluated_at": "2026-08-23T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5541201970443347,
+        "faithfulness": 0.6636168587256492,
+        "hit_at_1": 0.7299467980295569,
+        "hit_at_k": 0.7672433497536947,
+        "hit_at_3": 0.7672433497536947,
+        "hit_at_5": 0.7672433497536947,
+        "recall_at_k": 0.7672433497536947,
+        "mrr": 0.7477070607553368,
+        "ndcg_at_k": 0.7527806981713171,
+        "context_precision": 0.36014482758620686,
+        "hallucination_rate": 0.3363831412743508,
+        "unanswerable_rejection_rate": 0.8205241379310345,
+        "hit_at_4": 0.7672433497536946,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8391724137931035
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7832275862068966
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6806620689655173
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7086344827586207
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8578206896551724
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5541201970443347,
+      "faithfulness": 0.6636168587256492,
+      "hit_at_1": 0.7299467980295569,
+      "hit_at_k": 0.7672433497536947,
+      "hit_at_3": 0.7672433497536947,
+      "hit_at_5": 0.7672433497536947,
+      "recall_at_k": 0.7672433497536947,
+      "mrr": 0.7477070607553368,
+      "ndcg_at_k": 0.7527806981713171,
+      "context_precision": 0.36014482758620686,
+      "hallucination_rate": 0.3363831412743508,
+      "unanswerable_rejection_rate": 0.8205241379310345
+    },
+    {
+      "id": "de40260b-1b12-5f39-bd30-b91232143a49",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-22T00:00:00+09:00",
+      "evaluated_at": "2026-08-22T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5447140886699504,
+        "faithfulness": 0.6523520607169556,
+        "hit_at_1": 0.7175560591133007,
+        "hit_at_k": 0.7542195073891627,
+        "hit_at_3": 0.7542195073891627,
+        "hit_at_5": 0.7542195073891627,
+        "recall_at_k": 0.7542195073891627,
+        "mrr": 0.7350148440065682,
+        "ndcg_at_k": 0.7400023571779504,
+        "context_precision": 0.3540314224137931,
+        "hallucination_rate": 0.3476479392830443,
+        "unanswerable_rejection_rate": 0.8065958620689655,
+        "hit_at_4": 0.7542195073891625,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8249275862068965
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7699324137931034
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6691079310344827
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6966055172413793
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8432593103448276
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5447140886699504,
+      "faithfulness": 0.6523520607169556,
+      "hit_at_1": 0.7175560591133007,
+      "hit_at_k": 0.7542195073891627,
+      "hit_at_3": 0.7542195073891627,
+      "hit_at_5": 0.7542195073891627,
+      "recall_at_k": 0.7542195073891627,
+      "mrr": 0.7350148440065682,
+      "ndcg_at_k": 0.7400023571779504,
+      "context_precision": 0.3540314224137931,
+      "hallucination_rate": 0.3476479392830443,
+      "unanswerable_rejection_rate": 0.8065958620689655
+    },
+    {
+      "id": "02e5c355-0933-5ba8-aec2-c3a356b11f77",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-21T00:00:00+09:00",
+      "evaluated_at": "2026-08-21T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5513536945812805,
+        "faithfulness": 0.6603036828407394,
+        "hit_at_1": 0.7263024630541873,
+        "hit_at_k": 0.7634128078817735,
+        "hit_at_3": 0.7634128078817735,
+        "hit_at_5": 0.7634128078817735,
+        "recall_at_k": 0.7634128078817735,
+        "mrr": 0.7439740558292284,
+        "ndcg_at_k": 0.7490223625850329,
+        "context_precision": 0.3583467672413793,
+        "hallucination_rate": 0.3396963171592607,
+        "unanswerable_rejection_rate": 0.8164275862068966,
+        "hit_at_4": 0.7634128078817735,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8349827586206897
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7793172413793104
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6772637931034483
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.705096551724138
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8535379310344828
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5513536945812805,
+      "faithfulness": 0.6603036828407394,
+      "hit_at_1": 0.7263024630541873,
+      "hit_at_k": 0.7634128078817735,
+      "hit_at_3": 0.7634128078817735,
+      "hit_at_5": 0.7634128078817735,
+      "recall_at_k": 0.7634128078817735,
+      "mrr": 0.7439740558292284,
+      "ndcg_at_k": 0.7490223625850329,
+      "context_precision": 0.3583467672413793,
+      "hallucination_rate": 0.3396963171592607,
+      "unanswerable_rejection_rate": 0.8164275862068966
+    },
+    {
+      "id": "3b3c2798-1541-5cac-96c9-f0d44aecf59c",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-20T00:00:00+09:00",
+      "evaluated_at": "2026-08-20T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5407590147783248,
+        "faithfulness": 0.6476154463037141,
+        "hit_at_1": 0.7123460098522169,
+        "hit_at_k": 0.7487432512315272,
+        "hit_at_3": 0.7487432512315272,
+        "hit_at_5": 0.7487432512315272,
+        "recall_at_k": 0.7487432512315272,
+        "mrr": 0.7296780295566503,
+        "ndcg_at_k": 0.7346293292657069,
+        "context_precision": 0.3514608620689655,
+        "hallucination_rate": 0.35238455369628585,
+        "unanswerable_rejection_rate": 0.8007393103448276,
+        "hit_at_4": 0.7487432512315271,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8189379310344828
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7643420689655172
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6642496551724137
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6915475862068965
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8371365517241379
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5407590147783248,
+      "faithfulness": 0.6476154463037141,
+      "hit_at_1": 0.7123460098522169,
+      "hit_at_k": 0.7487432512315272,
+      "hit_at_3": 0.7487432512315272,
+      "hit_at_5": 0.7487432512315272,
+      "recall_at_k": 0.7487432512315272,
+      "mrr": 0.7296780295566503,
+      "ndcg_at_k": 0.7346293292657069,
+      "context_precision": 0.3514608620689655,
+      "hallucination_rate": 0.35238455369628585,
+      "unanswerable_rejection_rate": 0.8007393103448276
+    },
+    {
+      "id": "bb0466c8-46d6-5022-8bab-694d22837ac2",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-19T00:00:00+09:00",
+      "evaluated_at": "2026-08-19T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5479929064039406,
+        "faithfulness": 0.6562787876916637,
+        "hit_at_1": 0.7218752709359608,
+        "hit_at_k": 0.7587594088669952,
+        "hit_at_3": 0.7587594088669952,
+        "hit_at_5": 0.7587594088669952,
+        "recall_at_k": 0.7587594088669952,
+        "mrr": 0.7394391461412152,
+        "ndcg_at_k": 0.7444566808357689,
+        "context_precision": 0.35616245689655174,
+        "hallucination_rate": 0.34372121230833635,
+        "unanswerable_rejection_rate": 0.8114510344827587,
+        "hit_at_4": 0.7587594088669951,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8298931034482759
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7745668965517242
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6731355172413793
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.7007986206896553
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8483351724137932
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5479929064039406,
+      "faithfulness": 0.6562787876916637,
+      "hit_at_1": 0.7218752709359608,
+      "hit_at_k": 0.7587594088669952,
+      "hit_at_3": 0.7587594088669952,
+      "hit_at_5": 0.7587594088669952,
+      "recall_at_k": 0.7587594088669952,
+      "mrr": 0.7394391461412152,
+      "ndcg_at_k": 0.7444566808357689,
+      "context_precision": 0.35616245689655174,
+      "hallucination_rate": 0.34372121230833635,
+      "unanswerable_rejection_rate": 0.8114510344827587
+    },
+    {
+      "id": "2401c79f-d5af-5b6d-9fab-ead4ce7fc6fb",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-18T00:00:00+09:00",
+      "evaluated_at": "2026-08-18T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5397753694581278,
+        "faithfulness": 0.6464374282113018,
+        "hit_at_1": 0.7110502463054188,
+        "hit_at_k": 0.7473812807881774,
+        "hit_at_3": 0.7473812807881774,
+        "hit_at_5": 0.7473812807881774,
+        "recall_at_k": 0.7473812807881774,
+        "mrr": 0.7283507389162562,
+        "ndcg_at_k": 0.7332930321683614,
+        "context_precision": 0.3508215517241379,
+        "hallucination_rate": 0.3535625717886982,
+        "unanswerable_rejection_rate": 0.7992827586206896,
+        "hit_at_4": 0.7473812807881773,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8174482758620689
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.762951724137931
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6630413793103448
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6902896551724138
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8356137931034483
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5397753694581278,
+      "faithfulness": 0.6464374282113018,
+      "hit_at_1": 0.7110502463054188,
+      "hit_at_k": 0.7473812807881774,
+      "hit_at_3": 0.7473812807881774,
+      "hit_at_5": 0.7473812807881774,
+      "recall_at_k": 0.7473812807881774,
+      "mrr": 0.7283507389162562,
+      "ndcg_at_k": 0.7332930321683614,
+      "context_precision": 0.3508215517241379,
+      "hallucination_rate": 0.3535625717886982,
+      "unanswerable_rejection_rate": 0.7992827586206896
+    },
+    {
+      "id": "dbbf1c1c-854c-593e-9db1-16ea5dd8ac0b",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-17T00:00:00+09:00",
+      "evaluated_at": "2026-08-17T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5303692610837436,
+        "faithfulness": 0.6351726302026083,
+        "hit_at_1": 0.6986595073891627,
+        "hit_at_k": 0.7343574384236454,
+        "hit_at_3": 0.7343574384236454,
+        "hit_at_5": 0.7343574384236454,
+        "recall_at_k": 0.7343574384236454,
+        "mrr": 0.7156585221674878,
+        "ndcg_at_k": 0.7205146911749948,
+        "context_precision": 0.3447081465517241,
+        "hallucination_rate": 0.3648273697973918,
+        "unanswerable_rejection_rate": 0.7853544827586207,
+        "hit_at_4": 0.7343574384236453,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8032034482758621
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7496565517241379
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6514872413793104
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6782606896551724
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8210524137931035
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5303692610837436,
+      "faithfulness": 0.6351726302026083,
+      "hit_at_1": 0.6986595073891627,
+      "hit_at_k": 0.7343574384236454,
+      "hit_at_3": 0.7343574384236454,
+      "hit_at_5": 0.7343574384236454,
+      "recall_at_k": 0.7343574384236454,
+      "mrr": 0.7156585221674878,
+      "ndcg_at_k": 0.7205146911749948,
+      "context_precision": 0.3447081465517241,
+      "hallucination_rate": 0.3648273697973918,
+      "unanswerable_rejection_rate": 0.7853544827586207
+    },
+    {
+      "id": "c98209d4-e890-529e-a149-72e866fddf41",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-16T00:00:00+09:00",
+      "evaluated_at": "2026-08-16T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5370088669950736,
+        "faithfulness": 0.6431242523263919,
+        "hit_at_1": 0.7074059113300494,
+        "hit_at_k": 0.7435507389162562,
+        "hit_at_3": 0.7435507389162562,
+        "hit_at_5": 0.7435507389162562,
+        "recall_at_k": 0.7435507389162562,
+        "mrr": 0.7246177339901478,
+        "ndcg_at_k": 0.729534696582077,
+        "context_precision": 0.3490234913793103,
+        "hallucination_rate": 0.3568757476736081,
+        "unanswerable_rejection_rate": 0.7951862068965517,
+        "hit_at_4": 0.7435507389162561,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8132586206896552
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7590413793103448
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6596431034482758
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6867517241379311
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8313310344827587
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5370088669950736,
+      "faithfulness": 0.6431242523263919,
+      "hit_at_1": 0.7074059113300494,
+      "hit_at_k": 0.7435507389162562,
+      "hit_at_3": 0.7435507389162562,
+      "hit_at_5": 0.7435507389162562,
+      "recall_at_k": 0.7435507389162562,
+      "mrr": 0.7246177339901478,
+      "ndcg_at_k": 0.729534696582077,
+      "context_precision": 0.3490234913793103,
+      "hallucination_rate": 0.3568757476736081,
+      "unanswerable_rejection_rate": 0.7951862068965517
+    },
+    {
+      "id": "a3f2909a-5a9f-5255-8c26-b08dc022f44d",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-15T00:00:00+09:00",
+      "evaluated_at": "2026-08-15T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.526414187192118,
+        "faithfulness": 0.6304360157893667,
+        "hit_at_1": 0.693449458128079,
+        "hit_at_k": 0.72888118226601,
+        "hit_at_3": 0.72888118226601,
+        "hit_at_5": 0.72888118226601,
+        "recall_at_k": 0.72888118226601,
+        "mrr": 0.7103217077175699,
+        "ndcg_at_k": 0.7151416632627513,
+        "context_precision": 0.34213758620689655,
+        "hallucination_rate": 0.3695639842106333,
+        "unanswerable_rejection_rate": 0.7794979310344828,
+        "hit_at_4": 0.7288811822660098,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7972137931034483
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7440662068965517
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6466289655172414
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6732027586206897
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8149296551724139
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.526414187192118,
+      "faithfulness": 0.6304360157893667,
+      "hit_at_1": 0.693449458128079,
+      "hit_at_k": 0.72888118226601,
+      "hit_at_3": 0.72888118226601,
+      "hit_at_5": 0.72888118226601,
+      "recall_at_k": 0.72888118226601,
+      "mrr": 0.7103217077175699,
+      "ndcg_at_k": 0.7151416632627513,
+      "context_precision": 0.34213758620689655,
+      "hallucination_rate": 0.3695639842106333,
+      "unanswerable_rejection_rate": 0.7794979310344828
+    },
+    {
+      "id": "64a5211e-748a-5f47-aca9-2aa95d642d0b",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-14T00:00:00+09:00",
+      "evaluated_at": "2026-08-14T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5336480788177337,
+        "faithfulness": 0.6390993571773163,
+        "hit_at_1": 0.7029787192118228,
+        "hit_at_k": 0.7388973399014779,
+        "hit_at_3": 0.7388973399014779,
+        "hit_at_5": 0.7388973399014779,
+        "recall_at_k": 0.7388973399014779,
+        "mrr": 0.7200828243021348,
+        "ndcg_at_k": 0.7249690148328132,
+        "context_precision": 0.34683918103448275,
+        "hallucination_rate": 0.3609006428226838,
+        "unanswerable_rejection_rate": 0.7902096551724138,
+        "hit_at_4": 0.7388973399014778,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.8081689655172414
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7542910344827586
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6555148275862068
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6824537931034482
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8261282758620689
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5336480788177337,
+      "faithfulness": 0.6390993571773163,
+      "hit_at_1": 0.7029787192118228,
+      "hit_at_k": 0.7388973399014779,
+      "hit_at_3": 0.7388973399014779,
+      "hit_at_5": 0.7388973399014779,
+      "recall_at_k": 0.7388973399014779,
+      "mrr": 0.7200828243021348,
+      "ndcg_at_k": 0.7249690148328132,
+      "context_precision": 0.34683918103448275,
+      "hallucination_rate": 0.3609006428226838,
+      "unanswerable_rejection_rate": 0.7902096551724138
+    },
+    {
+      "id": "fef60acf-4bd4-5a41-bd55-d4a33605d7b6",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-13T00:00:00+09:00",
+      "evaluated_at": "2026-08-13T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.525430541871921,
+        "faithfulness": 0.6292579976969543,
+        "hit_at_1": 0.692153694581281,
+        "hit_at_k": 0.7275192118226602,
+        "hit_at_3": 0.7275192118226602,
+        "hit_at_5": 0.7275192118226602,
+        "recall_at_k": 0.7275192118226602,
+        "mrr": 0.7089944170771758,
+        "ndcg_at_k": 0.7138053661654058,
+        "context_precision": 0.341498275862069,
+        "hallucination_rate": 0.37074200230304566,
+        "unanswerable_rejection_rate": 0.7780413793103449,
+        "hit_at_4": 0.7275192118226601,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7957241379310346
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7426758620689655
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6454206896551724
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6719448275862069
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8134068965517242
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.525430541871921,
+      "faithfulness": 0.6292579976969543,
+      "hit_at_1": 0.692153694581281,
+      "hit_at_k": 0.7275192118226602,
+      "hit_at_3": 0.7275192118226602,
+      "hit_at_5": 0.7275192118226602,
+      "recall_at_k": 0.7275192118226602,
+      "mrr": 0.7089944170771758,
+      "ndcg_at_k": 0.7138053661654058,
+      "context_precision": 0.341498275862069,
+      "hallucination_rate": 0.37074200230304566,
+      "unanswerable_rejection_rate": 0.7780413793103449
+    },
+    {
+      "id": "2398dfb7-1c3e-59dd-a73d-d930fdeca4f4",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-12T00:00:00+09:00",
+      "evaluated_at": "2026-08-12T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5160244334975367,
+        "faithfulness": 0.6179931996882608,
+        "hit_at_1": 0.6797629556650248,
+        "hit_at_k": 0.7144953694581282,
+        "hit_at_3": 0.7144953694581282,
+        "hit_at_5": 0.7144953694581282,
+        "recall_at_k": 0.7144953694581282,
+        "mrr": 0.6963022003284073,
+        "ndcg_at_k": 0.7010270251720391,
+        "context_precision": 0.33538487068965517,
+        "hallucination_rate": 0.38200680031173917,
+        "unanswerable_rejection_rate": 0.7641131034482759,
+        "hit_at_4": 0.7144953694581281,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7814793103448275
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7293806896551723
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6338665517241379
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6599158620689655
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.7988455172413793
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5160244334975367,
+      "faithfulness": 0.6179931996882608,
+      "hit_at_1": 0.6797629556650248,
+      "hit_at_k": 0.7144953694581282,
+      "hit_at_3": 0.7144953694581282,
+      "hit_at_5": 0.7144953694581282,
+      "recall_at_k": 0.7144953694581282,
+      "mrr": 0.6963022003284073,
+      "ndcg_at_k": 0.7010270251720391,
+      "context_precision": 0.33538487068965517,
+      "hallucination_rate": 0.38200680031173917,
+      "unanswerable_rejection_rate": 0.7641131034482759
+    },
+    {
+      "id": "d6175fbd-e310-57c1-a8a4-407aa5ff383b",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-11T00:00:00+09:00",
+      "evaluated_at": "2026-08-11T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5226640394088667,
+        "faithfulness": 0.6259448218120445,
+        "hit_at_1": 0.6885093596059115,
+        "hit_at_k": 0.723688669950739,
+        "hit_at_3": 0.723688669950739,
+        "hit_at_5": 0.723688669950739,
+        "recall_at_k": 0.723688669950739,
+        "mrr": 0.7052614121510674,
+        "ndcg_at_k": 0.7100470305791214,
+        "context_precision": 0.3397002155172414,
+        "hallucination_rate": 0.37405517818795553,
+        "unanswerable_rejection_rate": 0.773944827586207,
+        "hit_at_4": 0.7236886699507389,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7915344827586207
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7387655172413793
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6420224137931034
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6684068965517241
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8091241379310345
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5226640394088667,
+      "faithfulness": 0.6259448218120445,
+      "hit_at_1": 0.6885093596059115,
+      "hit_at_k": 0.723688669950739,
+      "hit_at_3": 0.723688669950739,
+      "hit_at_5": 0.723688669950739,
+      "recall_at_k": 0.723688669950739,
+      "mrr": 0.7052614121510674,
+      "ndcg_at_k": 0.7100470305791214,
+      "context_precision": 0.3397002155172414,
+      "hallucination_rate": 0.37405517818795553,
+      "unanswerable_rejection_rate": 0.773944827586207
+    },
+    {
+      "id": "1d8ac07c-1531-50c3-8e43-7de94c61a9f8",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-10T00:00:00+09:00",
+      "evaluated_at": "2026-08-10T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.512069359605911,
+        "faithfulness": 0.6132565852750193,
+        "hit_at_1": 0.674552906403941,
+        "hit_at_k": 0.7090191133004927,
+        "hit_at_3": 0.7090191133004927,
+        "hit_at_5": 0.7090191133004927,
+        "recall_at_k": 0.7090191133004927,
+        "mrr": 0.6909653858784894,
+        "ndcg_at_k": 0.6956539972597955,
+        "context_precision": 0.33281431034482756,
+        "hallucination_rate": 0.3867434147249807,
+        "unanswerable_rejection_rate": 0.7582565517241379,
+        "hit_at_4": 0.7090191133004926,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7754896551724137
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7237903448275862
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.629008275862069
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6548579310344828
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.7927227586206896
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.512069359605911,
+      "faithfulness": 0.6132565852750193,
+      "hit_at_1": 0.674552906403941,
+      "hit_at_k": 0.7090191133004927,
+      "hit_at_3": 0.7090191133004927,
+      "hit_at_5": 0.7090191133004927,
+      "recall_at_k": 0.7090191133004927,
+      "mrr": 0.6909653858784894,
+      "ndcg_at_k": 0.6956539972597955,
+      "context_precision": 0.33281431034482756,
+      "hallucination_rate": 0.3867434147249807,
+      "unanswerable_rejection_rate": 0.7582565517241379
+    },
+    {
+      "id": "e372b352-7b42-5b8a-bd05-60bcf13383ec",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-09T00:00:00+09:00",
+      "evaluated_at": "2026-08-09T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.5193032512315268,
+        "faithfulness": 0.6219199266629687,
+        "hit_at_1": 0.6840821674876848,
+        "hit_at_k": 0.7190352709359606,
+        "hit_at_3": 0.7190352709359606,
+        "hit_at_5": 0.7190352709359606,
+        "recall_at_k": 0.7190352709359606,
+        "mrr": 0.7007265024630542,
+        "ndcg_at_k": 0.7054813488298575,
+        "context_precision": 0.33751590517241375,
+        "hallucination_rate": 0.3780800733370312,
+        "unanswerable_rejection_rate": 0.768968275862069,
+        "hit_at_4": 0.7190352709359605,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.7864448275862068
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.734015172413793
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6378941379310344
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6641089655172413
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.8039213793103448
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.5193032512315268,
+      "faithfulness": 0.6219199266629687,
+      "hit_at_1": 0.6840821674876848,
+      "hit_at_k": 0.7190352709359606,
+      "hit_at_3": 0.7190352709359606,
+      "hit_at_5": 0.7190352709359606,
+      "recall_at_k": 0.7190352709359606,
+      "mrr": 0.7007265024630542,
+      "ndcg_at_k": 0.7054813488298575,
+      "context_precision": 0.33751590517241375,
+      "hallucination_rate": 0.3780800733370312,
+      "unanswerable_rejection_rate": 0.768968275862069
+    },
+    {
+      "id": "40edbe33-2a24-5213-af09-82d78cadb2e3",
+      "user_id": "7e5963a0-c8f7-46c8-93a3-80d827f4dae4",
+      "dataset_name": "[DEMO] NeoWorksTech RAG Retrieval Evaluation 200",
+      "dataset_hash": "95ebe2c1dd8e58c8f8faa673b167052ad3b042799ff287c75e4b77b9b8ba30e6",
+      "question_count": 200,
+      "completed_count": 200,
+      "started_at": "2026-08-08T00:00:00+09:00",
+      "evaluated_at": "2026-08-08T00:00:00+09:00",
+      "model_name": "gemma2:2b",
+      "prompt_version": "baseline-v1",
+      "evaluator_version": "rag-monitoring-demo-v1",
+      "configuration": {
+        "top_k": 4,
+        "model_name": "gemma2:2b",
+        "prompt_version": "baseline-v1",
+        "reranker_model": "BAAI/bge-reranker-v2-m3",
+        "embedding_model": "BAAI/bge-m3",
+        "query_rewriting": false,
+        "answer_threshold": 0.75,
+        "retrieval_method": "dense_bm25_hybrid",
+        "chunk_target_chars": 380,
+        "query_rewrite_model": "gemma2:2b",
+        "bm25_candidate_count": 12,
+        "embedding_dimensions": 1024,
+        "dense_candidate_count": 12,
+        "demo": true,
+        "demo_batch_id": "rag-monitoring-baseline",
+        "demo_end_date": "2026-09-06",
+        "demo_anchor_id": "3f596d7a-6c4f-4d54-9605-fe6a9639ae3a",
+        "demo_anchor_evaluated_at": "2026-09-07T13:47:23+00:00"
+      },
+      "average_latency_ms": 14194.72,
+      "summary_metrics": {
+        "total": 200,
+        "top_k": 4,
+        "answer_accuracy": 0.511085714285714,
+        "faithfulness": 0.6120785671826069,
+        "hit_at_1": 0.673257142857143,
+        "hit_at_k": 0.707657142857143,
+        "hit_at_3": 0.707657142857143,
+        "hit_at_5": 0.707657142857143,
+        "recall_at_k": 0.707657142857143,
+        "mrr": 0.6896380952380953,
+        "ndcg_at_k": 0.69431770016245,
+        "context_precision": 0.332175,
+        "hallucination_rate": 0.3879214328173931,
+        "unanswerable_rejection_rate": 0.7568,
+        "hit_at_4": 0.7076571428571429,
+        "response_distribution": {
+          "correct": 76,
+          "incorrect": 9,
+          "rejected": 12,
+          "unknown": 3
+        },
+        "response_distribution_sample_total": 100,
+        "response_distribution_is_demo": true,
+        "question_type_metrics": [
+          {
+            "question_type": "single_document_fact",
+            "count": 40,
+            "answer_accuracy": 0.774
+          },
+          {
+            "question_type": "paraphrase_semantic",
+            "count": 40,
+            "answer_accuracy": 0.7223999999999999
+          },
+          {
+            "question_type": "confusable_reranker",
+            "count": 40,
+            "answer_accuracy": 0.6278
+          },
+          {
+            "question_type": "multi_document",
+            "count": 40,
+            "answer_accuracy": 0.6536
+          },
+          {
+            "question_type": "unanswerable",
+            "count": 40,
+            "answer_accuracy": 0.7912
+          }
+        ],
+        "question_type_metrics_is_demo": true
+      },
+      "answer_accuracy": 0.511085714285714,
+      "faithfulness": 0.6120785671826069,
+      "hit_at_1": 0.673257142857143,
+      "hit_at_k": 0.707657142857143,
+      "hit_at_3": 0.707657142857143,
+      "hit_at_5": 0.707657142857143,
+      "recall_at_k": 0.707657142857143,
+      "mrr": 0.6896380952380953,
+      "ndcg_at_k": 0.69431770016245,
+      "context_precision": 0.332175,
+      "hallucination_rate": 0.3879214328173931,
+      "unanswerable_rejection_rate": 0.7568
+    }
+  ]
+}

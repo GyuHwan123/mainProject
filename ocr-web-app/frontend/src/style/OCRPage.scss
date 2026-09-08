@@ -3498,9 +3498,9 @@
       .receipt-saved-item > button:first-child:disabled { opacity: .6; cursor: default; }
       .receipt-saved-item > button:first-child > span:nth-child(2) { min-width: 0; }
       .receipt-saved-item > button:first-child em { grid-column: 2; color: #1f5f8f; font-size: 8px; font-style: normal; font-weight: 800; }
-      .receipt-saved-delete { position: absolute; top: 5px; right: 5px; width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 50%; color: #a65353; background: #fbeaea; font-size: 15px; line-height: 1; cursor: pointer; }
-      .receipt-saved-delete:hover { color: #fff; background: #c84c4c; }
-      .receipt-saved-delete:disabled { opacity: .4; cursor: default; }
+      .receipt-saved-delete { position: absolute; top: 5px; right: 5px; width: 22px; height: 22px; display: grid; place-items: center; border: 0; border-radius: 5px; color: #b75a64; background: transparent; font-size: 15px; line-height: 1; cursor: pointer; }
+      .receipt-saved-delete:hover:not(:disabled) { color: #8f2f3c; background: rgba(#c54d5b, 0.12); }
+      .receipt-saved-delete:disabled { opacity: $disabled-opacity; cursor: default; }
       .receipt-archive-thumb { width: 28px; height: 34px; display: block; border: 1px solid #d6e2eb; border-radius: 3px; object-fit: cover; background: #f3f6f9; }
       .receipt-archive-file { padding: 8px 2px; border-radius: 4px; color: #2b70a3; background: #e7f2fa; font-size: 7px; font-weight: 850; text-align: center; }
       .receipt-archive-list > button > span:nth-child(2) { min-width: 0; }

@@ -1,5 +1,34 @@
 # RAG 평가 실행 이력
 
+## 고정 DEMO baseline과 실제 이력
+
+- 최근 실행 목록은 로그인 사용자 본인의 실제 DB 이력을 날짜/50건 제한 없이 최신순으로 표시합니다. 새 평가가 저장되면 다음 조회/새로고침에 포함됩니다. DEMO가 실제 행을 밀어내지 않습니다.
+- 그래프/KPI는 선택 기간의 실제 완료 실행을 기존 `summarize_runs()`로 집계합니다. 한국 시간 최초 실제 평가일 이전 30일만 고정 baseline으로 보완합니다. 실제 실험 시작 후 빈 날짜는 DEMO로 채우지 않습니다.
+- `recent_runs`는 실제 이력 전용, `baseline_runs`는 문항 유형/시연 분포 카드용 별도 데이터입니다. 실제 상세 결과가 있으면 기존 문항 분석은 그대로 사용할 수 있습니다.
+- 고정 식별자는 `rag-monitoring-baseline`입니다. 프론트의 `VITE_RAG_DEMO_BATCH_ID`와 요청의 배치 선택은 더 이상 사용하지 않습니다. 예전 v1/v2/v3 DEMO는 DB에 그대로 두되 baseline으로 조회하지 않습니다.
+- `latest actual`은 DEMO를 제외합니다. 조회 중 데이터 생성/INSERT/UPDATE/DELETE는 없습니다. 실제 행, checkpoint, 평가 실행 로직은 변경하지 않습니다.
+- 실제 이력이 없으면 baseline도 생성/표시하지 않습니다. 새 평가가 추가돼도 baseline 날짜나 UUID를 이동시키지 않습니다. 기본 최근 7일에 baseline 기간이 포함되지 않으면 실제 데이터만 표시되는 것이 정상이며, 기간을 넓히면 과거 baseline을 볼 수 있습니다.
+
+## 일회성 baseline 준비
+
+이번 구조 변경에서는 DB 쓰기나 seed 실행을 하지 않았습니다. baseline이 아직 DB에 없으면 기존 실제 데이터만 표시됩니다.
+
+백엔드 환경에서 아래 명령은 최초 실제 평가를 SELECT하여 그 전날까지 30일의 검토용 JSON만 만듭니다. 이메일은 대상 개발자 계정으로 지정합니다. 배치 ID와 종료일을 입력하지 않습니다.
+
+```powershell
+python scripts/seed_rag_monitoring_demo.py prepare --email developer@docunex.com --output rag-baseline.json
+```
+
+별도 저장 명령(이번 작업에서 미실행):
+
+```powershell
+python scripts/seed_rag_monitoring_demo.py insert --input rag-baseline.json
+```
+
+UUID는 사용자와 고정 baseline 슬롯으로 결정됩니다. 최초 실제값을 기준으로 합성 추이를 준비하고 누락된 실제 지표는 null로 둡니다. 문항 유형은 `question_type/count/answer_accuracy` 집계만, 응답 분포는 명시적 시연 예시만 저장합니다. 상세 문항은 저장하지 않습니다.
+
+동일 JSON의 재실행은 `ignore-duplicates`로 기존 행을 유지합니다. baseline이 이미 있으면 재준비를 거부하고 기존 파일을 재사용합니다. 기존 UUID의 날짜/값이 다르면 INSERT를 거부하며 새 배치 전환이나 자동 덮어쓰기를 하지 않습니다.
+
 ## 적용 상태
 
 구현 및 모킹 테스트만 완료했습니다. 실제 Supabase에는 적용하지 않았습니다.

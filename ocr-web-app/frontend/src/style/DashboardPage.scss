@@ -370,8 +370,23 @@
   margin-top: 14px;
   display: grid;
   gap: 8px;
+  height: 370px;
+  max-height: 370px;
+  padding-right: 5px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar { width: 6px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: #cbd8e2;
+    border-radius: 999px;
+  }
 
   > button {
+    height: 118px;
+    min-height: 118px;
+    overflow: hidden;
     width: 100%;
     padding: 13px 14px;
     color: inherit;
@@ -403,6 +418,23 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 11px;
+  }
+}
+.task-table {
+  max-height: 287px;
+  overflow: auto;
+  scrollbar-gutter: stable;
+
+  &::-webkit-scrollbar { width: 7px; height: 7px; }
+  &::-webkit-scrollbar-thumb {
+    background: #cbd8e2;
+    border-radius: 999px;
+  }
+
+  .task-head {
+    position: sticky;
+    z-index: 2;
+    top: 0;
   }
 }
 .meeting-meta,

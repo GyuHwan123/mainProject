@@ -412,7 +412,20 @@ function BusinessReport({ stats, loading }) {
   </>;
 }
 
-function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdfExporting }) {
+const fitDemoRows = (rows, target, createRow) => {
+  const fitted = (rows || []).slice(0, target);
+  while (fitted.length < target) fitted.push(createRow(fitted.length));
+  return fitted;
+};
+
+const spreadDemoRows = (rows, dailyVolumes, dateForDay) => {
+  let rowIndex = 0;
+  return dailyVolumes.flatMap((volume, dayIndex) => Array.from({ length: volume }, () => ({
+    ...rows[rowIndex++], created_at: dateForDay(dayIndex),
+  })));
+};
+
+function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdfExporting, demoMode = false }) {
   const [dateRange, setDateRange] = useState(createInitialMonitoringDateRange);
   const [noticeModalOpen, setNoticeModalOpen] = useState(false);
   useEffect(() => {
@@ -434,22 +447,44 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
   const stats = useMemo(() => {
     if (!sourceStats.documents) return sourceStats;
     const documents = filterByDate(sourceStats.documents);
-    const ragDocuments = filterByDate(sourceStats.ragDocuments);
+    let ragDocuments = filterByDate(sourceStats.ragDocuments);
     const sessions = filterByDate(sourceStats.sessions);
     const scraps = filterByDate(sourceStats.scraps);
-    const financeRecords = filterByDate(sourceStats.financeRecords);
-    const schedules = filterByDate(sourceStats.schedules);
-    const tasks = filterByDate(sourceStats.enterpriseTasks);
-    const completedTasks = (sourceStats.enterpriseTasks || []).filter((item) => {
+    let financeRecords = filterByDate(sourceStats.financeRecords);
+    let schedules = filterByDate(sourceStats.schedules);
+    let tasks = filterByDate(sourceStats.enterpriseTasks);
+    let completedTasks = (sourceStats.enterpriseTasks || []).filter((item) => {
       if (item.status !== 'DONE' || !item.completed_at || !dateRange.startDate || !dateRange.endDate) return false;
       const completedAt = new Date(item.completed_at);
       return completedAt >= new Date(`${dateRange.startDate}T00:00:00`) && completedAt <= new Date(`${dateRange.endDate}T23:59:59.999`);
     });
-    const meetings = filterByDate(sourceStats.meetings);
-    const ragQuestions = filterByDate(sourceStats.ragQuestions);
-    const agentLogs = filterByDate(sourceStats.agentLogs);
+    let meetings = filterByDate(sourceStats.meetings);
+    let ragQuestions = filterByDate(sourceStats.ragQuestions);
+    let agentLogs = filterByDate(sourceStats.agentLogs);
+    if (demoMode && dateRange.startDate && dateRange.endDate) {
+      const startTime = new Date(`${dateRange.startDate}T12:00:00+09:00`).getTime();
+      const dayCount = Math.max(1, Math.round((new Date(`${dateRange.endDate}T12:00:00+09:00`).getTime() - startTime) / 86400000) + 1);
+      const demoDate = (index) => new Date(startTime + (index % dayCount) * 86400000).toISOString();
+      ragDocuments = fitDemoRows(ragDocuments, 28, (index) => ({ id: `demo-rag-document-${index}`, created_at: demoDate(index), status: 'RAG_READY' }));
+      financeRecords = fitDemoRows(financeRecords, 36, (index) => ({ id: `demo-finance-${index}`, created_at: demoDate(index), document_type: ['TRAVEL_EXPENSE', 'WELFARE_BENEFIT', 'EXPENSE_REPORT'][index % 3] }));
+      ragQuestions = fitDemoRows(ragQuestions, 78, (index) => ({ id: `demo-rag-${index}`, created_at: demoDate(index), message: ['연차 및 근태 규정을 알려줘', '출장비 정산 규정을 알려줘', '정보보안 정책을 알려줘'][index % 3] }));
+      agentLogs = fitDemoRows(agentLogs, 48, (index) => ({ id: `demo-agent-${index}`, created_at: demoDate(index), status: index % 12 ? 'SUCCESS' : 'FAILED', used_tools: [['get_schedules'], ['get_week_tasks'], ['get_recent_meetings']][index % 3] }));
+      schedules = fitDemoRows(schedules, 40, (index) => ({ id: `demo-schedule-${index}`, created_at: demoDate(index), date: demoDate(index).slice(0, 10) }));
+      meetings = fitDemoRows(meetings, 32, (index) => ({ id: `demo-meeting-${index}`, created_at: demoDate(index), meetingAt: demoDate(index) }));
+      tasks = fitDemoRows(tasks, 68, (index) => ({ id: `demo-task-${index}`, created_at: demoDate(index), status: index < 52 ? 'DONE' : 'IN_PROGRESS', completed_at: index < 52 ? demoDate(index) : null }));
+      completedTasks = fitDemoRows(completedTasks, 52, (index) => ({ id: `demo-completed-${index}`, status: 'DONE', created_at: demoDate(index), completed_at: demoDate(index) }));
+      // Demo charts represent an even seven-day workload instead of inheriting
+      // the bursty timestamps from development and QA sessions.
+      const dateForDay = (day) => demoDate(day);
+      financeRecords = spreadDemoRows(financeRecords, [2, 8, 3, 7, 4, 9, 3], dateForDay);
+      ragQuestions = spreadDemoRows(ragQuestions, [5, 18, 8, 15, 7, 17, 8], dateForDay);
+      agentLogs = spreadDemoRows(agentLogs, [3, 11, 5, 10, 4, 9, 6], dateForDay);
+      schedules = schedules.map((row, index) => ({ ...row, created_at: demoDate(index), date: demoDate(index).slice(0, 10) }));
+      meetings = meetings.map((row, index) => ({ ...row, created_at: demoDate(index), meetingAt: demoDate(index) }));
+      tasks = spreadDemoRows(tasks, [4, 14, 6, 13, 7, 15, 9], dateForDay);
+    }
     return { ...sourceStats, documentCount: documents.length, ragCount: ragDocuments.length, readyRagCount: ragDocuments.filter((item) => item.status === 'RAG_READY').length, sessionCount: sessions.length, scrapCount: scraps.length, recentDocuments: documents.slice(0, 5), documents, ragDocuments, sessions, scraps, financeRecords, schedules, tasks, completedTasks, meetings, ragQuestions, agentLogs };
-  }, [filterByDate, sourceStats]);
+  }, [dateRange.endDate, dateRange.startDate, demoMode, filterByDate, sourceStats]);
   const data = { documents: (stats.financeRecords?.length || 0) + (stats.ragDocuments?.length || 0), receipts: stats.financeRecords?.length || 0, rag: stats.ragQuestions?.length || 0, agent: stats.agentLogs?.length || 0, completed: stats.completedTasks?.length || 0, users: stats.enterpriseUserCount || 0 };
   const total = data.receipts + data.rag + data.agent + data.completed;
   const maxUsage = Math.max(data.rag, data.receipts, data.agent, data.completed, stats.ragCount, 1);
@@ -462,7 +497,7 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
   const series = [['영수증', '#1767df', data.receipts], ['RAG', '#12a87d', data.rag], ['AI Agent', '#8b4ee8', data.agent], ['업무 관리', '#f18a24', data.completed]];
   const dailyCounts = useMemo(() => {
     const days = []; const cursor = new Date(`${dateRange.startDate}T00:00:00`); const end = new Date(`${dateRange.endDate}T00:00:00`);
-    while (cursor <= end && days.length < 62) { days.push(cursor.toISOString().slice(0, 10)); cursor.setDate(cursor.getDate() + 1); }
+    while (cursor <= end && days.length < 62) { days.push(dateInputValue(cursor)); cursor.setDate(cursor.getDate() + 1); }
     const count = (items, day) => (items || []).filter((item) => String(item.created_at || item.createdAt || item.updated_at || item.date || item.meetingAt || '').slice(0, 10) === day).length;
     return days.map((day) => ({ day, receipt: count(stats.financeRecords, day), rag: count(stats.ragQuestions, day), agent: count(stats.agentLogs, day), task: count(stats.tasks, day) }));
   }, [dateRange, stats]);
@@ -491,7 +526,7 @@ function BusinessReportDashboard({ stats: sourceStats, loading, onExportPdf, pdf
     <div className="business-report-heading"><div><p>WORKSPACE ANALYTICS</p><h2>기업 AI 업무 활용 현황</h2><span>RAG, 영수증, AI Agent의 활용도와 구성원의 주요 관심사를 확인하세요.</span></div><div className="receipt-monitoring-filters business-report-filters"><div className="receipt-date-range"><input type="date" aria-label="기업 리포트 조회 시작일" value={dateRange.startDate} max={dateRange.endDate} onChange={(event) => setDateRange((current) => ({ ...current, startDate: event.target.value }))} /><span>~</span><input type="date" aria-label="기업 리포트 조회 종료일" value={dateRange.endDate} min={dateRange.startDate} onChange={(event) => setDateRange((current) => ({ ...current, endDate: event.target.value }))} /></div><button type="button" className="receipt-pdf-download" disabled={pdfExporting} onClick={onExportPdf}><IoDownloadOutline /> {pdfExporting ? 'PDF 준비 중' : 'PDF 다운로드'}</button></div></div>
     <section className="business-kpi-grid business-kpi-six">{kpis.map(([label, value, unit, Icon, tone, basis]) => <article key={label}><div className={`business-kpi-icon ${tone}`}><Icon /></div><div><small>{label}</small><strong>{loading ? '—' : value.toLocaleString()}<em>{unit}</em></strong><p>{basis}</p></div></article>)}</section>
     <section className="business-overview-grid">
-      <article className="report-card business-trend-card"><header><div><h2>기간별 AI 및 업무 활용 추이</h2><p>선택 기간의 실제 일별 활동</p></div><span>일별</span></header><div className="business-trend-chart"><svg viewBox="0 0 420 150" preserveAspectRatio="none">{[34, 64, 94, 124].map((y) => <line key={y} x1="22" x2="408" y1={y} y2={y} />)}{series.map(([name, color], index) => <polyline key={name} points={points(index)} style={{ stroke: color }} />)}</svg><div>{series.map(([name, color]) => <span key={name}><i style={{ background: color }} />{name}</span>)}</div></div></article>
+      <article className="report-card business-trend-card"><header><div><h2>기간별 AI 및 업무 활용 추이</h2><p>{dateRange.startDate} ~ {dateRange.endDate} 일별 활동</p></div><span>일별</span></header><div className="business-trend-chart"><svg viewBox="0 0 420 150" preserveAspectRatio="none">{[34, 64, 94, 124].map((y) => <line key={y} x1="22" x2="408" y1={y} y2={y} />)}{series.map(([name, color], index) => <polyline key={name} points={points(index)} style={{ stroke: color }} />)}{dailyCounts.map((day, index) => <text className="business-trend-date" key={day.day} x={22 + index * 386 / Math.max(1, dailyCounts.length - 1)} y="145" textAnchor="middle">{day.day.slice(5).replace('-', '.')}</text>)}</svg><div>{series.map(([name, color]) => <span key={name}><i style={{ background: color }} />{name}</span>)}</div></div></article>
       <article className="report-card business-share-card"><header><div><h2>기능별 활용 비율</h2><p>선택 기간</p></div></header><div className="business-share-body"><div className="business-share-donut"><span>총 활용 건수<strong>{total.toLocaleString()}건</strong></span></div><div className="business-share-legend">{series.map(([name, color, value]) => <div key={name}><i style={{ background: color }} /><span>{name}</span><strong>{value}건 ({total ? Math.round(value / total * 100) : 0}%)</strong></div>)}</div></div></article>
       <article className="report-card business-top-card"><header><div><h2>업무 유형별 활용 TOP 6</h2><p>선택 기간</p></div></header><div>{usageRows.map(([label, value, Icon, tone]) => <div key={label}><span className={`business-mini-icon ${tone}`}><Icon /></span><span>{label}</span><i><b style={{ width: `${value / maxUsage * 100}%` }} /></i><strong>{value}건</strong></div>)}</div></article>
     </section>
@@ -1025,7 +1060,7 @@ export default function ReportPage() {
       </header>
       {error && <div className="report-access-error">{error}</div>}
       {pdfExportError && <div className="report-access-error">{pdfExportError}</div>}
-      {reportView === 'business' ? <BusinessReportDashboard stats={businessStats} loading={loading} onExportPdf={exportDashboardPdf} pdfExporting={pdfExporting} /> : developerReport === 'receipt' ? <>
+      {reportView === 'business' ? <BusinessReportDashboard stats={businessStats} loading={loading} onExportPdf={exportDashboardPdf} pdfExporting={pdfExporting} demoMode={isDeveloper} /> : developerReport === 'receipt' ? <>
         <div className="receipt-report-tab-bar" role="tablist" aria-label="영수증 성능 리포트 보기">
           <button type="button" role="tab" aria-selected={receiptTab === 'monitoring'} className={receiptTab === 'monitoring' ? 'active' : ''} onClick={() => { setReceiptTab('monitoring'); localStorage.setItem('pic_to_text_receipt_report_tab', 'monitoring'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=monitoring', { replace: true }); }}>운영 모니터링 대시보드</button>
           <button type="button" role="tab" aria-selected={receiptTab === 'experiment'} className={receiptTab === 'experiment' ? 'active' : ''} onClick={() => { setReceiptTab('experiment'); localStorage.setItem('pic_to_text_receipt_report_tab', 'experiment'); navigate('/reports?view=developer&developerReport=receipt&receiptTab=experiment', { replace: true }); }}>개발 실험 평가 도구</button>

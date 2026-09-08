@@ -58,6 +58,16 @@ class IdentityMixin:
         rows = response.json()
         return rows[0] if rows else None
 
+    def get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        response = _legacy_httpx().get(
+            f"{self.url}/rest/v1/{self.users_table}",
+            params={"select": "id,email,name,subscription_tier,is_active", "id": f"eq.{user_id}", "limit": "1"},
+            headers=self._service_headers(), timeout=15,
+        )
+        self._raise_for_supabase(response, "Supabase 사용자 조회 실패")
+        rows = response.json()
+        return rows[0] if rows else None
+
     def create_user(
         self,
         *,

@@ -1109,7 +1109,7 @@
 .business-dashboard .report-card > header { min-height: 48px; padding: 0 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e7edf3;
   h2 { margin: 0; color: #263a55; font-size: 12px; } p { margin: 3px 0 0; color: #8794a5; font-size: 10px; } > span { color: #71839b; font-size: 10px; }
 }
-.business-trend-chart { padding: 10px 13px 8px; svg { width: 100%; height: 146px; overflow: visible; } line { stroke: #e8edf3; stroke-width: 1; } polyline { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.business-trend-chart { padding: 10px 13px 8px; svg { width: 100%; height: 146px; overflow: visible; } line { stroke: #e8edf3; stroke-width: 1; } polyline { fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; } .business-trend-date { fill: #718198; font-size: 8px; font-weight: 650; }
   > div { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; color: #607289; font-size: 10px; } span { display: flex; align-items: center; gap: 5px; } i { width: 14px; height: 2px; }
 }
 .business-share-body { min-width: 0; min-height: 184px; padding: 13px 18px; display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; justify-content: center; gap: 16px; }

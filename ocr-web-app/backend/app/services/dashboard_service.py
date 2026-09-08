@@ -127,13 +127,14 @@ class DashboardService:
     def delete_meeting(self,email:str,item_id:str)->None:
         rows=self._check(httpx.delete(self._url("meetings"),params={"id":f"eq.{item_id}","created_by":f"eq.{self._user_id(email)}"},headers=self._headers(True),timeout=15),"회의록 삭제 실패");self._one(rows,"회의록을 찾을 수 없습니다.")
 
-    def participant_suggestions(self,email:str,q:str)->list[dict]:
+    def participant_suggestions(self,email:str,q:str,*,enterprise_only:bool=False)->list[dict]:
         uid=self._user_id(email);term=q.strip().casefold()
-        params={"select":"id,email,name","id":f"neq.{uid}","order":"name.asc","limit":"50"}
+        params={"select":"id,email,name,subscription_tier","id":f"neq.{uid}","order":"name.asc","limit":"500" if enterprise_only else "50"}
+        if enterprise_only:params["subscription_tier"]="eq.ENTERPRISE"
         rows=self._check(httpx.get(self._url("users"),params=params,headers=self._headers(),timeout=15),"참여자 검색 실패")
         if term:rows=[row for row in rows if term in str(row.get("email","")).casefold() or term in str(row.get("name","")).casefold()]
         rows=rows[:10]
-        return [{"id":str(row["id"]),"email":row["email"],"name":row.get("name") or row["email"]} for row in rows]
+        return [{"id":str(row["id"]),"email":row["email"],"name":row.get("name") or row["email"],"subscriptionTier":row.get("subscription_tier") or "FREE"} for row in rows]
 
     def list_meeting_shares(self,email:str,item_id:str)->list[dict]:
         self._meeting_access(email,item_id)

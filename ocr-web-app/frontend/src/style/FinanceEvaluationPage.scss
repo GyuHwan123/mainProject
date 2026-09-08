@@ -246,8 +246,10 @@ $blue: #1f5f94;
 .single-result-sidebar {
   position: sticky;
   top: 16px;
-  height: calc(100vh - 32px);
-  min-height: 560px;
+  height: auto;
+  align-self: stretch;
+  contain: size;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -279,7 +281,7 @@ $blue: #1f5f94;
 }
 @media (max-width: 760px) {
   .single-evaluation-layout { grid-template-columns: minmax(0, 1fr); }
-  .single-result-sidebar { position: static; height: 360px; min-height: 0; }
+  .single-result-sidebar { position: static; height: 360px; contain: none; }
 }
 .pipeline-empty-result {
   .pipeline-boxes > section,
@@ -896,10 +898,12 @@ $blue: #1f5f94;
       font-size: 13px;
     }
     > div {
+      min-height: 260px;
       max-height: 260px;
       overflow: auto;
       padding: 8px;
       display: grid;
+      align-content: start;
       gap: 5px;
     }
     p {

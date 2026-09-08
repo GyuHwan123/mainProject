@@ -1,5 +1,7 @@
 import json
 from io import BytesIO
+from pathlib import Path
+from zipfile import BadZipFile, ZIP_STORED, ZipFile
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -7,6 +9,7 @@ from fastapi.responses import Response, StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from pydantic import BaseModel, Field
+from starlette.datastructures import Headers
 
 from app.api.routes.auth import require_current_user
 from app.core.config import settings
@@ -17,6 +20,9 @@ from app.services.pii_service import privacy_boxes
 from app.services.file_security_service import MAX_FILE_SIZE, validate_uploaded_file
 
 router = APIRouter()
+
+IMAGE_MIME_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".bmp": "image/bmp", ".tif": "image/tiff", ".tiff": "image/tiff"}
+
 class WorkbookExportRequest(BaseModel):
     title: str = Field(default="추출 문서", max_length=120)
     rows: list[list[str]] = Field(min_length=1, max_length=1000)
@@ -60,9 +66,27 @@ async def upload_file(
     user: User = Depends(require_current_user),
 ) -> OCRResponse:
     content = await file.read()
+
+    result = await request_ocr(file, content, processing_mode, ground_truth_json)
+    return save_result(
+        user=user,
+        file=file,
+        content=content,
+        result=result,
+        upload_origin=upload_origin,
+    )
+
+
+async def request_ocr(
+    file: UploadFile,
+    content: bytes,
+    processing_mode: str = "document",
+    ground_truth_json: str | None = None,
+) -> OCRResponse:
     filename = file.filename or "upload"
     mime_type = file.content_type or "application/octet-stream"
     validate_uploaded_file(filename, mime_type, content)
+
     try:
         async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(
@@ -73,12 +97,58 @@ async def upload_file(
             )
             response.raise_for_status()
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(status_code=502, detail=exc.response.text or "OCR processing failed") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=exc.response.text or "OCR processing failed",
+        ) from exc
     except httpx.RequestError as exc:
-        raise HTTPException(status_code=503, detail="OCR service is unavailable") from exc
+        raise HTTPException(
+            status_code=503,
+            detail="OCR service is unavailable",
+        ) from exc
 
-    result = OCRResponse.model_validate(response.json())
-    return save_result(user=user, file=file, content=content, result=result, upload_origin=upload_origin)
+    return OCRResponse.model_validate(response.json())
+
+
+@router.post("/upload-images", response_model=OCRResponse)
+async def upload_images(
+    files: list[UploadFile] = File(...),
+    user: User = Depends(require_current_user),
+) -> OCRResponse:
+    if len(files) < 2:
+        raise HTTPException(status_code=400, detail="묶을 이미지를 2장 이상 선택하세요.")
+    contents = []
+    total_size = 0
+    for file in files:
+        if Path(file.filename or "").suffix.lower() not in IMAGE_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="이미지 파일만 하나의 문서로 묶을 수 있습니다.")
+        content = await file.read(MAX_FILE_SIZE - total_size + 1)
+        total_size += len(content)
+        if total_size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="이미지 묶음은 합계 50MB까지 업로드할 수 있습니다.")
+        contents.append(content)
+    pages = []
+    for page_number, (file, content) in enumerate(zip(files, contents), start=1):
+        # OCR receives the original image through the same service call as single uploads.
+        extracted = await request_ocr(file, content)
+        if len(extracted.pages) != 1:
+            raise HTTPException(status_code=502, detail=f"{file.filename}: 이미지 OCR 페이지 수가 올바르지 않습니다.")
+        pages.append(extracted.pages[0].model_copy(update={
+            "page": page_number,
+            "image_file": f"pages/{page_number}{Path(file.filename).suffix.lower()}",
+            "image_name": file.filename,
+        }))
+
+    filename = f"{Path(files[0].filename).stem} 외 {len(files) - 1}장.images.zip"
+    result = OCRResponse(filename=filename, content_type="image_bundle", pages=pages)
+    # Keep the original bytes in one storage object using the existing file_url.
+    # Page references live in the existing bounding_boxes JSON, not new DB columns.
+    with BytesIO() as stream:
+        with ZipFile(stream, "w", compression=ZIP_STORED) as archive:
+            for page, content in zip(pages, contents):
+                archive.writestr(page.image_file, content)
+        document_file = UploadFile(file=stream, filename=filename, headers=Headers({"content-type": "application/zip"}))
+        return save_result(user=user, file=document_file, content=stream.getvalue(), result=result, upload_origin="RAG")
 
 
 @router.post("/docx-preview")
@@ -152,7 +222,7 @@ def get_document(document_id: str, user: User = Depends(require_current_user)) -
     return OCRResponse(
         document_id=document["id"],
         filename=document["file_name"],
-        content_type="stored_document",
+        content_type="image_bundle" if document["file_name"].endswith(".images.zip") else "stored_document",
         pages=pages,
     )
 
@@ -162,6 +232,24 @@ def get_document_file(document_id: str, user: User = Depends(require_current_use
     document = supabase_service.get_ocr_document(user.email, document_id)
     content, mime_type = supabase_service.download_document(document["file_url"])
     return StreamingResponse(BytesIO(content), media_type=mime_type)
+
+
+@router.get("/documents/{document_id}/pages/{page_number}/file")
+def get_document_page_file(document_id: str, page_number: int, user: User = Depends(require_current_user)) -> Response:
+    document = supabase_service.get_ocr_document(user.email, document_id)
+    page = next((page for page in document.get("bounding_boxes") or [] if page.get("page") == page_number), None)
+    if not document["file_name"].endswith(".images.zip") or not page or not page.get("image_file"):
+        raise HTTPException(status_code=404, detail="원본 이미지 페이지를 찾을 수 없습니다.")
+    content, _ = supabase_service.download_document(document["file_url"])
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            entry = archive.getinfo(page["image_file"])
+            if entry.file_size > MAX_FILE_SIZE:
+                raise HTTPException(status_code=413, detail="이미지 페이지가 너무 큽니다.")
+            image = archive.read(entry)
+    except (BadZipFile, KeyError) as exc:
+        raise HTTPException(status_code=404, detail="원본 이미지 페이지를 찾을 수 없습니다.") from exc
+    return Response(content=image, media_type=IMAGE_MIME_TYPES.get(Path(page["image_file"]).suffix, "application/octet-stream"))
 
 
 @router.get("/documents/{document_id}/privacy-boxes")

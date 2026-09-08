@@ -1,4 +1,5 @@
 import { Component, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoBookmarkOutline, IoCloseOutline, IoDownloadOutline, IoMailOutline, IoTrashOutline } from 'react-icons/io5';
@@ -6,6 +7,8 @@ import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
 import { getAppUser } from '../features/appSession';
+import { documentUploadGroups } from '../features/documentUploads';
+import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEvaluationProgress.mjs';
 import { validateFilesBeforeUpload } from '../features/fileSecurity';
 import { getParticipantSuggestions } from '../features/dashboardService';
 import '../style/ChatPage.scss';
@@ -30,10 +33,15 @@ const COMPANY_DOCUMENT_ID_PATTERN = /^(?:HR-00[1-5]|GA-00[1-4]|IS-00[1-2]|SH-00[
 function HistoryPagination({ page, totalItems, onChange, label }) {
   const totalPages = Math.ceil(totalItems / HISTORY_PAGE_SIZE);
   if (totalPages <= 1) return null;
+  const firstVisiblePage = Math.max(1, Math.min(page - 2, totalPages - 4));
+  const visiblePages = Array.from(
+    { length: Math.min(5, totalPages) },
+    (_, index) => firstVisiblePage + index,
+  );
   return <nav className="history-pagination" aria-label={`${label} 페이지`}>
-    <button type="button" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="이전 페이지">‹</button>
-    {Array.from({ length: totalPages }, (_, index) => index + 1).map((number) => <button type="button" key={number} className={page === number ? 'active' : ''} aria-current={page === number ? 'page' : undefined} onClick={() => onChange(number)}>{number}</button>)}
-    <button type="button" disabled={page >= totalPages} onClick={() => onChange(page + 1)} aria-label="다음 페이지">›</button>
+    <button type="button" className="pagination-arrow" disabled={page <= 1} onClick={() => onChange(page - 1)} aria-label="이전 페이지">&lt;</button>
+    {visiblePages.map((number) => <button type="button" key={number} className={page === number ? 'active' : ''} aria-current={page === number ? 'page' : undefined} onClick={() => onChange(number)}>{number}</button>)}
+    <button type="button" className="pagination-arrow" disabled={page >= totalPages} onClick={() => onChange(page + 1)} aria-label="다음 페이지">&gt;</button>
   </nav>;
 }
 
@@ -45,7 +53,7 @@ function DeleteConfirmDialog({ request, deleting, error, onCancel, onConfirm }) 
   return <div className="delete-confirm-backdrop" role="presentation" onMouseDown={(event) => { if (!deleting && event.target === event.currentTarget) onCancel(); }}>
     <section className="delete-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-confirm-title" aria-describedby="delete-confirm-description">
       <span className="delete-confirm-icon"><IoTrashOutline /></span>
-      <div><small>{target} {isAll ? '전체삭제' : '기록 삭제'}</small><h2 id="delete-confirm-title">{title}</h2><p id="delete-confirm-description">삭제한 기록은 복구할 수 없습니다.</p></div>
+      <div><small>{target} {isAll ? '전체삭제' : '기록 삭제'}</small><h2 id="delete-confirm-title">{title}</h2><p id="delete-confirm-description">삭제한 기록은 일반 목록에서 숨겨집니다.</p></div>
       {error && <p className="delete-confirm-error" role="alert">{error}</p>}
       <footer><button type="button" className="cancel-delete" disabled={deleting} onClick={onCancel}>취소</button><button type="button" className="confirm-delete" disabled={deleting} onClick={onConfirm}>{deleting ? '삭제 중...' : (isAll ? '전체삭제' : '삭제')}</button></footer>
     </section>
@@ -270,6 +278,17 @@ function EvidencePreview({ source, onUpload, uploading }) {
     const load = async () => {
       if (!source?.documentId) { setPreview({ type: '', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 }); return; }
       setPreview({ type: 'loading', url: '', pdf: null, pageCount: 0, width: 0, height: 0, scale: 1 });
+      if (!isCompanyDocument && source.source?.endsWith('.images.zip')) {
+        const [{ data: document }, { data: privacy }] = await Promise.all([
+          apiClient.get(`/ocr/documents/${source.documentId}`),
+          apiClient.get(`/ocr/documents/${source.documentId}/privacy-boxes`),
+        ]);
+        if (active) {
+          setPrivacyPages(Array.isArray(privacy) ? privacy : []);
+          setPreview({ type: 'image-pages', documentId: source.documentId, url: '', pageCount: document.pages.length, width: 0, height: 0, scale: 1 });
+        }
+        return;
+      }
       const [{ data: blob }, { data: privacy }] = await Promise.all([
         apiClient.get(isCompanyDocument
           ? `/rag/company-documents/${encodeURIComponent(source.documentId)}/file`
@@ -314,6 +333,21 @@ function EvidencePreview({ source, onUpload, uploading }) {
     };
   }, [isCompanyDocument, source?.documentId, source?.source]);
 
+  useEffect(() => {
+    if (preview.type !== 'image-pages' || preview.documentId !== source?.documentId) return;
+    let active = true;
+    let objectUrl = '';
+    setPreview((value) => ({ ...value, url: '', width: 0, height: 0, pageLoading: true, pageError: false }));
+    apiClient.get(`/ocr/documents/${preview.documentId}/pages/${currentPage}/file`, { responseType: 'blob', timeout: 60000 })
+      .then(({ data }) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(data);
+        setPreview((value) => ({ ...value, url: objectUrl, pageLoading: false }));
+      })
+      .catch(() => { if (active) setPreview((value) => ({ ...value, pageLoading: false, pageError: true })); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [preview.type, preview.documentId, source?.documentId, currentPage]);
+
   const boxStyle = (() => {
     const points = bboxPoints(bbox);
     if (!points.length || !preview.width || !preview.height) return null;
@@ -323,7 +357,7 @@ function EvidencePreview({ source, onUpload, uploading }) {
     return { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: Math.max(3, (Math.max(...xs) - Math.min(...xs)) * preview.scale), height: Math.max(3, (Math.max(...ys) - Math.min(...ys)) * preview.scale) };
   })();
   const safePrivacyPages = Array.isArray(privacyPages) ? privacyPages : [];
-  const imagePrivacyStyles = (safePrivacyPages.find((page) => page.page === 1)?.boxes || []).map((box) => {
+  const imagePrivacyStyles = (safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []).map((box) => {
     const points = bboxPoints(box); const xs = points.map((point) => Number(point[0])).filter(Number.isFinite); const ys = points.map((point) => Number(point[1])).filter(Number.isFinite);
     return xs.length && ys.length ? { left: Math.min(...xs) * preview.scale, top: Math.min(...ys) * preview.scale, width: (Math.max(...xs) - Math.min(...xs)) * preview.scale, height: (Math.max(...ys) - Math.min(...ys)) * preview.scale } : null;
   }).filter(Boolean);
@@ -331,15 +365,15 @@ function EvidencePreview({ source, onUpload, uploading }) {
   if (!source) return <button type="button" className="rag-first-upload" disabled={uploading} onClick={onUpload} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); if (!uploading) onUpload?.([...event.dataTransfer.files]); }}><RiFileUploadLine /><strong>{uploading ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>;
   const pageCount = Math.max(1, preview.pageCount || 1);
   return <div className="evidence-preview"><div className="evidence-preview-label"><span>{source.source}</span><div className="evidence-page-controls"><button disabled={currentPage <= 1} onClick={() => setCurrentPage((page) => page - 1)}>‹</button><b>{currentPage} / {pageCount}</b><button disabled={currentPage >= pageCount} onClick={() => setCurrentPage((page) => page + 1)}>›</button></div></div><div className="evidence-preview-body">
-    {['pdf', 'spreadsheet'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
+    {['pdf', 'spreadsheet', 'image-pages'].includes(preview.type) && <aside className="evidence-page-list">{Array.from({ length: pageCount }, (_, index) => <button key={index + 1} className={currentPage === index + 1 ? 'active' : ''} onClick={() => setCurrentPage(index + 1)}><span>{index + 1}</span><small>{preview.type === 'spreadsheet' ? 'SHEET' : 'PAGE'}</small></button>)}</aside>}
     <div className="evidence-document-stage">
-    {preview.type === 'loading' && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
-    {preview.type === 'image' && <img src={preview.url} alt="근거 문서" onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
+    {(preview.type === 'loading' || preview.pageLoading) && <div className="evidence-preview-loading"><i /><span>문서 미리보기를 불러오는 중...</span></div>}
+    {['image', 'image-pages'].includes(preview.type) && preview.url && <img key={preview.url} src={preview.url} alt={`근거 문서 ${currentPage}페이지`} onError={() => setPreview((value) => ({ ...value, pageError: true }))} onLoad={(event) => { const image = event.currentTarget; const scale = image.clientWidth / image.naturalWidth; setPreview((value) => ({ ...value, width: image.naturalWidth, height: image.naturalHeight, scale })); }} />}
     {preview.type === 'pdf' && preview.pdf && <PdfEvidencePage pdf={preview.pdf} pageNumber={currentPage} bbox={bbox} privacyBoxes={safePrivacyPages.find((page) => page.page === currentPage)?.boxes || []} sourceContent={Number(source?.pageNumber || 1) === currentPage ? source?.content : ''} />}
     {preview.type === 'spreadsheet' && <SpreadsheetEvidencePage page={preview.pages?.[currentPage - 1]} bbox={bbox} />}
-    {preview.type === 'image' && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
-    {preview.type === 'image' && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
-    {['unsupported', 'error'].includes(preview.type) && <div className="evidence-preview-empty"><strong>{isCompanyDocument ? '기업 공용문서 원본을 표시할 수 없습니다' : '미리보기를 표시할 수 없습니다'}</strong>{!isCompanyDocument && <button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button>}</div>}
+    {['image', 'image-pages'].includes(preview.type) && boxStyle && <span className="evidence-bbox" style={boxStyle} />}
+    {['image', 'image-pages'].includes(preview.type) && preview.width > 0 && imagePrivacyStyles.map((style, index) => <span className="privacy-mask" style={style} key={index}>보호됨</span>)}
+    {(['unsupported', 'error'].includes(preview.type) || preview.pageError) && <div className="evidence-preview-empty"><strong>{isCompanyDocument ? '기업 공용문서 원본을 표시할 수 없습니다' : '미리보기를 표시할 수 없습니다'}</strong>{!isCompanyDocument && <button onClick={() => { window.location.href = `/ocr?document=${encodeURIComponent(source.documentId)}&page=${source.pageNumber}&bbox=${encodeURIComponent(JSON.stringify(source.bbox))}`; }}>OCR 원문에서 보기</button>}</div>}
     </div>
   </div>{isCompanyDocument && source.content && <aside className="company-evidence-text"><strong>근거 텍스트</strong><p>{source.content}</p></aside>}</div>;
 }
@@ -479,12 +513,13 @@ function ChatPageContent() {
 
   useEffect(() => {
     if (!evaluationRunning) return undefined;
+    let active = true;
     const updateProgress = () => apiClient.get('/rag/evaluate/status')
-      .then(({ data }) => setEvaluationProgress(data))
+      .then(({ data }) => { if (active && evaluationRunningRef.current) setEvaluationProgress(data); })
       .catch(() => {});
     updateProgress();
     const poller = window.setInterval(updateProgress, 1000);
-    return () => window.clearInterval(poller);
+    return () => { active = false; window.clearInterval(poller); };
   }, [evaluationRunning]);
 
   useEffect(() => {
@@ -601,16 +636,19 @@ function ChatPageContent() {
     setRagError('');
     try {
       await validateFilesBeforeUpload(files);
-      for (const file of files) {
+
+      for (const group of documentUploadGroups(files)) {
+        const bundled = group.length > 1;
         const formData = new FormData();
-        formData.append('file', file);
-        setIndexingId(file.name);
-        const { data: extracted } = await apiClient.post('/ocr/upload?upload_origin=RAG', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000,
+        group.forEach((file) => formData.append(bundled ? 'files' : 'file', file));
+        setIndexingId(bundled ? `${group.length}장 이미지 문서` : group[0].name);
+        const { data: extracted } = await apiClient.post(bundled ? '/ocr/upload-images' : '/ocr/upload?upload_origin=RAG', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 * group.length,
         });
         const { data: indexed } = await apiClient.post(`/rag/documents/${extracted.document_id}/index`, null, { timeout: 300000 });
         setActiveId(indexed.id);
         setUploadMode(false);
+        setDocumentViewMode('viewer');
         setSelectedSource(null);
       }
       setSources([]);
@@ -794,6 +832,8 @@ function ChatPageContent() {
       try {
         const { data } = await apiClient.post('/rag/evaluate/checkpoint-status', parsed);
         setEvaluationProgress(data);
+        setEvaluationStatus(evaluationStatusLabel(data));
+        if (data.configuration_matches === false) setEvaluationError('RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.');
       } catch {
         setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
       }
@@ -813,10 +853,14 @@ function ChatPageContent() {
       ...progress, status: 'running', total: evaluationDataset.cases.length, question_id: null,
     }));
     try {
-      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, { timeout: 36000000 });
+      const { data } = await apiClient.post('/rag/evaluate', evaluationDataset, {
+        timeout: 36000000, params: { retry_failed: evaluationProgress.error_count > 0 },
+      });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
-      setEvaluationResult(data); setEvaluationStatus('완료');
-      setEvaluationProgress((progress) => ({ ...progress, status: 'completed', current: evaluationDataset.cases.length, total: evaluationDataset.cases.length, question_id: null, progress_percent: 100 }));
+      const completion = evaluationCompletion(data, evaluationDataset.cases.length);
+      setEvaluationResult(data);
+      setEvaluationStatus(evaluationStatusLabel({ ...completion, total: evaluationDataset.cases.length }));
+      setEvaluationProgress((progress) => ({ ...progress, ...completion, current: evaluationDataset.cases.length, total: evaluationDataset.cases.length, question_id: null, progress_percent: 100 }));
     } catch (error) {
       const detail = error.response?.data?.detail;
       setEvaluationError(typeof detail === 'string' ? detail : JSON.stringify(detail || error.message));
@@ -882,14 +926,36 @@ function ChatPageContent() {
       <section className="rag-grid">
         <aside className="history-panel">
           <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
-          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveId(document.id); setUploadMode(false); startNewChat(); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoTrashOutline /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
-          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><div className="history-header-actions"><button type="button" disabled={!sessions.length || deleting} onClick={() => requestDelete('chat', 'all')}>전체삭제</button><span>{sessions.length}</span></div></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('chat', 'single', session.id); }} title="대화 삭제" aria-label={`${session.title} 대화 삭제`}><IoTrashOutline /></button></div>)}
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveId(document.id); setUploadMode(false); startNewChat(); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoCloseOutline aria-hidden="true" /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
+          <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><div className="history-header-actions"><button type="button" disabled={!sessions.length || deleting} onClick={() => requestDelete('chat', 'all')}>전체삭제</button><span>{sessions.length}</span></div></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('chat', 'single', session.id); }} title="대화 삭제" aria-label={`${session.title} 대화 삭제`}><IoCloseOutline aria-hidden="true" /></button></div>)}
           {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div><HistoryPagination page={chatHistoryPage} totalItems={sessions.length} onChange={setChatHistoryPage} label="채팅 이력" /></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
         </aside>
 
         <section className={`context-panel ${evidenceFlash ? 'evidence-flash' : ''}`}>
-          <div className="rag-panel-title"><div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div><div className="rag-title-actions"><span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>{activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}<button type="button" onClick={() => { setUploadMode(true); startNewChat(); }}><RiFileUploadLine /> 문서 추가</button></div></div>
+          <div className="rag-panel-title rag-document-title">
+            <div><strong>RAG</strong><small>{uploadMode ? '새 RAG 문서를 업로드하세요' : (activeDoc?.name || '새 RAG 문서를 업로드하세요')}</small></div>
+            <div className="rag-title-actions">
+              <span className="source-count">{uploadMode ? 0 : sources.length} SOURCES</span>
+              {activeDoc && !uploadMode && <button type="button" className="clear-document-selection" onClick={clearActiveDocument}>선택 해제</button>}
+              <div className="document-upload-actions">
+                <button type="button" disabled={Boolean(indexingId)} onClick={() => { setUploadMode(true); startNewChat(); fileRef.current?.click(); }}><RiFileUploadLine /> 문서 추가</button>
+                {isDeveloper && <button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 데이터 업로드</button>}
+              </div>
+            </div>
+          </div>
+          {isDeveloper && (evaluationDataset || evaluationRunning || evaluationError || evaluationResult) && <section className="rag-evaluation-compact" aria-label="RAG 평가 실행 및 진행 상태">
+            <div className="evaluation-compact-row">
+              <span className="evaluation-compact-dataset" title={evaluationDataset?.dataset_name || '정답 데이터를 선택하세요'}>{evaluationDataset?.dataset_name || '정답 데이터 없음'}</span>
+              <span>{evaluationDataset?.cases.length ?? 0}문항</span>
+              <span className="evaluation-compact-status" role="status">{evaluationStatus}{evaluationRunning && ` · ${Number(evaluationProgress.progress_percent || 0).toFixed(1)}%`}</span>
+              <span className="evaluation-compact-time">경과 {formatEvaluationDuration(evaluationProgress.elapsed_seconds)} · 남은 {evaluationRunning ? formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds) : '—'}</span>
+              <button type="button" disabled={!evaluationDataset || evaluationRunning || evaluationProgress.configuration_matches === false} onClick={runRagEvaluation}>{evaluationRunning ? '평가 중…' : evaluationProgress.error_count > 0 ? `실패 ${evaluationProgress.error_count}문항 재시도` : '평가 실행'}</button>
+              <Link to="/reports?view=developer&developerReport=rag&ragReportTab=overview">리포트 ↗</Link>
+            </div>
+            {evaluationRunning && <div className="evaluation-compact-progress" role="progressbar" aria-label="평가 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>}
+            {evaluationError && <p className="evaluation-compact-error" role="alert">{evaluationError}</p>}
+          </section>}
           {ragError && <p className="rag-inline-error" role="alert">{ragError}</p>}
           <div className="evidence-workspace">
             <div className="preview-slot">
@@ -923,22 +989,7 @@ function ChatPageContent() {
         </section>
       </section>
 
-      {isDeveloper && <section className="rag-evaluation-panel">
-        <header><div><small>DEVELOPER ONLY</small><h2>RAG 성능 평가</h2><p>현재 BGE-M3 · Vector Search · Reranker · gemma2:2b 전체 파이프라인을 평가합니다.</p></div><span className={`evaluation-state ${evaluationStatus === '완료' ? 'complete' : ''}`}>{evaluationStatus}</span></header>
-        <div className="evaluation-toolbar"><div><strong>{evaluationDataset ? `정답 데이터 ${evaluationDataset.cases.length}문항 로드 완료` : '정답 데이터가 없습니다.'}</strong><small>{evaluationDataset?.dataset_name || '지정된 JSON 형식의 평가 파일을 선택하세요.'}</small></div><button type="button" disabled={evaluationRunning} onClick={() => evaluationFileRef.current?.click()}>정답 JSON 업로드</button><button type="button" className="run" disabled={!evaluationDataset || evaluationRunning} onClick={runRagEvaluation}>평가 실행</button></div>
-        {(evaluationDataset || evaluationRunning) && <section className="evaluation-progress" aria-live="polite">
-          <div className="evaluation-progress-heading"><strong>{evaluationRunning ? `현재 ${Math.min(evaluationProgress.current + 1, evaluationProgress.total || evaluationDataset?.cases.length || 0)}번째 문항 처리 중` : evaluationStatus}</strong><span>{evaluationProgress.current} / {evaluationProgress.total || evaluationDataset?.cases.length || 0} 완료 · {Number(evaluationProgress.progress_percent || 0).toFixed(1)}%</span></div>
-          <div className="evaluation-progress-track"><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>
-          <div className="evaluation-progress-details"><span><small>현재 문항</small><strong>{evaluationProgress.question_id || '—'}</strong></span><span><small>경과 시간</small><strong>{formatEvaluationDuration(evaluationProgress.elapsed_seconds)}</strong></span><span><small>문항당 평균</small><strong>{formatEvaluationDuration(evaluationProgress.average_seconds_per_case)}</strong></span><span><small>예상 남은 시간</small><strong>{formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds)}</strong></span></div>
-          {evaluationRunning && evaluationProgress.current === 0 && <p>첫 문항이 끝나면 문항당 평균 시간과 예상 남은 시간이 계산됩니다.</p>}
-        </section>}
-        {evaluationError && <p className="evaluation-error">{evaluationError}</p>}
-        <div className="evaluation-metrics">{[
-          ['Hit@K', 'hit_at_k'], ['Recall@K', 'recall_at_k'], ['MRR', 'mrr'], ['NDCG@K', 'ndcg_at_k'],
-          ['Answer Accuracy', 'answer_accuracy'], ['Citation / Source', 'citation_accuracy'], ['Unanswerable Rejection', 'unanswerable_rejection_rate'],
-        ].map(([label, key]) => <article key={key}><span>{label}</span><strong>{evaluationResult ? `${(Number(evaluationResult.summary?.[key] || 0) * 100).toFixed(1)}%` : '—'}</strong></article>)}</div>
-        {evaluationResult && <footer>총 {evaluationResult.summary.total}문항 · Top-K {evaluationResult.summary.top_k} · 답변 유사도 기준 {(evaluationResult.summary.answer_threshold * 100).toFixed(0)}%</footer>}
-      </section>}
+
 
       <button className="knowledge-pocket" type="button" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
       {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><div><small>KNOWLEDGE BASKET</small><h2>내 지식 바구니</h2><p>사용할 항목을 선택한 뒤 삭제, PDF 변환 또는 이메일 전송을 이용하세요.</p></div><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-selection-toolbar"><label><input type="checkbox" checked={Boolean(scrapbook.length) && selectedScrapIds.length === scrapbook.length} onChange={(event) => setSelectedScrapIds(event.target.checked ? scrapbook.map((item) => item.id) : [])} /> 전체 선택</label><div><span>{selectedScrapIds.length}건 선택</span><button type="button" className="delete-selected" disabled={!selectedScrapIds.length} onClick={removeSelectedScraps}><IoTrashOutline /> 선택 삭제</button></div></div><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id} className={selectedScrapIds.includes(item.id) ? 'selected' : ''}><label className="scrapbook-check"><input type="checkbox" checked={selectedScrapIds.includes(item.id)} onChange={() => toggleScrap(item.id)} /><span /></label><div className="scrapbook-item-content"><strong>{item.title}</strong><p>{item.answer}</p><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small></div></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div>{scrapError && <p className="scrapbook-action-error">{scrapError}</p>}<footer><button type="button" className="export-pdf" disabled={!selectedScrapIds.length || scrapPdfExporting} onClick={exportPdf}><IoDownloadOutline /> {scrapPdfExporting ? 'PDF 생성 중...' : 'PDF 변환'}</button><button type="button" className="email-scraps" disabled={!selectedScrapIds.length} onClick={() => { setScrapEmailNotice(''); setScrapEmailOpen(true); }}><IoMailOutline /> 이메일 전송</button></footer></section></div>}

@@ -1,0 +1,14 @@
+{
+  "label": "baseline",
+  "embedding_model": "BAAI/bge-m3",
+  "embedding_dimensions": 1024,
+  "normalize_embeddings": true,
+  "document_count": 18,
+  "chunk_count": 37,
+  "embedding_shape": [
+    37,
+    1024
+  ],
+  "chunk_fingerprint_sha256": "07fda11679ca57f21fbe364386068538b824d563c7096ce5bd72913f1543dcce",
+  "embedding_file": "baseline_embeddings.pkl"
+}

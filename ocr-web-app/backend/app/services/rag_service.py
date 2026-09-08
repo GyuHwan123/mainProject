@@ -31,7 +31,7 @@ BM25_CANDIDATE_COUNT = settings.RAG_BM25_CANDIDATE_COUNT
 QUERY_REWRITING_ENABLED = settings.RAG_QUERY_REWRITING
 QUERY_REWRITE_MODEL = settings.RAG_QUERY_REWRITE_MODEL or settings.RAG_LLM_MODEL
 
-_EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v1"
+_EVIDENCE_NORMALIZATION_VERSION = "facet-evidence-v2-question-endings"
 _EMBEDDING_CACHE_MAX_SIZE = 2048
 _embedding_cache: OrderedDict[str, list[float]] = OrderedDict()
 _embedding_cache_lock = Lock()
@@ -43,9 +43,9 @@ def can_access_company_rag(user_role: str, subscription_tier: str) -> bool:
 
 @lru_cache(maxsize=1)
 def _get_embedding_model() -> Any:
-    from sentence_transformers import SentenceTransformer
+    from app.services.embedding_model import load_embedding_model
 
-    return SentenceTransformer(EMBEDDING_MODEL)
+    return load_embedding_model()
 
 
 @lru_cache(maxsize=1)
@@ -844,6 +844,26 @@ _KOREAN_DURATION_NORMALIZATION = {
 _EVIDENCE_SEMANTIC_THRESHOLD = 0.55
 
 
+_QUESTION_ENDING = re.compile(
+    r"(?P<ending>알려주세요|알려줄래|알려줘|무엇이야|뭔가요|뭐야|인가요|"
+    r"어떻게\s*하나요|어떻게\s*해)(?P<punctuation>[?!？！.。]*)\s*$"
+)
+
+
+def _normalize_query_question_ending(query: str) -> str:
+    """Separate terminal question expressions without changing the original query.
+
+    Keep the expression for sentence embeddings, but allow facet tokenization to
+    discard it. Evidence prose and expressions inside a sentence are untouched.
+    """
+    match = _QUESTION_ENDING.search(query)
+    if not match:
+        return query
+    prefix = query[:match.start()].rstrip()
+    ending = re.sub(r"^어떻게\s*", "어떻게 ", match["ending"])
+    return f"{prefix + ' ' if prefix else ''}{ending}{match['punctuation']}"
+
+
 def _normalize_evidence_text(value: str) -> str:
     normalized = str(value or "").lower()
     for source, replacement in _KOREAN_DURATION_NORMALIZATION.items():
@@ -879,6 +899,9 @@ def _strip_korean_particle(token: str) -> str:
 
 
 def _normalize_evidence_token(raw_token: str) -> str:
+    ending = _QUESTION_ENDING.search(raw_token)
+    if ending:
+        raw_token = raw_token[:ending.start()].rstrip()
     has_object_particle = bool(re.search(r"(을|를)$", raw_token))
     token = _strip_korean_particle(raw_token)
     for suffix in _EVIDENCE_STEM_ENDINGS:
@@ -896,8 +919,20 @@ def _normalize_evidence_token(raw_token: str) -> str:
 
 
 def _extract_evidence_facets(query: str) -> dict[str, Any]:
-    normalized = _normalize_evidence_text(query)
-    raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", normalized)
+    normalized = _normalize_evidence_text(_normalize_query_question_ending(query))
+    # Quantity interrogatives request a value, not the literal question word.
+    # Retain their units as required evidence instead of dropping the facet.
+    requested_units = []
+
+    def quantity_question(match: re.Match[str]) -> str:
+        requested_units.append(match.group(1) or "일")
+        return " "
+
+    token_text = re.sub(
+        r"(?:며칠|몇\s*(원|일|개월|시간|퍼센트|%))(?:까지|이나|이|을|은)?(?=\s|[?!.]|$)",
+        quantity_question, normalized,
+    )
+    raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", token_text)
     tokens = []
     for raw_token in raw_tokens:
         token = _normalize_evidence_token(raw_token)
@@ -915,6 +950,7 @@ def _extract_evidence_facets(query: str) -> dict[str, Any]:
         "query": normalized,
         "tokens": tokens,
         "conditions": conditions,
+        "requested_units": list(dict.fromkeys(requested_units)),
         "strong_subjects": strong_subjects,
     }
 
@@ -1083,12 +1119,13 @@ async def search(
     rewritten_query = str(rewrite_result.get("query") or query)
     use_rewritten_query = rewritten_query != query
 
+    search_query = _normalize_query_question_ending(query)
     facets = _extract_evidence_facets(query)
     strong_subjects = facets["strong_subjects"]
     facet_texts = [facets["query"], *strong_subjects]
-    query_texts = [query, *facet_texts]
+    query_texts = [search_query, *facet_texts]
     if use_rewritten_query:
-        query_texts.append(rewritten_query)
+        query_texts.append(_normalize_query_question_ending(rewritten_query))
     stage_started = time.perf_counter()
     query_vectors, _ = await _embed_texts_cached(query_texts)
     stage_latency_ms["embedding"] = (time.perf_counter() - stage_started) * 1000
@@ -1106,7 +1143,7 @@ async def search(
         user_email, rag_document_id,
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
-    lexical_candidates = bm25_candidates(query, lexical_chunks, BM25_CANDIDATE_COUNT)
+    lexical_candidates = bm25_candidates(search_query, lexical_chunks, BM25_CANDIDATE_COUNT)
     bm25_original_elapsed = (time.perf_counter() - stage_started) * 1000
     stage_started = time.perf_counter()
     rewritten_dense_candidates = (
@@ -1119,7 +1156,7 @@ async def search(
     stage_latency_ms["dense"] = dense_original_elapsed + (time.perf_counter() - stage_started) * 1000
     stage_started = time.perf_counter()
     rewritten_lexical_candidates = (
-        bm25_candidates(rewritten_query, lexical_chunks, BM25_CANDIDATE_COUNT)
+        bm25_candidates(_normalize_query_question_ending(rewritten_query), lexical_chunks, BM25_CANDIDATE_COUNT)
         if use_rewritten_query else []
     )
     stage_latency_ms["bm25"] = bm25_original_elapsed + (time.perf_counter() - stage_started) * 1000
@@ -1130,7 +1167,7 @@ async def search(
     compact_query = "".join(query.lower().split())
     requested_sections = [keywords for name, keywords in SECTION_KEYWORDS.items() if name in compact_query]
     query_terms = {
-        token for token in query.lower().replace("?", " ").replace(".", " ").split()
+        token for token in search_query.lower().replace("?", " ").replace(".", " ").split()
         if len(token) >= 2 and token not in {"어떻게", "알려줘", "알려주세요", "무엇", "뭐야", "지원자", "지원자의"}
     }
     for row in candidates:

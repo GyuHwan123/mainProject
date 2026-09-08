@@ -33,6 +33,8 @@ class OCRPage(BaseModel):
     rows: list[list[str]] | None = None
     tables: list[OCRTable] | None = None
     regions: list[OCRRegion] | None = None
+    image_file: str | None = None
+    image_name: str | None = None
 
 
 class OCRResponse(BaseModel):

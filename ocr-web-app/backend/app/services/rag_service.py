@@ -823,6 +823,7 @@ JSON 형식 {{"query":"재작성 질의"}}만 출력하세요.
 _EVIDENCE_STOP_WORDS = {
     "회사", "사내", "직원", "우리", "오늘", "무엇", "뭘", "몇", "어떻게", "얼마",
     "하나요", "인가요", "되나요", "있나요", "해요", "해야", "가능", "최대", "진행",
+    "정보", "내용", "문서", "관련", "대한", "대해", "질문", "답변",
 }
 _EVIDENCE_INTERROGATIVES = {
     "언제", "어디", "누구", "왜", "무엇", "뭘", "어떻게", "몇", "얼마",
@@ -953,6 +954,47 @@ def _extract_evidence_facets(query: str) -> dict[str, Any]:
         "requested_units": list(dict.fromkeys(requested_units)),
         "strong_subjects": strong_subjects,
     }
+
+
+def _promote_lexical_evidence(
+    candidates: list[dict[str, Any]],
+    lexical_candidates: list[dict[str, Any]],
+    facets: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Keep chunks with explicit query terms from being lost by reranking.
+
+    Dense rerankers can underrank short factual labels such as ``회의 시간`` or
+    ``담당 부서``. BM25 already found those literal facts, so candidates covering
+    at least two meaningful facets are deterministically placed first.
+    """
+    terms = list(dict.fromkeys(str(term) for term in facets.get("strong_subjects") or [] if len(str(term)) >= 2))
+    if len(terms) < 2:
+        return candidates
+
+    promoted: list[tuple[int, float, dict[str, Any]]] = []
+    for candidate in lexical_candidates:
+        content = _normalize_evidence_text(str(candidate.get("content") or ""))
+        hits = sum(term in content for term in terms)
+        if hits >= 2:
+            promoted.append((hits, float(candidate.get("bm25_score") or 0), candidate))
+    promoted.sort(key=lambda item: (item[0], item[1]), reverse=True)
+
+    result: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for hits, _score, lexical in promoted:
+        key = str(lexical.get("id") or (lexical.get("rag_document_id"), lexical.get("chunk_index")))
+        if key in seen:
+            continue
+        matched = next((row for row in candidates if str(row.get("id") or (row.get("rag_document_id"), row.get("chunk_index"))) == key), lexical)
+        matched["lexical_facet_hits"] = hits
+        matched["lexical_evidence_promoted"] = True
+        result.append(matched)
+        seen.add(key)
+    result.extend(
+        row for row in candidates
+        if str(row.get("id") or (row.get("rag_document_id"), row.get("chunk_index"))) not in seen
+    )
+    return result
 
 
 def _quantity(value: str) -> tuple[float, str] | None:
@@ -1193,6 +1235,11 @@ async def search(
     stage_started = time.perf_counter()
     candidates = await rerank_candidates(query, candidates)
     stage_latency_ms["reranker"] = (time.perf_counter() - stage_started) * 1000
+    candidates = _promote_lexical_evidence(
+        candidates,
+        [*lexical_candidates, *rewritten_lexical_candidates],
+        facets,
+    )
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
         all_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)

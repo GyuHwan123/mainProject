@@ -2,18 +2,24 @@ from pathlib import Path
 import json
 import sys
 import unittest
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock, patch
+
+from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance import (  # noqa: E402
     EXPENSE_CATEGORIES,
     FINANCE_PROMPT_VERSION,
+    FinanceClassifyRequest,
     _bounded_ocr_text,
     _classify_receipt_with_model,
     _normalize,
     _preflight_review_reasons,
+    _receipt_fingerprint,
     _simple_receipt_prompt,
+    classify_and_save,
 )
 from app.services.finance_receipt_simple import _reconcile_amounts  # noqa: E402
 from app.services.finance_receipt_simple import _payment_from_ocr, _simple_validation  # noqa: E402
@@ -28,6 +34,59 @@ M&M'S 2 1,800 3,600
 결제금액 6,900
 신용카드
 """
+
+
+class FinanceClassifyRouteTests(unittest.IsolatedAsyncioTestCase):
+    async def test_duplicate_receipt_reuses_existing_row_without_model_or_insert(self):
+        existing = {
+            "id": "record-1", "document_id": "document-1",
+            "structured_data": {"receipt_fingerprint": _receipt_fingerprint(SAMPLE_OCR)},
+        }
+        service = Mock()
+        service.get_ocr_document.return_value = {
+            "id": "document-2", "file_name": "duplicate.jpg",
+            "extracted_text": SAMPLE_OCR, "bounding_boxes": [],
+        }
+        service.list_finance_records.return_value = [existing]
+
+        with (
+            patch("app.api.routes.finance.supabase_service", service),
+            patch("app.api.routes.finance._classify_receipt_serialized", new_callable=AsyncMock) as classify,
+        ):
+            result = await classify_and_save(
+                FinanceClassifyRequest(document_id="document-2"),
+                SimpleNamespace(email="user@example.com"),
+            )
+
+        self.assertEqual(result["id"], "record-1")
+        self.assertEqual(result["duplicate_of_record_id"], "record-1")
+        self.assertTrue(result["structured_data"]["duplicate_detection"]["is_duplicate"])
+        classify.assert_not_awaited()
+        service.save_finance_record.assert_not_called()
+        service.save_receipt_archive.assert_not_called()
+
+    async def test_model_service_failure_does_not_save_incomplete_record(self):
+        service = Mock()
+        service.get_ocr_document.return_value = {
+            "id": "document-1", "file_name": "receipt.jpg",
+            "extracted_text": SAMPLE_OCR, "bounding_boxes": [],
+        }
+        service.list_finance_records.return_value = []
+        failure = HTTPException(status_code=503, detail="Ollama unavailable")
+
+        with (
+            patch("app.api.routes.finance.supabase_service", service),
+            patch("app.api.routes.finance._classify_receipt_serialized", new_callable=AsyncMock, side_effect=failure),
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                await classify_and_save(
+                    FinanceClassifyRequest(document_id="document-1"),
+                    SimpleNamespace(email="user@example.com"),
+                )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        service.save_finance_record.assert_not_called()
+        service.save_receipt_archive.assert_not_called()
 
 
 class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):

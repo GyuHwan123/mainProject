@@ -6,7 +6,7 @@ from itertools import count
 from typing import Any, Literal
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.api.routes.auth import require_current_user
@@ -14,6 +14,8 @@ from app.core.config import settings
 from app.models.user import User
 from app.services.supabase_service import supabase_service
 from app.services.pii_service import PRIVACY_RESPONSE, is_sensitive_query
+from app.services.email_service import email_service
+from app.services.knowledge_report_service import build_knowledge_report
 
 router = APIRouter()
 MODEL_NAME = settings.RAG_LLM_MODEL
@@ -100,6 +102,18 @@ class KnowledgeScrapCreate(BaseModel):
 class KnowledgeScrap(KnowledgeScrapCreate):
     model_config = ConfigDict(extra="allow")
     id: str
+
+
+class KnowledgeScrapEmailRequest(BaseModel):
+    recipient: str | None = Field(default=None, max_length=320)
+    recipient_user_id: str | None = None
+    scrap_ids: list[str] = Field(min_length=1, max_length=100)
+    subject: str = Field(min_length=1, max_length=200)
+    message: str = Field(default="", max_length=2000)
+
+
+class KnowledgeScrapPdfRequest(BaseModel):
+    scrap_ids: list[str] = Field(min_length=1, max_length=100)
 
 
 def _table_structure_answer(message: str, context: str) -> str | None:
@@ -350,6 +364,41 @@ def create_scrap(payload: KnowledgeScrapCreate, user: User = Depends(require_cur
 @router.delete("/scraps/{scrap_id}", status_code=204)
 def delete_scrap(scrap_id: str, user: User = Depends(require_current_user)) -> None:
     supabase_service.delete_knowledge_scrap(user.email, scrap_id)
+
+
+@router.post("/scraps/email")
+def email_scraps(payload: KnowledgeScrapEmailRequest, user: User = Depends(require_current_user)) -> dict[str, int | str]:
+    recipient = (payload.recipient or "").strip().lower()
+    if payload.recipient_user_id:
+        recipient_user = supabase_service.get_user_by_id(payload.recipient_user_id)
+        if not recipient_user or not recipient_user.get("is_active", True) or recipient_user.get("subscription_tier") != "ENTERPRISE":
+            raise HTTPException(status_code=404, detail="전송할 기업 사용자를 찾을 수 없습니다.")
+        recipient = str(recipient_user["email"]).lower()
+    if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", recipient):
+        raise HTTPException(status_code=422, detail="올바른 이메일 주소를 입력해 주세요.")
+    selected_ids = set(payload.scrap_ids)
+    scraps = [item for item in supabase_service.list_knowledge_scraps(user.email) if str(item.get("id")) in selected_ids]
+    if not scraps:
+        raise HTTPException(status_code=400, detail="전송할 지식 바구니 내용이 없습니다.")
+    try:
+        pdf_content = build_knowledge_report(scraps, author_name=user.name, author_email=user.email)
+        email_service.send_knowledge_scraps(recipient=recipient, sender_email=user.email, subject=payload.subject.strip(), note=payload.message.strip(), scraps=scraps, pdf_content=pdf_content)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="이메일 발송 설정을 확인해 주세요.") from exc
+    except Exception as exc:
+        logger.exception("Knowledge scrapbook email failed")
+        raise HTTPException(status_code=502, detail="이메일을 전송하지 못했습니다.") from exc
+    return {"message": "이메일을 전송했습니다.", "sent_count": len(scraps)}
+
+
+@router.post("/scraps/pdf")
+def download_scraps_pdf(payload: KnowledgeScrapPdfRequest, user: User = Depends(require_current_user)) -> Response:
+    selected_ids = set(payload.scrap_ids)
+    scraps = [item for item in supabase_service.list_knowledge_scraps(user.email) if str(item.get("id")) in selected_ids]
+    if not scraps:
+        raise HTTPException(status_code=400, detail="PDF로 변환할 지식 바구니 항목이 없습니다.")
+    content = build_knowledge_report(scraps, author_name=user.name, author_email=user.email)
+    return Response(content=content, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=DocAI_knowledge_report.pdf"})
 
 
 @router.get("/status")

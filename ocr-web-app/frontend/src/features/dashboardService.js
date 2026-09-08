@@ -13,11 +13,12 @@ export const createDashboardMeeting = async (meeting) => (await apiClient.post('
 export const updateDashboardMeeting = async (id,meeting) => (await apiClient.put(`/dashboard/meetings/${id}`,meeting)).data;
 export const deleteDashboardMeeting = async (id) => apiClient.delete(`/dashboard/meetings/${id}`);
 const participantSuggestionCache=new Map();
-export const getParticipantSuggestions = async (query='') => {
+export const getParticipantSuggestions = async (query='', enterpriseOnly=false) => {
   const key=query.trim().toLowerCase();
-  if(participantSuggestionCache.has(key))return participantSuggestionCache.get(key);
-  const data=(await apiClient.get('/dashboard/participant-suggestions',{params:{q:key}})).data;
-  participantSuggestionCache.set(key,data);return data;
+  const cacheKey=`${enterpriseOnly?'enterprise':'all'}:${key}`;
+  if(participantSuggestionCache.has(cacheKey))return participantSuggestionCache.get(cacheKey);
+  const data=(await apiClient.get('/dashboard/participant-suggestions',{params:{q:key,enterprise_only:enterpriseOnly}})).data;
+  participantSuggestionCache.set(cacheKey,data);return data;
 };
 export const getMeetingShares = async (id) => (await apiClient.get(`/dashboard/meetings/${id}/shares`)).data;
 export const inviteMeetingShare = async (id,payload) => (await apiClient.post(`/dashboard/meetings/${id}/shares`,payload)).data;

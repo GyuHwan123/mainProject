@@ -45,6 +45,7 @@ export default function MyPage() {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelSaving, setCancelSaving] = useState(false);
+  const [scrapDeleting, setScrapDeleting] = useState('');
   const [paymentSaving, setPaymentSaving] = useState(false);
   const [subscription, setSubscription] = useState({ status: 'ACTIVE', current_period_end: null, cancel_at_period_end: false });
   const [data, setData] = useState({ documents: [], ragDocuments: [], sessions: [], scraps: [], financeHistory: [] });
@@ -146,6 +147,19 @@ export default function MyPage() {
     try { await apiClient.delete('/users/me', { data: { password: deleteForm.password || null, confirmation: deleteForm.confirmation } }); clearAppSession(); navigate('/login', { replace: true }); }
     catch (requestError) { setAccountNotice(requestError.response?.data?.detail || '계정을 탈퇴 처리하지 못했습니다.'); setDeleteOpen(false); }
     finally { setAccountSaving(false); }
+  };
+
+  const deleteKnowledgeScrap = async (scrapId) => {
+    if (scrapDeleting) return;
+    setScrapDeleting(scrapId);
+    try {
+      await apiClient.delete(`/chatbot/scraps/${scrapId}`);
+      setData((current) => ({ ...current, scraps: current.scraps.filter((item) => item.id !== scrapId) }));
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || '지식 바구니 항목을 삭제하지 못했습니다.');
+    } finally {
+      setScrapDeleting('');
+    }
   };
 
   const requestCancellation = async () => {
@@ -306,6 +320,7 @@ export default function MyPage() {
         </div>
       </section>
 
+      <div className="subscription-knowledge-row">
       <section className="mypage-panel subscription-management-panel">
         <header><div><h2>구독 관리</h2><p>현재 이용 중인 요금제와 결제 정보를 확인하고 관리할 수 있습니다.</p></div></header>
         <div className="subscription-management-body">
@@ -317,6 +332,15 @@ export default function MyPage() {
           {cancellationScheduled && <p className="subscription-end-notice">구독이 {periodEndLabel || '현재 결제 기간 종료일'}에 종료될 예정입니다. 종료일까지 Enterprise 기능을 계속 사용할 수 있습니다.</p>}
         </div>
       </section>
+          <aside className="mypage-panel mypage-knowledge-basket">
+            <header><div><h2><IoBookmarkOutline /> 지식 바구니</h2><p>RAG에서 저장한 AI 답변을 다시 확인하세요.</p></div><button type="button" onClick={() => navigate('/chat')}>RAG로 이동</button></header>
+            <div className="mypage-knowledge-list">
+              {data.scraps.map((item) => <article key={item.id}><div><strong>{item.question || '저장한 AI 답변'}</strong><span className="knowledge-scrap-actions"><time>{formatKstDate(item.created_at)}</time><button type="button" disabled={Boolean(scrapDeleting)} aria-label="지식 바구니 항목 삭제" title="삭제" onClick={() => deleteKnowledgeScrap(item.id)}><IoTrashOutline />{scrapDeleting === item.id && <i>삭제 중</i>}</button></span></div><small>{item.document_name || 'RAG 지식 문서'} · 근거 {item.source_count || 0}개</small><p>{item.answer}</p></article>)}
+              {!loading && !data.scraps.length && <div className="mypage-knowledge-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>RAG 답변에서 ‘지식 바구니 담기’를 눌러 저장해 보세요.</p><button type="button" onClick={() => navigate('/chat')}>RAG에서 찾아보기</button></div>}
+              {loading && <div className="mypage-knowledge-empty">지식 바구니를 불러오는 중입니다.</div>}
+            </div>
+          </aside>
+      </div>
       {cancelOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !cancelSaving) setCancelOpen(false); }}><section className="subscription-cancel-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-subscription-title"><header><div><small>SUBSCRIPTION</small><h2 id="cancel-subscription-title">구독을 취소하시겠습니까?</h2><p>현재 결제 기간이 끝나는 {periodEndLabel || '이용 기간 종료일'}까지 Enterprise 기능을 계속 사용할 수 있습니다.</p></div><button type="button" disabled={cancelSaving} aria-label="닫기" onClick={() => setCancelOpen(false)}><IoCloseOutline /></button></header><div><label>취소 사유 <small>선택 사항</small><select value={cancelReason} onChange={(event) => setCancelReason(event.target.value)}><option value="">선택하지 않음</option><option value="비용 부담">비용 부담</option><option value="사용 빈도 감소">사용 빈도 감소</option><option value="필요 기능 부족">필요 기능 부족</option><option value="다른 서비스 이용">다른 서비스 이용</option></select></label><p>취소를 확정해도 즉시 FREE로 변경되지 않으며, 종료 예정일까지 현재 기능이 유지됩니다.</p></div><footer><button type="button" disabled={cancelSaving} onClick={() => setCancelOpen(false)}>취소 유지</button><button type="button" className="danger" disabled={cancelSaving} onClick={requestCancellation}>{cancelSaving ? '처리 중...' : '구독 취소 확정'}</button></footer></section></div>}
       {deleteOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteOpen(false); }}><section className="account-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-account-title"><header><div><small>ACCOUNT DELETION</small><h2 id="delete-account-title">계정을 탈퇴하시겠습니까?</h2><p>탈퇴 후에는 현재 계정으로 로그인할 수 없습니다.</p></div><button type="button" aria-label="닫기" onClick={() => setDeleteOpen(false)}><IoCloseOutline /></button></header><div><label>현재 비밀번호 <small>소셜 로그인 계정은 입력하지 않아도 됩니다.</small><input type="password" value={deleteForm.password} onChange={(event) => setDeleteForm((form) => ({ ...form, password: event.target.value }))} /></label><label>확인을 위해 <strong>계정 탈퇴</strong>를 입력하세요.<input value={deleteForm.confirmation} onChange={(event) => setDeleteForm((form) => ({ ...form, confirmation: event.target.value }))} /></label></div><footer><button type="button" onClick={() => setDeleteOpen(false)}>돌아가기</button><button type="button" className="danger" disabled={accountSaving || deleteForm.confirmation !== '계정 탈퇴'} onClick={deleteAccount}>{accountSaving ? '처리 중' : '계정 탈퇴'}</button></footer></section></div>}
       {plansOpen && <div className="plans-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !paymentSaving) setPlansOpen(false); }}><section className="plans-dialog" role="dialog" aria-modal="true" aria-label="요금제 선택"><header><div><small>WORKSPACE PLANS</small><h2>요금제를 선택하세요</h2><p>FREE와 Enterprise Workspace의 기능을 비교해보세요.</p></div><button disabled={paymentSaving} onClick={() => setPlansOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="plan-choice-grid">

@@ -36,7 +36,7 @@ def update_meeting(item_id:str,payload:MeetingUpdate,user:User=Depends(require_c
 @router.delete("/meetings/{item_id}",status_code=status.HTTP_204_NO_CONTENT)
 def delete_meeting(item_id:str,user:User=Depends(require_current_user)):dashboard_service.delete_meeting(user.email,item_id);return Response(status_code=204)
 @router.get("/participant-suggestions",response_model=list[ParticipantSuggestion])
-def participant_suggestions(q:str="",user:User=Depends(require_current_user)):return dashboard_service.participant_suggestions(user.email,q)
+def participant_suggestions(q:str="",enterprise_only:bool=False,user:User=Depends(require_current_user)):return dashboard_service.participant_suggestions(user.email,q,enterprise_only=enterprise_only)
 @router.get("/meeting-invitations",response_model=list[MeetingShare])
 def meeting_invitations(user:User=Depends(require_current_user)):return dashboard_service.list_invitations(user.email)
 @router.get("/meetings/{item_id}/shares",response_model=list[MeetingShare])

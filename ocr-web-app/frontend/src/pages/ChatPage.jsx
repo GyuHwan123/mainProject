@@ -2,7 +2,7 @@ import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import { IoBookmarkOutline, IoCloseOutline, IoTrashOutline } from 'react-icons/io5';
+import { IoBookmarkOutline, IoCloseOutline, IoDownloadOutline, IoMailOutline, IoTrashOutline } from 'react-icons/io5';
 import { RiFileUploadLine } from 'react-icons/ri';
 import Sidebar from '../components/Sidebar';
 import apiClient from '../api/client';
@@ -10,6 +10,7 @@ import { getAppUser } from '../features/appSession';
 import { documentUploadGroups } from '../features/documentUploads';
 import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEvaluationProgress.mjs';
 import { validateFilesBeforeUpload } from '../features/fileSecurity';
+import { getParticipantSuggestions } from '../features/dashboardService';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -23,6 +24,7 @@ const formatEvaluationDuration = (seconds) => {
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 const SCRAPBOOK_KEY = 'docunex_knowledge_scrapbook';
+const RAG_DISPLAY_MODEL_NAME = 'gemma2_RAG_Training';
 const ACTIVE_CHAT_SESSION_KEY = 'docunex_active_chat_session';
 const CHAT_STATE_KEY_PREFIX = 'docunex_chat_state:';
 const HISTORY_PAGE_SIZE = 5;
@@ -411,6 +413,13 @@ function ChatPageContent() {
   const [scrapbookOpen, setScrapbookOpen] = useState(false);
   const [scrapSaving, setScrapSaving] = useState(false);
   const [scrapError, setScrapError] = useState('');
+  const [scrapEmailOpen, setScrapEmailOpen] = useState(false);
+  const [scrapEmailSending, setScrapEmailSending] = useState(false);
+  const [scrapPdfExporting, setScrapPdfExporting] = useState(false);
+  const [scrapEmailNotice, setScrapEmailNotice] = useState('');
+  const [scrapEmailForm, setScrapEmailForm] = useState({ recipient: '', recipientUserId: null, subject: 'DocAI 지식 바구니 공유', message: '업무에 참고할 지식 바구니 내용을 공유드립니다.' });
+  const [scrapRecipientSuggestions, setScrapRecipientSuggestions] = useState([]);
+  const [selectedScrapIds, setSelectedScrapIds] = useState([]);
   const [evidenceFlash, setEvidenceFlash] = useState(false);
   const [modelConfig, setModelConfig] = useState({ model: 'Baseline LLM', embedding_model: 'Baseline Embedding', ready: false });
   const [evaluationDataset, setEvaluationDataset] = useState(null);
@@ -864,22 +873,53 @@ function ChatPageContent() {
   };
 
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
-  const scrapbookHtml = () => `<html><head><meta charset="utf-8"><title>내 지식 바구니</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#172033}h1{color:#173f8f}.card{margin:18px 0;padding:18px;border:1px solid #dce3ee;border-radius:10px}.meta{color:#718096;font-size:12px}.answer{white-space:pre-wrap;line-height:1.7}</style></head><body><h1>내 지식 바구니</h1>${scrapbook.map((item) => `<section class="card"><h2>${escapeHtml(item.title)}</h2><p class="meta">${escapeHtml(item.documentName)} · ${new Date(item.createdAt).toLocaleString('ko-KR')}</p><div class="answer">${escapeHtml(item.answer)}</div></section>`).join('')}</body></html>`;
+  const selectedScraps = scrapbook.filter((item) => selectedScrapIds.includes(item.id));
+  const scrapbookHtml = () => `<html><head><meta charset="utf-8"><title>내 지식 바구니</title><style>body{font-family:Arial,sans-serif;padding:36px;color:#172033}h1{color:#173f8f}.card{margin:18px 0;padding:18px;border:1px solid #dce3ee;border-radius:10px}.meta{color:#718096;font-size:12px}.answer{white-space:pre-wrap;line-height:1.7}</style></head><body><h1>내 지식 바구니</h1>${selectedScraps.map((item) => `<section class="card"><h2>${escapeHtml(item.title)}</h2><p class="meta">${escapeHtml(item.documentName)} · ${new Date(item.createdAt).toLocaleString('ko-KR')}</p><div class="answer">${escapeHtml(item.answer)}</div></section>`).join('')}</body></html>`;
   const exportWord = () => {
     const url = URL.createObjectURL(new Blob(['\ufeff', scrapbookHtml()], { type: 'application/msword;charset=utf-8' }));
     const anchor = document.createElement('a');
     anchor.href = url; anchor.download = '지식-바구니.doc'; anchor.click(); URL.revokeObjectURL(url);
   };
-  const exportPdf = () => {
-    const popup = window.open('', '_blank');
-    if (!popup) return;
-    popup.opener = null;
-    popup.document.write(scrapbookHtml()); popup.document.close(); popup.focus(); popup.print();
+  const exportPdf = async () => {
+    if (!selectedScraps.length) return;
+    setScrapPdfExporting(true); setScrapError('');
+    try {
+      const response = await apiClient.post('/chatbot/scraps/pdf', { scrap_ids: selectedScrapIds }, { responseType: 'blob', timeout: 90000 });
+      const url = URL.createObjectURL(response.data);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = `DocAI_지식바구니_${new Date().toISOString().slice(0, 10)}.pdf`; anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setScrapError(error.response?.data?.detail || 'PDF를 생성하지 못했습니다.');
+    } finally { setScrapPdfExporting(false); }
+  };
+  const sendScrapbookEmail = async (event) => {
+    event.preventDefault();
+    setScrapEmailSending(true); setScrapEmailNotice('');
+    try {
+      const { data } = await apiClient.post('/chatbot/scraps/email', { recipient: scrapEmailForm.recipientUserId ? null : scrapEmailForm.recipient, recipient_user_id: scrapEmailForm.recipientUserId, scrap_ids: selectedScrapIds, subject: scrapEmailForm.subject, message: scrapEmailForm.message }, { timeout: 90000 });
+      setScrapEmailNotice(data.message || '이메일을 전송했습니다.');
+    } catch (error) {
+      setScrapEmailNotice(error.response?.data?.detail || '이메일을 전송하지 못했습니다.');
+    } finally { setScrapEmailSending(false); }
+  };
+  const toggleScrap = (id) => setSelectedScrapIds((ids) => ids.includes(id) ? ids.filter((value) => value !== id) : [...ids, id]);
+  const removeSelectedScraps = async () => {
+    if (!selectedScrapIds.length) return;
+    await Promise.all(selectedScrapIds.map((id) => apiClient.delete(`/chatbot/scraps/${id}`)));
+    setScrapbook((items) => items.filter((item) => !selectedScrapIds.includes(item.id)));
+    setSelectedScrapIds([]);
+  };
+  const updateScrapRecipient = async (value) => {
+    setScrapEmailForm((form) => ({ ...form, recipient: value, recipientUserId: null }));
+    if (!value.startsWith('@')) { setScrapRecipientSuggestions([]); return; }
+    try { setScrapRecipientSuggestions(await getParticipantSuggestions(value.slice(1), true)); }
+    catch { setScrapRecipientSuggestions([]); }
   };
 
   return <div className="app-shell chat-app-shell"><Sidebar />
     <main className="chat-workspace page-enter">
-      <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{modelConfig.model}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {modelConfig.model}</div></header>
+      <header className="chat-page-header"><div><p>DOCUMENT AI WORKSPACE</p><h1>AI 문서 채팅</h1><span>{RAG_DISPLAY_MODEL_NAME}과 문서 근거를 활용한 AI 작업 공간</span></div><div className="chat-model-status"><i className={modelConfig.ready ? '' : 'offline'} /> {RAG_DISPLAY_MODEL_NAME}</div></header>
       <input ref={fileRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,.docx,.xlsx,.xlsm,.txt,.md,.csv" onChange={(e) => { uploadFiles([...e.target.files]).catch(() => setIndexingId(null)); e.target.value = ''; }} />
       {isDeveloper && <input ref={evaluationFileRef} hidden disabled={evaluationRunning} type="file" accept=".json,application/json" onChange={(event) => { loadEvaluationDataset(event.target.files?.[0]); event.target.value = ''; }} />}
 
@@ -951,8 +991,9 @@ function ChatPageContent() {
 
 
 
-      <button className="knowledge-pocket" type="button" title="지식 바구니" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
-      {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><h2>내 지식 바구니 <span>(Scrapbook)</span></h2><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id}><div><strong>[AI 답변] {item.title}</strong><button type="button" onClick={() => removeScrap(item.id)}>삭제</button></div><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small><p>{item.answer}</p></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div><footer><button type="button" className="export-pdf" disabled={!scrapbook.length} onClick={exportPdf}>PDF 보고서 변환</button><button type="button" disabled={!scrapbook.length} onClick={exportWord}>Word 문서 변환</button></footer></section></div>}
+      <button className="knowledge-pocket" type="button" aria-label={`지식 바구니, ${scrapbook.length}개`} onClick={() => setScrapbookOpen(true)}><IoBookmarkOutline /><b>{scrapbook.length}</b></button>
+      {scrapbookOpen && <div className="scrapbook-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setScrapbookOpen(false); }}><section className="scrapbook-modal" role="dialog" aria-modal="true" aria-label="내 지식 바구니"><header><div><small>KNOWLEDGE BASKET</small><h2>내 지식 바구니</h2><p>사용할 항목을 선택한 뒤 삭제, PDF 변환 또는 이메일 전송을 이용하세요.</p></div><button type="button" onClick={() => setScrapbookOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><div className="scrapbook-selection-toolbar"><label><input type="checkbox" checked={Boolean(scrapbook.length) && selectedScrapIds.length === scrapbook.length} onChange={(event) => setSelectedScrapIds(event.target.checked ? scrapbook.map((item) => item.id) : [])} /> 전체 선택</label><div><span>{selectedScrapIds.length}건 선택</span><button type="button" className="delete-selected" disabled={!selectedScrapIds.length} onClick={removeSelectedScraps}><IoTrashOutline /> 선택 삭제</button></div></div><div className="scrapbook-list">{scrapbook.map((item) => <article key={item.id} className={selectedScrapIds.includes(item.id) ? 'selected' : ''}><label className="scrapbook-check"><input type="checkbox" checked={selectedScrapIds.includes(item.id)} onChange={() => toggleScrap(item.id)} /><span /></label><div className="scrapbook-item-content"><strong>{item.title}</strong><p>{item.answer}</p><small>{item.documentName} · {new Date(item.createdAt).toLocaleString('ko-KR')} · 근거 {item.sourceCount}개</small></div></article>)}{!scrapbook.length && <div className="scrapbook-empty"><IoBookmarkOutline /><strong>아직 담긴 지식이 없습니다</strong><p>AI 답변 아래의 ‘지식 바구니 담기’를 눌러 보세요.</p></div>}</div>{scrapError && <p className="scrapbook-action-error">{scrapError}</p>}<footer><button type="button" className="export-pdf" disabled={!selectedScrapIds.length || scrapPdfExporting} onClick={exportPdf}><IoDownloadOutline /> {scrapPdfExporting ? 'PDF 생성 중...' : 'PDF 변환'}</button><button type="button" className="email-scraps" disabled={!selectedScrapIds.length} onClick={() => { setScrapEmailNotice(''); setScrapEmailOpen(true); }}><IoMailOutline /> 이메일 전송</button></footer></section></div>}
+      {scrapEmailOpen && <div className="scrapbook-backdrop email-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !scrapEmailSending) setScrapEmailOpen(false); }}><section className="scrap-email-modal" role="dialog" aria-modal="true" aria-label="지식 바구니 이메일 전송"><header><div><small>EMAIL SHARE</small><h2>지식 바구니 이메일 전송</h2><p>선택한 지식 {selectedScrapIds.length}건을 이메일 본문으로 전송합니다.</p></div><button type="button" disabled={scrapEmailSending} onClick={() => setScrapEmailOpen(false)} aria-label="닫기"><IoCloseOutline /></button></header><form onSubmit={sendScrapbookEmail}><label>받는 사람<input type="text" required autoFocus placeholder="이메일 또는 @기업 사용자" value={scrapEmailForm.recipient} onChange={(event) => updateScrapRecipient(event.target.value)} /></label>{scrapRecipientSuggestions.length > 0 && <div className="scrap-recipient-suggestions">{scrapRecipientSuggestions.map((person) => <button type="button" key={person.id} onClick={() => { setScrapEmailForm((form) => ({ ...form, recipient: `@${person.name}`, recipientUserId: person.id })); setScrapRecipientSuggestions([]); }}><strong>@{person.name}</strong><span>{person.email}</span></button>)}</div>}<label>제목<input required maxLength="200" value={scrapEmailForm.subject} onChange={(event) => setScrapEmailForm((form) => ({ ...form, subject: event.target.value }))} /></label><label>메시지<textarea rows="4" maxLength="2000" value={scrapEmailForm.message} onChange={(event) => setScrapEmailForm((form) => ({ ...form, message: event.target.value }))} /></label>{scrapEmailNotice && <p className="scrap-email-notice" role="status">{scrapEmailNotice}</p>}<footer><button type="button" disabled={scrapEmailSending} onClick={() => setScrapEmailOpen(false)}>취소</button><button className="primary" disabled={scrapEmailSending || !scrapEmailForm.recipient.trim()}>{scrapEmailSending ? '전송 중...' : '이메일 전송'}</button></footer></form></section></div>}
       <DeleteConfirmDialog request={deleteRequest} deleting={deleting} error={deleteError} onCancel={closeDeleteConfirm} onConfirm={confirmDelete} />
     </main>
   </div>;

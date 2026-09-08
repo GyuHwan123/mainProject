@@ -11,6 +11,12 @@
   padding: 25px 28px;
   overflow: auto;
 }
+.chat-workspace.page-enter {
+  // A transformed ancestor makes position: fixed follow this scroll container.
+  // Keep the RAG floating actions anchored to the browser viewport instead.
+  animation: none;
+  transform: none;
+}
 .chat-page-header {
   margin-bottom: 18px;
   display: flex;

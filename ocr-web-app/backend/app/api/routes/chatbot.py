@@ -73,6 +73,12 @@ class ChatMessageCreate(BaseModel):
     model_name: str | None = None
 
 
+class ChatExchangeCreate(BaseModel):
+    question: str = Field(min_length=1, max_length=50_000)
+    answer: str = Field(min_length=1, max_length=50_000)
+    sources: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class StoredChatSession(BaseModel):
     model_config = ConfigDict(extra="allow")
     id: str
@@ -349,6 +355,14 @@ def create_message(session_id: str, payload: ChatMessageCreate, user: User = Dep
 @router.delete("/sessions/{session_id}", status_code=204)
 def delete_session(session_id: str, user: User = Depends(require_current_user)) -> None:
     supabase_service.delete_chat_session(user.email, session_id)
+
+
+@router.post("/sessions/{session_id}/exchanges", status_code=204)
+def create_exchange(session_id: str, payload: ChatExchangeCreate, user: User = Depends(require_current_user)) -> None:
+    supabase_service.save_chat_exchange(
+        user_email=user.email, session_id=session_id, question=payload.question,
+        answer=payload.answer, sources=payload.sources,
+    )
 
 
 @router.get("/scraps", response_model=list[KnowledgeScrap])

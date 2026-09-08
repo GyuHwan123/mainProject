@@ -11,6 +11,7 @@ import { documentUploadGroups } from '../features/documentUploads';
 import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEvaluationProgress.mjs';
 import { validateFilesBeforeUpload } from '../features/fileSecurity';
 import { getParticipantSuggestions } from '../features/dashboardService';
+import { completedChatMessages } from '../features/chatRequestState.mjs';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -403,7 +404,7 @@ function ChatPageContent() {
   const [activeSessionId, setActiveSessionId] = useState(restoredChatState.activeSessionId ?? null);
   const [activeId, setActiveId] = useState(restoredChatState.activeId ?? null);
   const [messages, setMessages] = useState(() => Array.isArray(restoredChatState.messages) && restoredChatState.messages.length
-    ? restoredChatState.messages
+    ? completedChatMessages(restoredChatState.messages)
     : [{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 뒤 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
   const [query, setQuery] = useState(restoredChatState.query || '');
   const [sources, setSources] = useState(() => Array.isArray(restoredChatState.sources) ? restoredChatState.sources : []);
@@ -452,15 +453,36 @@ function ChatPageContent() {
   const summaryRequestsRef = useRef(new Set());
   const summaryControllersRef = useRef(new Map());
   const messagesRef = useRef(null);
+  const chatRequestRef = useRef(null);
+  const historyRequestRef = useRef(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const cancelChatRequests = () => {
+    chatRequestRef.current?.abort();
+    chatRequestRef.current = null;
+    historyRequestRef.current?.abort();
+    historyRequestRef.current = null;
+    setBusy(false);
+    setHistoryLoading(false);
+    setMessages((items) => completedChatMessages(items));
+  };
+  useEffect(() => {
+    const abort = () => {
+      chatRequestRef.current?.abort();
+      historyRequestRef.current?.abort();
+    };
+    window.addEventListener('pagehide', cancelChatRequests);
+    return () => {
+      abort();
+      window.removeEventListener('pagehide', cancelChatRequests);
+    };
+  }, []);
   const activeDoc = documents.find((item) => item.id === activeId);
   const selectEvidenceSource = (source) => {
     if (!source) return;
     setSelectedSource(source);
     setUploadMode(false);
     setDocumentViewMode('viewer');
-    if (documents.some((document) => document.id === source.ragDocumentId)) {
-      setActiveId(source.ragDocumentId);
-    }
+    // Evidence previews do not change the document/session used by the composer.
   };
   const previewSource = selectedSource || (activeDoc ? {
     documentId: activeDoc.documentId,
@@ -546,7 +568,7 @@ function ChatPageContent() {
   useEffect(() => {
     if (!localStorage.getItem('pic_to_text_token')) return;
     localStorage.setItem(chatStateKey, JSON.stringify({
-      messages, activeSessionId, activeId, sources, selectedSource, query,
+      messages: completedChatMessages(messages), activeSessionId, activeId, sources, selectedSource, query,
     }));
     if (activeSessionId) localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, String(activeSessionId));
     else localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
@@ -575,7 +597,7 @@ function ChatPageContent() {
     );
 
     if (savedSession) {
-        openSession(savedSession, { restoreEvidence: true }).catch(() => {
+        openSession(savedSession).catch(() => {
         localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
         });
     } else {
@@ -613,29 +635,59 @@ function ChatPageContent() {
     })))).catch(() => {});
   }, []);
 
-  const openSession = async (session, { restoreEvidence = false } = {}) => {
-    const { data } = await apiClient.get(`/chatbot/sessions/${session.id}/messages`);
-    const linkedDocument = documents.find((document) => document.documentId === session.document_id);
-    setActiveId(linkedDocument?.id ?? null);
-    setUploadMode(false);
+  const openSession = async (session) => {
+    cancelChatRequests();
+    restorationAttemptedRef.current = true;
+    const controller = new AbortController();
+    historyRequestRef.current = controller;
+    setHistoryLoading(true);
+    setMessages([]);
+    setQuery('');
+    setSources([]);
+    setSelectedSource(null);
+    const linked = documents.find((document) => document.documentId === session.document_id);
+    setActiveId(linked?.id ?? null);
     setActiveSessionId(session.id);
-    localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, session.id);
-    setMessages((Array.isArray(data) ? data : []).map((item) => {
-      const storedSources = Array.isArray(item.sources) ? item.sources : [];
-      return {
-        role: item.role,
-        text: item.content,
-        sourceCount: storedSources.length,
-        sources: storedSources,
-      };
-    }));
-    if (!restoreEvidence) {
-      setSources([]);
-      setSelectedSource(null);
+    try {
+      const { data } = await apiClient.get(`/chatbot/sessions/${session.id}/messages`, { signal: controller.signal });
+      if (controller.signal.aborted || historyRequestRef.current !== controller) return;
+      const linkedDocument = documents.find((document) => document.documentId === session.document_id);
+      setActiveId(linkedDocument?.id ?? null);
+      setUploadMode(false);
+      setActiveSessionId(session.id);
+      localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, session.id);
+      setMessages(completedChatMessages(Array.isArray(data) ? data : []).map((item) => {
+        const storedSources = Array.isArray(item.sources) ? item.sources : [];
+        return {
+          role: item.role,
+          text: item.content ?? item.text,
+          sourceCount: storedSources.length,
+          sources: storedSources,
+        };
+      }));
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        setMessages([{ role: 'assistant', text: '채팅 기록을 불러오지 못했습니다. 다시 선택해 주세요.' }]);
+      }
+    } finally {
+      if (historyRequestRef.current === controller) {
+        historyRequestRef.current = null;
+        setHistoryLoading(false);
+      }
     }
   };
 
+  const selectDocument = (document) => {
+    startNewChat();
+    setActiveId(document.id);
+    setUploadMode(false);
+    const session = sessions.find((item) => item.document_id === document.documentId);
+    if (session) openSession(session);
+  };
+
   const startNewChat = () => {
+    restorationAttemptedRef.current = true;
+    cancelChatRequests();
     localStorage.removeItem(ACTIVE_CHAT_SESSION_KEY);
     setActiveSessionId(null);
     setMessages([{ role: 'assistant', text: '안녕하세요. 문서를 업로드한 후 궁금한 내용을 질문해 주세요. 문서에서 관련 근거를 찾아 답변해 드립니다.' }]);
@@ -645,6 +697,7 @@ function ChatPageContent() {
   };
 
   const clearActiveDocument = () => {
+    startNewChat();
     setActiveId(null);
     setSelectedSource(null);
     setSources([]);
@@ -667,6 +720,7 @@ function ChatPageContent() {
           headers: { 'Content-Type': 'multipart/form-data' }, timeout: 300000 * group.length,
         });
         const { data: indexed } = await apiClient.post(`/rag/documents/${extracted.document_id}/index`, null, { timeout: 300000 });
+        startNewChat();
         setActiveId(indexed.id);
         setUploadMode(false);
         setDocumentViewMode('viewer');
@@ -682,7 +736,19 @@ function ChatPageContent() {
 
   const ask = async () => {
     const question = query.trim();
-    if (!question || busy) return;
+    if (!question || busy || historyLoading || !sessionsLoaded || !documentsLoaded || chatRequestRef.current) return;
+    const controller = new AbortController();
+    chatRequestRef.current = controller;
+    const isCurrent = () => !controller.signal.aborted && chatRequestRef.current === controller;
+    const saveExchange = async (answer, answerSources) => {
+      if (!sessionId || !isCurrent()) return;
+      try {
+        await apiClient.post(`/chatbot/sessions/${sessionId}/exchanges`, {
+          question, answer, sources: answerSources,
+        }, { signal: controller.signal });
+        if (isCurrent()) await refreshSessions();
+      } catch { /* Storage failure must not trigger a second generated answer. */ }
+    };
     let relevant = [];
     let sessionId = activeSessionId;
     const recentHistory = messages.slice(-8).map((message) => ({
@@ -694,12 +760,13 @@ function ChatPageContent() {
     const searchQuery = previousUserQuestion && needsPreviousContext
       ? `이전 질문: ${previousUserQuestion}\n현재 후속 질문: ${question}`
       : question;
-    setMessages((items) => [...items, { role: 'user', text: question }]);
+    setMessages((items) => [...items, { role: 'user', text: question, status: 'pending' }]);
     setQuery(''); setSources([]); setBusy(true);
     try {
       const { data: matches } = await apiClient.post('/rag/search', {
         query: searchQuery, rag_document_id: activeId || null, limit: modelConfig.top_k || 8,
-      }, { timeout: 180000 });
+      }, { timeout: 180000, signal: controller.signal });
+      if (!isCurrent()) return;
       relevant = (matches || []).map((item) => ({
         id: item.id, content: item.content, source: item.source,
         index: item.chunk_index + 1, score: item.similarity,
@@ -714,29 +781,27 @@ function ChatPageContent() {
             const { data: session } = await apiClient.post('/chatbot/sessions', {
             title: question.slice(0, 120),
             document_id: activeDoc?.documentId ?? null,
-            });
+            }, { signal: controller.signal });
+            if (!isCurrent()) return;
 
             sessionId = session.id;
+            setSessions((items) => [session, ...items.filter((item) => item.id !== session.id)]);
             setActiveSessionId(sessionId);
             localStorage.setItem(ACTIVE_CHAT_SESSION_KEY, sessionId);
         } catch { /* 기록 저장 실패와 AI 답변 생성을 분리 */ }
         }
-      if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
-        role: 'user', content: question, sources: [],
-      }).catch(() => {});
+      if (!isCurrent()) return;
       const context = relevant.map((chunk, index) => `[근거 ${index + 1} · ${chunk.source} · ${chunk.pageNumber}페이지 · Chunk ${chunk.index}] ${chunk.content}`).join('\n\n');
       const { data } = await apiClient.post('/chatbot/ask', {
         message: question,
         context,
         history: recentHistory,
-      }, { timeout: 180000 });
-      setMessages((items) => [...items, { role: 'assistant', text: data.reply, sourceCount: relevant.length, sources: relevant }]);
-      if (sessionId) apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
-        role: 'assistant', content: data.reply, model_name: data.model,
-        sources: relevant.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel })),
-      }).catch(() => {});
-      refreshSessions();
+      }, { timeout: 180000, signal: controller.signal });
+      if (!isCurrent()) return;
+      setMessages((items) => [...items.map((item) => item.status === 'pending' ? { ...item, status: 'completed' } : item), { role: 'assistant', text: data.reply, sourceCount: relevant.length, sources: relevant }]);
+      await saveExchange(data.reply, relevant);
     } catch (error) {
+      if (!isCurrent()) return;
       const privacyDetail = error.response?.status === 403 && typeof error.response?.data?.detail === 'string'
         ? error.response.data.detail
         : '';
@@ -744,14 +809,11 @@ function ChatPageContent() {
       const fallback = privacyDetail || (best.length
         ? `문서에서 다음과 같은 관련 내용을 찾았습니다.\n\n${best[0].content}\n\n현재 AI 응답에 실패하여 가장 관련도 높은 문서 근거를 대신 표시했습니다.`
         : `RAG 검색 또는 AI 응답에 실패했습니다. 문서가 RAG_READY 상태인지, Ollama에 ${modelConfig.embedding_model}와 ${modelConfig.model}이 설치되어 있는지 확인해 주세요.`);
-      setMessages((items) => [...items, { role: 'assistant', text: fallback, sourceCount: best.length, sources: best }]);
-      if (sessionId) {
-        apiClient.post(`/chatbot/sessions/${sessionId}/messages`, {
-          role: 'assistant', content: fallback, model_name: 'fallback',
-          sources: best.map(({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel }) => ({ id, content, source, index, score, documentId, ragDocumentId, pageNumber, bbox, documentTitle, sectionTitle, sectionPath, headingLevel })),
-        }).then(refreshSessions).catch(() => {});
-      }
+      setMessages((items) => [...items.map((item) => item.status === 'pending' ? { ...item, status: 'completed' } : item), { role: 'assistant', text: fallback, sourceCount: best.length, sources: best }]);
+      await saveExchange(fallback, best);
     } finally {
+      if (!isCurrent()) return;
+      chatRequestRef.current = null;
       setBusy(false);
       setTimeout(() => {
         const container = messagesRef.current;
@@ -947,7 +1009,7 @@ function ChatPageContent() {
       <section className="rag-grid">
         <aside className="history-panel">
           <div className="rag-panel-title"><div><strong>기록 보관함</strong><small>RAG 문서 {documents.length}개 · 대화 {sessions.length}개</small></div></div>
-          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { setActiveId(document.id); setUploadMode(false); startNewChat(); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); setActiveId(document.id); setUploadMode(false); startNewChat(); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoCloseOutline aria-hidden="true" /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
+          <section className="history-section rag-document-history"><header><strong>RAG 문서 이력</strong><div className="history-header-actions"><button type="button" disabled={!documents.length || deleting} onClick={() => requestDelete('rag', 'all')}>전체삭제</button><span>{documents.length}</span></div></header><div>{pagedDocuments.map((document) => <div key={document.id} className={`rag-history-row ${activeId === document.id && !uploadMode ? 'active' : ''}`} role="button" tabIndex="0" onClick={() => { selectDocument(document); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectDocument(document); } }}><span className="history-file-icon">▤</span><div><strong>{document.name}</strong><small>{document.status} · {document.chunkCount} chunks</small></div><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('rag', 'single', document.id); }} onKeyDown={(event) => event.stopPropagation()} title="RAG 기록 삭제" aria-label={`${document.name} 기록 삭제`}><IoCloseOutline aria-hidden="true" /></button></div>)}{!documents.length && <p>업로드된 RAG 문서가 없습니다.</p>}</div><HistoryPagination page={ragHistoryPage} totalItems={documents.length} onChange={setRagHistoryPage} label="RAG 문서 이력" /></section>
           <section className="history-section chat-history-section"><header><strong>채팅 이력</strong><div className="history-header-actions"><button type="button" disabled={!sessions.length || deleting} onClick={() => requestDelete('chat', 'all')}>전체삭제</button><span>{sessions.length}</span></div></header><div className="history-list-rag">{pagedSessions.map((session) => <div key={session.id} className={`chat-session-row ${activeSessionId === session.id ? 'active' : ''}`}><button onClick={() => openSession(session)}><span className="history-file-icon">◈</span><div><strong>{session.title}</strong><small>{new Date(session.updated_at || session.created_at).toLocaleString('ko-KR')}</small></div></button><button type="button" className="delete-session" disabled={deleting} onClick={(event) => { event.stopPropagation(); requestDelete('chat', 'single', session.id); }} title="대화 삭제" aria-label={`${session.title} 대화 삭제`}><IoCloseOutline aria-hidden="true" /></button></div>)}
           {!sessions.length && <div className="history-empty">AI와 대화를 시작하면<br />기록이 여기에 저장됩니다.</div>}</div><HistoryPagination page={chatHistoryPage} totalItems={sessions.length} onChange={setChatHistoryPage} label="채팅 이력" /></section>
           <div className="index-summary"><span>INDEX</span><strong>{totalChunks}</strong><small>검색 가능한 전체 청크</small></div>
@@ -1006,7 +1068,7 @@ function ChatPageContent() {
         <section className="conversation-panel">
           <div className="rag-panel-title"><div><strong>AI RAG Chat</strong><small>{activeDoc ? activeDoc.name : '새 대화'}</small></div><button type="button" className="new-chat-button" disabled={busy} onClick={startNewChat}>＋ 새 채팅</button></div>
           <div ref={messagesRef} className="messages-rag">{messages.map((message, i) => <div key={i} className={`rag-message ${message.role}`}><span className="avatar">{message.role === 'assistant' ? 'AI' : '나'}</span><div><small>{message.role === 'assistant' ? 'AI Assistant' : 'You'}</small><p>{message.text}</p><div className="message-actions">{message.sourceCount > 0 && <button className="cited" onClick={() => { const messageSources = Array.isArray(message.sources) ? message.sources : []; setSources(messageSources); selectEvidenceSource(messageSources[0]); setEvidenceFlash(false); requestAnimationFrame(() => setEvidenceFlash(true)); setTimeout(() => setEvidenceFlash(false), 900); document.querySelector('.context-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>⌕ 근거 {message.sourceCount}개 확인</button>}{message.role === 'assistant' && i > 0 && <button className="scrap-answer" disabled={scrapSaving} onClick={() => saveToScrapbook(message, i)}><IoBookmarkOutline /> {scrapSaving ? '저장 중...' : '지식 바구니 담기'}</button>}</div>{scrapError && message.role === 'assistant' && <small className="scrap-error">{scrapError}</small>}</div></div>)}{busy && <div className="rag-message assistant"><span className="avatar">AI</span><div><small>AI Assistant</small><p className="typing"><i /><i /><i /></p></div></div>}</div>
-          <div className="chat-composer"><button className="attach-button" onClick={() => fileRef.current?.click()} title="문서 첨부">＋</button><textarea value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }} placeholder={documents.length ? '문서에 대해 질문해 보세요...' : '먼저 왼쪽 + 버튼 또는 이곳의 + 버튼으로 문서를 추가하세요'} /><button className="send-button" disabled={!query.trim() || busy} onClick={ask}>↑</button></div>
+          <div className="chat-composer"><button className="attach-button" onClick={() => fileRef.current?.click()} title="문서 첨부">＋</button><textarea value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ask(); } }} placeholder={documents.length ? '문서에 대해 질문해 보세요...' : '먼저 왼쪽 + 버튼 또는 이곳의 + 버튼으로 문서를 추가하세요'} /><button className="send-button" disabled={!query.trim() || busy || historyLoading || !sessionsLoaded || !documentsLoaded} onClick={ask}>↑</button></div>
           <p className="composer-note">AI 답변은 부정확할 수 있습니다. 중요한 정보는 표시된 문서 근거에서 확인하세요.</p>
         </section>
       </section>

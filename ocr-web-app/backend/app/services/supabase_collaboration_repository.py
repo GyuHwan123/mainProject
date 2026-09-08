@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import timedelta
 
 from app.services.supabase_base import *
 
@@ -139,6 +140,27 @@ class CollaborationMixin:
             "sources": row.get("top_k_chunks") or [],
             "model_name": model_name,
         }
+
+    def save_chat_exchange(self, *, user_email: str, session_id: str, question: str,
+                           answer: str, sources: list[dict[str, Any]]) -> None:
+        self.get_chat_session(user_email, session_id)
+        created_at = datetime.now(timezone.utc)
+        # One PostgREST insert is transactional: persist both messages or neither.
+        rows = [{
+            "id": uuid4().int & ((1 << 63) - 1),
+            "session_id": session_id,
+            "sender": sender,
+            "message": content,
+            "top_k_chunks": chunks,
+            "created_at": (created_at + timedelta(microseconds=index)).isoformat(),
+        } for index, (sender, content, chunks) in enumerate([
+            ("USER", question, []), ("ASSISTANT", answer, sources),
+        ])]
+        response = _legacy_httpx().post(
+            f"{self.url}/rest/v1/chat_messages", headers=self._service_headers(),
+            json=rows, timeout=15,
+        )
+        self._raise_for_supabase(response, "채팅 대화 저장 실패")
 
     def delete_chat_session(self, user_email: str, session_id: str) -> None:
         session = self.get_chat_session(user_email, session_id)

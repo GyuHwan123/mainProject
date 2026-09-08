@@ -37,6 +37,10 @@ class ValidationStagesTests(unittest.TestCase):
                                'automation_validation': validation}
                     normalized = namespace['_normalize'](dict(receipt), 'test.png', '')
                     structured = normalized['structured_data']
+                    self.assertEqual(normalized['expense_category'], '도서')
+                    self.assertEqual(normalized['document_type'], 'EXPENSE_REPORT')
+                    self.assertNotIn('expense_category_suggestion', structured)
+                    self.assertNotIn('expense_category_evidence', structured)
                     self.assertEqual(validation, original)
                     self.assertEqual(structured['extraction_validation'], original)
                     self.assertNotIn('classification_validation', structured)

@@ -6,7 +6,7 @@ from app.services.finance_email_review import create_review, activate_review, re
 from threading import Lock
 from datetime import date, datetime, timezone
 from io import BytesIO
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -434,7 +434,7 @@ def export_record(record_id: str, user: User = Depends(require_current_user)) ->
 
 
 @router.post("/records/export")
-def export_selected_records(payload: FinanceExportRequest, user: User = Depends(require_current_user)) -> StreamingResponse:
+def export_selected_records(payload: FinanceExportRequest, user: User = Depends(require_current_user), format: Literal["xlsx", "pdf"] = "xlsx") -> StreamingResponse:
     requested_ids = list(dict.fromkeys(payload.record_ids))
     records_by_id = {
         record.get("id"): record
@@ -447,6 +447,10 @@ def export_selected_records(payload: FinanceExportRequest, user: User = Depends(
     if any(record.get("status") != "CONFIRMED" or not (record.get("structured_data") or {}).get("excel_saved_at") for record in records):
         raise HTTPException(status_code=422, detail="최종 확정하여 Excel에 저장한 기록만 다운로드할 수 있습니다.")
     content = build_finance_workbook(records, author={"name": user.name, "email": user.email})
+    if format == "pdf":
+        from app.services.finance_pdf_service import build_finance_pdf
+        content = build_finance_pdf(records, author={"name": user.name, "email": user.email})
+        return StreamingResponse(BytesIO(content), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="finance-receipts-{date.today().isoformat()}.pdf"'})
     filename = f"finance-receipts-{date.today().isoformat()}.xlsx"
     return StreamingResponse(
         BytesIO(content),

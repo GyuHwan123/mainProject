@@ -73,7 +73,7 @@
     .receipt-extraction-insights { padding: 12px; }
     .receipt-key-information dl { grid-template-columns: 1fr; }
     .receipt-key-information dl button { grid-template-columns: 92px minmax(0, 1fr); }
-    .receipt-confidence-content { grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
+    .receipt-confidence-content { grid-template-columns: minmax(0, 1fr); gap: 12px; }
     .receipt-confidence-content .confidence-ring { width: 76px; height: 76px; }
     .receipt-confidence-content .confidence-ring strong { font-size: 17px; }
     .receipt-confidence-content dl { grid-template-columns: 1fr; gap: 5px; }
@@ -194,7 +194,7 @@
   .receipt-confidence-content {
     padding: 15px;
     display: grid;
-    grid-template-columns: 165px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 18px;
     .confidence-ring {
@@ -218,6 +218,7 @@
     dd.warning { color: #b56a18; }
   }
 
+  .receipt-confidence-card { border-top: 4px solid #647d96; }
   .receipt-confidence-card > header > span.ok { color: #14835b; }
   .receipt-confidence-card > header > span.warning { color: #ad6518; }
   .receipt-confidence-card.is-pass { border-top: 4px solid #15966f; }
@@ -3693,7 +3694,7 @@
         border-radius: 12px;
         background: #fff;
 
-        .agent-status { display: inline-block; margin-bottom: 13px; padding: 5px 9px; border-radius: 20px; color: #8a5900; background: #fff1cf; font-size: 11px; font-weight: 800; }
+        .agent-status { display: inline-block; margin-bottom: 13px; padding: 5px 9px; border-radius: 20px; color: #365f91; background: #eaf2fc; font-size: 11px; font-weight: 800; }
         .agent-status.confirmed { color: #19734a; background: #dff3e9; }
         dl { margin: 0 0 14px; }
         dl div { padding: 8px 0; display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 8px; border-bottom: 1px solid #edf0f3; font-size: 11px; }

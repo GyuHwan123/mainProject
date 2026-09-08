@@ -25,7 +25,7 @@ from app.services.receipt_item_grounding import ground_items
 from app.services.receipt_document_classifier import classify_document_type
 
 
-FINANCE_PROMPT_VERSION = "receipt-simple-v1.6-bounded-category-evidence"
+FINANCE_PROMPT_VERSION = "receipt-simple-v1.7-category-only"
 RECEIPT_PIPELINE_VERSION = "receipt-simple-v3.4-user-confirmation"
 RECEIPTS_MODEL_NAME = settings.RECEIPTS_LLM_MODEL
 EXPENSE_CATEGORIES = ALLOWED_EXPENSE_CATEGORIES
@@ -166,15 +166,14 @@ def _simple_receipt_prompt(
     compact_amounts = {key: value for key, value in amount_evidence.items() if key not in {"labels", "resolution_context"}}
     prompt = f"""한국 영수증 OCR을 JSON 객체 하나로 구조화하세요. 설명·마크다운 없이 간결하게 출력하세요.
 OCR에 직접 나타나야 하는 추출값이 없으면 null, 품목 근거가 없으면 items=[]입니다.
-반환 키: merchant, transaction_date, expense_category_suggestion, expense_category_evidence, supply_amount, tax_amount, discount_amount, total_amount, items
+반환 키: merchant, transaction_date, expense_category, supply_amount, tax_amount, discount_amount, total_amount, items
 items의 키: name, quantity, unit_price, total_amount
 규칙:
 - 날짜는 YYYY-MM-DD, 금액·수량은 숫자.
 - 할인·쿠폰·소계·세금·결제 행은 품목에서 제외. 쇼핑백·포장비·배달비 등 유상 거래는 포함.
 - total_amount는 최종 결제·승인 금액. 공급액·세액은 아래 금액 근거 우선, 근거 없는 값은 추정하지 마세요.
 - 할인 전 세금 요약은 결제액과 달라도 다시 계산하지 마세요.
-- expense_category_suggestion은 다른 추출값과 별개인 분류 후보입니다. 아래 14개 중 하나를 제안하되 근거가 없거나 혼합 구매로 하나를 고르기 어려우면 null. 후보에 맞추어 금액·품목·상호를 변경하지 마세요.
-- expense_category_evidence: 핵심 구매 품목·서비스 근거만 최대 2개. 각 객체는 text 키만 사용하고 OCR 한 행의 연속된 원문을 40자 이내로 짧게 인용. 중복·설명·판단 과정은 출력하지 말고 근거가 없으면 []. 상호만으로 구매 품목이나 업무 목적을 추정하지 마세요.
+- expense_category는 추출값이 아니라 분류값입니다. 상호·품목·서비스 근거가 하나라도 있으면 14개 중 하나를 선택하고, 거래 성격을 판단할 근거가 전혀 없을 때만 null. 카테고리에 맞추어 금액·품목·상호를 변경하지 마세요.
 - 카테고리 판정: {CATEGORY_DECISION_RULES}
 - 광고·환불 안내의 브랜드·상품은 분류 근거에서 제외하세요.
 [카테고리 기준]
@@ -1131,8 +1130,7 @@ def _normalize(result: dict[str, Any], filename: str, text: str) -> dict[str, An
     validation = {**extraction, "reasons": list(extraction["reasons"]),
                   "checks": dict(extraction["checks"])}
     result["automation_validation"] = validation
-    result.setdefault("expense_category_suggestion", result.get("expense_category"))
-    category = normalize_expense_category(result["expense_category_suggestion"])
+    category = normalize_expense_category(result.get("expense_category"))
     items = _clean_model_items(result.get("items"))
     classification = classify_document_type({
         "expense_category": category,

@@ -131,29 +131,11 @@ LLM 반환 필드는 `merchant`, `transaction_date`, `expense_category`, `supply
 
 집계 구현: [평가 API의 `_monitoring_automation()`](../backend/app/api/routes/finance_evaluations.py).
 
-### 5.3. 카테고리 제안과 검증 분리 (같은 날 추가 구현)
+### 5.3. 카테고리 단일 출력 (2026-09-08 변경)
 
-이 절은 위 최초 스냅샷의 카테고리 보정 흐름을 대체한다. 프롬프트 버전은 `receipt-simple-v1.5-category-evidence`, 파이프라인 버전은 `receipt-simple-v3.3-category-validation`이다.
+프롬프트 `receipt-simple-v1.7-category-only`는 지출 카테고리를 `expense_category` 하나로 반환한다. 카테고리 판단 근거 생성과 전용 검증기는 제거했다.
 
-LLM은 `expense_category_suggestion`과 `expense_category_evidence: [{"text": "OCR 한 행의 원문 인용"}]`를 반환한다. 카테고리 제안 때문에 금액·상호·품목을 바꾸지 않도록 지시한다. 이전 모델의 `expense_category` 출력도 후보로 받아들이지만, 근거가 없으면 사용자 확인 대상으로 처리한다.
-
-`_simple_validation()`은 카테고리 검증을 제외한 추출 검증을 담당한다. `_normalize()`에서 `validate_category()`를 별도로 실행한다. 원문 인용이 OCR의 실제 행에 포함되는지 대조하고, 행 번호는 서버가 계산한다. 원래 제안, 별칭 정규화 값, OCR 문맥에 따른 별도 추천값, 근거 일치 결과를 `category_validation`에 보존한다. 문맥 추천값으로 카테고리나 금액·품목을 덮어쓰지 않는다. 기존 `expense_category` 필드에는 정규화된 제안값을 저장한다.
-
-| 카테고리 판정 | 현재 동작 |
-|---|---|
-| `PASS` | 자동 통과 기준의 운영 검증이 완료된 범위를 위한 상태. 현재 허용 범위는 없으므로 자동 발급하지 않음 |
-| `USER_CONFIRM` | 후보 없음, 근거 부족, 문맥상 다른 추천 또는 자동 통과 기준 검증 미완료 |
-| `REVIEW` | 허용되지 않은 카테고리, 근거 형식 오류 또는 OCR에 없는 인용 |
-
-인용 일치는 실제 구매 여부나 의미상 카테고리 적합성을 증명하지 않는다. 혼합 구매·광고 문구·업무 목적의 모호함을 모두 해결한 검증기로 간주하지 않으며, 이 때문에 원문 일치만으로 자동 통과시키지 않는다. 별도 문서 유형 분류기는 기존 검토 전용 동작을 유지한다.
-
-최종 `automation_validation`은 추출·카테고리·문서 분류 판정을 결합한다. 우선순위는 `REVIEW > USER_CONFIRM > PASS`다. 따라서 문서 분류가 `REVIEW`인 현재 모델에서는 카테고리가 `USER_CONFIRM`이어도 최종 상태는 `REVIEW`다. 신규 레코드의 DB 업무 상태는 기존 `REVIEW`를 유지하며, 검증 상태를 DB 업무 상태에 직접 대입하지 않는다.
-
-사용자가 수정·확인한 카테고리는 `category_confirmation`에 값·사용자·시각을 별도로 기록하고 원래 자동 검증 결과는 보존한다. 영수증 화면은 카테고리 검증 상태와 원문 근거를 표시한다. 모니터링·일괄 평가·JSON 통계에는 카테고리 단계를 추가하며, `USER_CONFIRM`도 측정 분모에 포함하고 별도 건수로 집계한다. 기존 기록에 새 검증 결과를 소급 생성하지는 않는다.
-
-구현: [카테고리 검증기](../backend/app/services/receipt_category_validation.py).
-
-출력량 제한 추가: 프롬프트 `receipt-simple-v1.6-bounded-category-evidence`는 카테고리 근거를 최대 2개, 각 `text`를 40자 이내의 연속된 OCR 원문으로 요청한다. 중복·설명·판단 과정은 제외한다. 후처리 `category-evidence-v2-bounded`는 최대 2개만 대조하고 개수·길이 초과를 `CATEGORY_EVIDENCE_LIMIT_EXCEEDED` 및 `REVIEW`로 기록한다. 긴 인용을 잘라서 유효한 근거로 인정하지 않으며 원래 응답은 추적용으로 보존한다. LLM 추가 호출이나 재시도는 없고 품목 출력 한도는 변경하지 않는다. 프롬프트 제한은 모델 생성 길이를 강제로 보장하지 않으며, 후처리 제한은 이미 생성한 토큰 비용을 줄이지 않는다. 실제 지연 개선 폭은 별도 측정이 필요하다.
+`_normalize()`는 `expense_category`를 정규화하고 기존 로컬 문서 분류기에 카테고리·상호·품목·거래 설명을 전달한다. 문서 추천, 사용자 확인·수정 및 저장된 문서 종류에 따른 엑셀 시트 선택은 유지한다. 기존 저장 기록은 변경하지 않는다.
 
 ## 6. 중복과 저장
 
@@ -192,7 +174,7 @@ LLM은 `expense_category_suggestion`과 `expense_category_evidence: [{"text": "O
 | `RECEIPTS_CLASSIFICATION_BUDGET_SECONDS` | 630초 |
 | `RECEIPT_LLM_NUM_PREDICT` | 800 |
 | `MAX_OCR_PROMPT_CHARS` | 8000 |
-| `FINANCE_PROMPT_VERSION` | `receipt-simple-v1.4-category-context-refine` |
+| `FINANCE_PROMPT_VERSION` | `receipt-simple-v1.7-category-only` |
 | `RECEIPT_PIPELINE_VERSION` | `receipt-simple-v3.2-document-classifier` |
 | `FINANCE_PIPELINE_VERSION` | `v2.5`, 별도 메타데이터 |
 

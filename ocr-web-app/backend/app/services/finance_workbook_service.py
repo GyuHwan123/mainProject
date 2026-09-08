@@ -274,14 +274,16 @@ def build_finance_workbook(records: list[dict[str, Any]], author: dict[str, str]
     workbook.calculation.forceFullCalc = True
     workbook.calculation.calcMode = "auto"
     for document_type, sheet_name in SHEET_NAMES.items():
-        ws = workbook.create_sheet(sheet_name)
         matching = [record for record in records if record.get("document_type") == document_type]
+        if not matching:
+            continue
+        ws = workbook.create_sheet(sheet_name)
         _style_sheet(ws, document_type, matching, author or {})
     summary_sheet = workbook.create_sheet(SUMMARY_SHEET_NAME)
     _style_summary_sheet(summary_sheet, records)
     first_document_type = records[0].get("document_type") if records else None
     if first_document_type in SHEET_NAMES:
-        workbook.active = list(SHEET_NAMES).index(first_document_type)
+        workbook.active = workbook.sheetnames.index(SHEET_NAMES[first_document_type])
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

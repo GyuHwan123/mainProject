@@ -4251,11 +4251,30 @@
   button[aria-pressed='true'] { background: #205c89; color: white; }
   p { margin: 0; color: #64748a; font-size: 12px; }
 }
-.finance-excel-preview-table {
-  overflow: auto;
-  table { border-collapse: collapse; font-size: 12px; }
-  td, th { border: 1px solid #dfe6ed; padding: 8px; min-width: 100px; white-space: pre-wrap; }
-  th { min-width: 32px; background: #f1f7fc; }
+.finance-document-scroll { overflow: auto; min-height: 0; padding: 24px; background: #edf0f4; }
+.finance-document-paper {
+  min-width: 840px; padding: 36px; background: #fff; color: #263445;
+  box-shadow: 0 2px 12px #24344914;
+  h2 { margin: 0; font-size: 26px; letter-spacing: 3px; color: #1e293b; }
+  h3 { margin: 28px 0 12px; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { border: 1px solid #ccd3dc; padding: 12px 10px; overflow-wrap: anywhere; }
+  th { background: #f1f4f8; font-weight: 600; }
+  .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .receipt-reference { white-space: nowrap; width: 90px; font-family: monospace; color: #64748b; }
+  .finance-document-heading { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin-bottom: 28px; }
+  .finance-approval { width: 300px; table-layout: fixed; text-align: center; }
+  .finance-approval td { height: 64px; }
+  .finance-document-metadata { display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-top: 2px solid #475569; border-left: 1px solid #ccd3dc; }
+  .finance-document-metadata > div { display: grid; grid-template-columns: 105px 1fr; border-right: 1px solid #ccd3dc; border-bottom: 1px solid #ccd3dc; font-size: 12px; }
+  dt, dd { margin: 0; padding: 12px; overflow-wrap: anywhere; }
+  dt { background: #f1f4f8; font-weight: 600; }
+  .finance-document-details { margin-top: 16px; }
+  .finance-document-details thead th { border-top: 2px solid #475569; white-space: nowrap; }
+  .finance-document-details tbody tr:nth-child(even) { background: #fafbfd; }
+  tfoot th, tfoot td { background: #edf2f7; border-top: 2px solid #475569; font-weight: 700; }
+  tfoot th { text-align: left; }
+  tfoot small { font-weight: 400; color: #64748b; }
 }
 .finance-send-scope {
   display: flex;

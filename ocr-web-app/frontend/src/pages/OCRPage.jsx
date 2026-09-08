@@ -9,6 +9,7 @@ import { RiFileUploadLine } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
+import FinanceDocumentPreview from '../components/FinanceDocumentPreview';
 import { getAppUser, saveAppUser } from '../features/appSession';
 import { appendFinanceEvaluationRun } from '../features/financeEvaluationStorage';
 import { queueFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
@@ -2135,9 +2136,9 @@ export default function OCRPage() {
         {financePreview && <div className="finance-excel-preview-backdrop" onClick={() => setFinancePreview(null)}>
           <section className="finance-excel-preview-dialog" role="dialog" aria-modal="true" aria-label="Excel 미리보기" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => { if (event.key === 'Escape') setFinancePreview(null); }}>
             <header><strong>{financePreview.group.month} · {financePreview.group.batchLabel} Excel 미리보기</strong><button type="button" disabled={Boolean(downloadingFinanceGroup)} onClick={() => downloadSavedFinanceGroup(financePreview.group)}>Excel 다운로드</button><button type="button" autoFocus onClick={() => setFinancePreview(null)}>닫기</button></header>
-            <p>다운로드 문서의 셀 내용입니다. 수식은 계산식으로 표시됩니다.</p>
+            <p>영수증 ID에 마우스를 올리면 전체 ID를 확인할 수 있습니다.</p>
             <nav aria-label="Excel 시트">{financePreview.sheets.map((sheet, index) => <button type="button" key={sheet.name} aria-pressed={financePreviewSheet === index} onClick={() => setFinancePreviewSheet(index)}>{sheet.name}</button>)}</nav>
-            <div className="finance-excel-preview-table"><table><tbody>{financePreview.sheets[financePreviewSheet]?.rows.map((row, index) => <tr key={index}><th scope="row">{index + 1}</th>{row.map((value, column) => <td key={column}>{String(value ?? '')}</td>)}</tr>)}</tbody></table></div>
+            <FinanceDocumentPreview sheet={financePreview.sheets[financePreviewSheet]} />
           </section>
         </div>}
         {financeReviewOpen && financeReviewDraft && <div className="finance-review-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !loading) setFinanceReviewOpen(false); }}>

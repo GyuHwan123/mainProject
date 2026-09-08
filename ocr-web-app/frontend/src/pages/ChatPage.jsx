@@ -242,21 +242,25 @@ function SpreadsheetEvidencePage({ page, bbox }) {
   </div>;
 }
 
-function DocumentSummaryPreview({ document, summary, loading, error, onRetry, onRegenerate }) {
+function DocumentSummaryPreview({ document, summary, loading, error, onRetry, onRegenerate, onCancel }) {
   if (!document) return <div className="document-summary-empty">
     <strong>요약할 문서를 선택해 주세요.</strong>
     <p>RAG 문서를 선택하면 AI 문서 요약을 확인할 수 있습니다.</p>
   </div>;
 
-  return <section className="document-summary-preview" aria-labelledby="document-summary-title">
-    <header>
-      <div><small>DOCUMENT SUMMARY</small><h2 id="document-summary-title">AI 문서 요약</h2></div>
-      <div className="document-summary-actions"><span title={document.name}>{document.name}</span>{summary && <button type="button" disabled={loading} onClick={onRegenerate}>{loading ? '다시 요약 중...' : '다시 요약'}</button>}</div>
-    </header>
-    {loading && !summary && <div className="document-summary-placeholder summary-loading"><i /><strong>AI가 문서를 요약하고 있습니다...</strong><p>문서 길이에 따라 잠시 시간이 걸릴 수 있습니다.</p></div>}
-    {!loading && error && !summary && <div className="document-summary-placeholder summary-error"><strong>문서 요약에 실패했습니다.</strong><p>{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
-    {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}{summary}</div>}
-  </section>;
+  return <div className="evidence-preview document-summary-preview">
+    <div className="evidence-preview-label">
+      <span title={document.name}>{document.name}</span>
+      {(loading || summary) && <button type="button" className="document-summary-regenerate" onClick={loading ? onCancel : onRegenerate}>{loading ? '요약 취소' : '다시 요약'}</button>}
+    </div>
+    <div className="evidence-preview-body">
+      <div className="evidence-document-stage document-summary-stage">
+        {loading && !summary && <div className="document-summary-placeholder summary-loading"><i /><strong>AI가 문서를 요약하고 있습니다...</strong><p>문서 길이에 따라 잠시 시간이 걸릴 수 있습니다.</p></div>}
+        {!loading && error && !summary && <div className="document-summary-placeholder summary-error"><strong>문서 요약에 실패했습니다.</strong><p>{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
+        {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}{summary}</div>}
+      </div>
+    </div>
+  </div>;
 }
 
 function EvidencePreview({ source, onUpload, uploading }) {
@@ -446,6 +450,7 @@ function ChatPageContent() {
   const evaluationRunningRef = useRef(false);
   const restorationAttemptedRef = useRef(false);
   const summaryRequestsRef = useRef(new Set());
+  const summaryControllersRef = useRef(new Map());
   const messagesRef = useRef(null);
   const activeDoc = documents.find((item) => item.id === activeId);
   const selectEvidenceSource = (source) => {
@@ -471,24 +476,40 @@ function ChatPageContent() {
   const loadDocumentSummary = async (documentId, { retry = false, forceRegenerate = false } = {}) => {
     if (!documentId || summaryRequestsRef.current.has(documentId)) return;
     if (!retry && !forceRegenerate && Object.prototype.hasOwnProperty.call(documentSummaries, documentId)) return;
+    const controller = new AbortController();
     summaryRequestsRef.current.add(documentId);
+    summaryControllersRef.current.set(documentId, controller);
     setSummaryLoadingId(documentId);
     setSummaryErrors((current) => ({ ...current, [documentId]: '' }));
     try {
       const { data } = await apiClient.post(`/rag/documents/${encodeURIComponent(documentId)}/summary`, null, {
         params: forceRegenerate ? { force_regenerate: true } : undefined,
+        signal: controller.signal,
         timeout: 600000,
       });
       setDocumentSummaries((current) => ({ ...current, [documentId]: data.summary || '' }));
     } catch (error) {
+      if (error?.code === 'ERR_CANCELED' || error?.name === 'CanceledError') return;
       setSummaryErrors((current) => ({
         ...current,
         [documentId]: error.response?.data?.detail || '잠시 후 다시 시도해 주세요.',
       }));
     } finally {
-      summaryRequestsRef.current.delete(documentId);
+      if (summaryControllersRef.current.get(documentId) === controller) {
+        summaryControllersRef.current.delete(documentId);
+        summaryRequestsRef.current.delete(documentId);
+      }
       setSummaryLoadingId((current) => current === documentId ? null : current);
     }
+  };
+
+  const cancelDocumentSummary = (documentId) => {
+    const controller = summaryControllersRef.current.get(documentId);
+    if (!controller) return;
+    summaryControllersRef.current.delete(documentId);
+    summaryRequestsRef.current.delete(documentId);
+    controller.abort();
+    setSummaryLoadingId((current) => current === documentId ? null : current);
   };
 
   useEffect(() => {
@@ -973,6 +994,7 @@ function ChatPageContent() {
                     error={activeDoc ? summaryErrors[activeDoc.id] : ''}
                     onRetry={() => activeDoc && loadDocumentSummary(activeDoc.id, { retry: true })}
                     onRegenerate={() => activeDoc && loadDocumentSummary(activeDoc.id, { forceRegenerate: true })}
+                    onCancel={() => activeDoc && cancelDocumentSummary(activeDoc.id)}
                   />}
                 {uploadMode && <button type="button" className="rag-first-upload upload-mode-overlay" disabled={Boolean(indexingId)} onClick={() => fileRef.current?.click()} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }} onDrop={(event) => { event.preventDefault(); uploadFiles([...event.dataTransfer.files]).catch(() => setIndexingId(null)); }}><RiFileUploadLine /><strong>{indexingId ? 'OCR · RAG 처리 중...' : 'RAG 문서를 업로드하세요'}</strong><p>파일을 이곳으로 드래그하거나 클릭해서 선택하세요.</p><small>PDF · DOCX · 이미지 · XLSX · TXT</small></button>}
               </div>

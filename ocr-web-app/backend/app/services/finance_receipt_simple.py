@@ -1040,25 +1040,9 @@ async def _classify_receipt(
         return await _classify_receipt_with_model(text, filename, RECEIPTS_MODEL_NAME, pages)
     except Exception as exc:
         logger.warning("Simple receipt extraction failed: filename=%s error=%s", filename, type(exc).__name__)
-        return {
-            "merchant": None, "transaction_date": None, "expense_category": None,
-            "supply_amount": None, "tax_amount": None, "discount_amount": None,
-            "total_amount": None, "payment_method": None, "items": [],
-            "automation_validation": {
-                "decision": "REVIEW",
-                "reasons": ["LLM_CALL_FAILED", type(exc).__name__],
-                "checks": {},
-            },
-            "llm_trace": {
-                "pipeline_version": RECEIPT_PIPELINE_VERSION,
-                "model_name": RECEIPTS_MODEL_NAME,
-                "prompt_version": FINANCE_PROMPT_VERSION,
-                "call_count": 1,
-                "call_status": "failed",
-                "raw_output": None,
-            },
-            "_model_name": "rules-fallback",
-        }
+        # A failed model call is not a valid classification result. Propagate it
+        # so the route returns a service error before any finance row is saved.
+        raise
 
 
 def _payment_from_ocr(text: str) -> tuple[str | None, dict[str, Any]]:

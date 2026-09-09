@@ -1,7 +1,13 @@
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from app.services.rag_service import bm25_candidates, merge_hybrid_candidates, search
+from app.services.rag_service import (
+    _extract_evidence_facets,
+    _promote_lexical_evidence,
+    bm25_candidates,
+    merge_hybrid_candidates,
+    search,
+)
 
 
 class Bm25RankingTests(unittest.TestCase):
@@ -39,6 +45,25 @@ class Bm25RankingTests(unittest.TestCase):
         self.assertEqual({row["id"] for row in merged}, {"original", "rewritten"})
         original = next(row for row in merged if row["id"] == "original")
         self.assertEqual(original["retrieval_queries"], ["original", "rewritten"])
+
+    def test_literal_meeting_facts_survive_semantic_reranking(self):
+        semantic_order = [
+            {"id": "noise", "content": "회의 운영에 관한 일반 안내", "similarity": .98},
+            {"id": "facts", "content": "회의 시간 14:00 / 담당 부서 경영지원팀", "similarity": .12},
+        ]
+        lexical = [{
+            "id": "facts", "content": "회의 시간 14:00 / 담당 부서 경영지원팀",
+            "bm25_score": 4.2,
+        }]
+
+        promoted = _promote_lexical_evidence(
+            semantic_order, [*lexical, *lexical],
+            _extract_evidence_facets("회의 시간 및 담당 부서 정보를 알려주세요"),
+        )
+
+        self.assertEqual(promoted[0]["id"], "facts")
+        self.assertTrue(promoted[0]["lexical_evidence_promoted"])
+        self.assertEqual([row["id"] for row in promoted].count("facts"), 1)
 
 
 class HybridSearchFlowTests(unittest.IsolatedAsyncioTestCase):

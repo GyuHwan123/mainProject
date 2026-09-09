@@ -246,7 +246,7 @@ def _amount_is_grounded(value: Any, text: str) -> bool:
 
 
 def _labeled_amount(text: str, label_pattern: str) -> int | None:
-    """Return a labelled amount from the same OCR line or the immediately following line."""
+    """Return a labelled amount only when it is on the same OCR line."""
     amount_pattern = (
         r"(-?\d{1,3}(?:[,.]\d{3})+|-?\d{1,8})(?:원)?"
         r"(?![\d*xX])"
@@ -264,21 +264,8 @@ def _labeled_amount(text: str, label_pattern: str) -> int | None:
             value = match.group(1)
             return _receipt_number(value) * (-1 if value.startswith("-") else 1)
 
-    # OCR table cells may split the right-hand amount onto the next OCR line.
-    # Only inspect the immediately following line to reduce false pairings.
-    label_re = re.compile(label_pattern, re.IGNORECASE)
-    next_line_amount_re = re.compile(
-        rf"^[()\[\]:：]*{amount_pattern}$",
-        re.IGNORECASE,
-    )
-    for index, line in enumerate(lines[:-1]):
-        if not label_re.search(line):
-            continue
-        match = next_line_amount_re.search(lines[index + 1])
-        if match:
-            value = match.group(1)
-            return _receipt_number(value) * (-1 if value.startswith("-") else 1)
-
+    # Plain text has no cell coordinates: adjacency alone cannot establish
+    # that a number on another OCR line belongs to this label.
     return None
 
 def _extract_amount_evidence(text: str, *, include_context: bool = False) -> dict[str, Any]:
@@ -485,7 +472,7 @@ def _extract_amount_evidence(text: str, *, include_context: bool = False) -> dic
                 )
 
         # include_context 단계에서도 영어 VAT fallback 유지
-        if evidence.get("tax_amount") is None and tax_amount is not None:
+        if not final_selected and "tax_amount" not in conflicts and evidence.get("tax_amount") is None and tax_amount is not None:
             evidence["tax_amount"] = tax_amount
 
         if evidence.get("total_amount") is None and total_amount is not None:
@@ -494,10 +481,11 @@ def _extract_amount_evidence(text: str, *, include_context: bool = False) -> dic
         evidence["resolution_context"] = {
             "conflicts": conflicts,
             "final_payment_selected": final_selected,
+            # A generic VAT label does not establish the post-discount basis.
             "final_payment_tax": (
                 final_tax
                 if final_selected
-                else tax_amount
+                else None
             ),
         }
 

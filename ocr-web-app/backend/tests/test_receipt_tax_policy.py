@@ -65,6 +65,37 @@ class ReceiptTaxPolicyTests(unittest.TestCase):
                 self.assertEqual((result['total_amount'], result['supply_amount'], result['tax_amount']), (total, supply, vat))
                 self.assertEqual(result['amount_resolution']['review_reason'], [])
 
+    def test_discount_without_final_tax_keeps_supply_unresolved(self):
+        result = self.resolve('부가세 1,000\n할인 2,000\n결제금액 15,000')
+        self.assertIsNone(result['supply_amount'])
+        self.assertEqual(result['tax_amount'], 1000)
+        self.assertIn('DISCOUNT_TAX_BASIS_UNCLEAR', result['amount_resolution']['review_reason'])
+
+    def test_plain_text_next_line_amounts_are_not_explicit_evidence(self):
+        for text in (
+            '공급가액\n21,091\n부가세\n2,109\n결제액\n23,200',
+            '공급가액\n주문번호\n21,091\n부가세\n2,109\n결제액\n23,200',
+        ):
+            with self.subTest(text=text):
+                result = self.resolve(text)
+                self.assertEqual((result['supply_amount'], result['tax_amount'], result['total_amount']),
+                                 (None, None, None))
+                self.assertIn('TAX_AMOUNTS_UNRESOLVED', result['amount_resolution']['review_reason'])
+
+    def test_same_line_amounts_remain_explicit(self):
+        result = self.resolve('공급가액 21,091\n부가세 2,109\n결제액 23,200')
+        self.assertEqual((result['supply_amount'], result['tax_amount'], result['total_amount']),
+                         (21091, 2109, 23200))
+
+    def test_parenthesized_final_vat_allows_discount_arithmetic(self):
+        result = self.resolve('할인금액 3,100\n최종 카드결제금액 23,200\n(부가세포함) (2,109)')
+        self.assertEqual((result['supply_amount'], result['tax_amount']), (21091, 2109))
+        self.assertNotIn('DISCOUNT_TAX_BASIS_UNCLEAR', result['amount_resolution']['review_reason'])
+
+    def test_explicit_discount_summary_is_preserved(self):
+        result = self.resolve('공급가액 10,910\n부가세 1,090\n할인금액 1,200\n결제금액 10,800')
+        self.assertEqual((result['supply_amount'], result['tax_amount']), (10910, 1090))
+
     def test_guards(self):
         for text in [
             'KTX\n결제금액 50,800\n결제금액 45,000',

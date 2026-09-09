@@ -1064,10 +1064,9 @@ export default function ReportPage() {
   useEffect(() => {
     let active = true;
     const initialTarget = initialReportTargetRef.current;
-    const initialRequests = [
-      loadBusinessStats(),
-      apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
-    ];
+    const initialRequests = [];
+    // Model status must not hold up receipt metrics.
+    apiClient.get('/chatbot/status').then(({ data }) => { if (active) setModelConfig(data); }).catch(() => {});
 
     if (isDeveloper && SHOW_LEGACY_EVALUATIONS) initialRequests.push(loadEvaluations());
     if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'monitoring') {
@@ -1084,12 +1083,19 @@ export default function ReportPage() {
     Promise.allSettled(initialRequests).finally(() => {
       if (!active) return;
       initialRagRequestInFlightRef.current = false;
-      if (!isDeveloper) setLoading(false);
       setInitialLoading(false);
     });
 
     return () => { active = false; };
   }, [isDeveloper, loadBusinessStats, loadEvaluations, loadInitialFinanceHistory, loadInitialMonitoring, loadRagReport, loadUmapReport]);
+
+  useEffect(() => {
+    if (reportView !== 'business') return;
+    let active = true;
+    setLoading(true);
+    loadBusinessStats().finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [reportView, loadBusinessStats]);
 
   useEffect(() => {
     if (isDeveloper && developerReport === 'rag' && !initialRagRequestInFlightRef.current) loadRagReport();
@@ -1198,7 +1204,7 @@ export default function ReportPage() {
           <button  className="refresh-report"  disabled={loading}
             onClick={async () => {
               setLoading(true);
-              const refreshRequests = [loadBusinessStats()];
+              const refreshRequests = reportView === 'business' ? [loadBusinessStats()] : [];
 
               if (isDeveloper && SHOW_LEGACY_EVALUATIONS) {refreshRequests.push(loadEvaluations());}
 

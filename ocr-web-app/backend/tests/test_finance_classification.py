@@ -202,7 +202,11 @@ class FinanceClassificationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(normalized["total_amount"], 9999)
         validation = normalized["structured_data"]["automation_validation"]
-        self.assertEqual(validation["decision"], "REVIEW")
+        # User confirmation is the workflow state, even when extraction needs review.
+        self.assertEqual(validation["decision"], "USER_CONFIRM")
+        extraction = normalized["structured_data"]["extraction_validation"]
+        self.assertEqual(extraction["decision"], "REVIEW")
+        self.assertIn("TOTAL_AMOUNT_NOT_IN_OCR", extraction["reasons"])
         self.assertIn("TOTAL_AMOUNT_NOT_IN_OCR", validation["reasons"])
 
     def test_normalization_limits_payment_method_to_supported_values(self):

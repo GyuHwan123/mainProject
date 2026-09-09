@@ -126,7 +126,7 @@ def _table_structure_answer(message: str, context: str) -> str | None:
     """Answer explicit table-schema questions from deterministic RAG metadata."""
     question = re.sub(r"\s+", " ", str(message or "")).strip()
     asks_columns = bool(re.search(
-        r"(컬럼\s*명|열\s*(?:이름|명)|헤더|(?:컬럼|열).*(?:알려|무엇|뭐|전부|모두))",
+        r"(컬럼\s*명|열\s*(?:이름|명|구성)|헤더|(?:컬럼|열).*(?:알려|무엇|뭐|전부|모두|어떻게|구성))",
         question,
     ))
     asks_size = bool(re.search(r"(몇\s*행|몇\s*열|몇\s*컬럼|행.*열|열.*행|표\s*크기)", question))
@@ -168,6 +168,55 @@ def _table_structure_answer(message: str, context: str) -> str | None:
                 sentences.append("컬럼은 " + ", ".join(columns) + "입니다.")
         if sentences:
             return " ".join(sentences) + f" [근거 {evidence_number}]"
+    return None
+
+
+def _document_title_answer(message: str, context: str) -> str | None:
+    """Return indexed title metadata without asking the LLM to reinterpret it."""
+    question = re.sub(r"\s+", " ", str(message or "")).strip()
+    if not re.search(r"(?:논문|문서|자료|보고서)?\s*(?:제목|논문명|문서명|자료명|보고서명)", question):
+        return None
+    match = re.search(
+        r"\[근거\s+(\d+)[^\]]*\]\s*.*?\[문서 제목\]\s*([^\n]+)",
+        str(context or ""),
+        flags=re.S,
+    )
+    if not match:
+        return None
+    title = match.group(2).strip(" |")
+    if not title:
+        return None
+    return f"문서 제목은 {title}입니다. [근거 {match.group(1)}]"
+
+
+def _labeled_fact_answer(message: str, context: str) -> str | None:
+    """Answer common labelled RAG facts consistently across paraphrases."""
+    question = re.sub(r"\s+", " ", str(message or "")).strip()
+    blocks = re.findall(
+        r"\[근거\s+(\d+)[^\]]*\]\s*(.*?)(?=\n\n\[근거\s+\d+|\Z)",
+        str(context or ""),
+        flags=re.S,
+    )
+    asks_meeting_time = "회의" in question and bool(re.search(r"몇\s*시|언제|시간", question))
+    asks_department = "부서" in question and bool(re.search(r"담당|어디", question))
+    for evidence_number, content in blocks:
+        if asks_meeting_time:
+            time_match = re.search(
+                r"(?:회의\s*)?(?:시간|일시)\s*(?:은|는|이|가|[:：])?\s*"
+                r"((?:오전|오후)?\s*\d{1,2}(?::\d{2}|\s*시(?:\s*\d{1,2}\s*분)?))",
+                content,
+            )
+            if time_match:
+                return f"회의 시간은 {time_match.group(1).strip()}입니다. [근거 {evidence_number}]"
+        if asks_department:
+            department_match = re.search(
+                r"담당\s*부서\s*(?:은|는|이|가|[:：])?\s*([^\n/|,;]+)",
+                content,
+            )
+            if department_match:
+                department = department_match.group(1).strip(" .")
+                if department:
+                    return f"담당 부서는 {department}입니다. [근거 {evidence_number}]"
     return None
 
 
@@ -286,6 +335,12 @@ async def _ask_chatbot(
     if not payload.context or not payload.context.strip():
         return ChatReply(reply=GROUNDED_REJECTION_RESPONSE, model="grounded-rejection")
     context = payload.context[:6000]
+    title_answer = _document_title_answer(payload.message, context)
+    if title_answer:
+        return ChatReply(reply=title_answer, model="document-metadata")
+    fact_answer = _labeled_fact_answer(payload.message, context)
+    if fact_answer:
+        return ChatReply(reply=fact_answer, model="document-metadata")
     table_answer = _table_structure_answer(payload.message, context)
     if table_answer:
         return ChatReply(reply=table_answer, model="table-metadata")

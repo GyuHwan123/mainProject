@@ -19,6 +19,15 @@ async def positive_semantics(texts):
 
 
 class QueryNormalizationTests(unittest.IsolatedAsyncioTestCase):
+    def test_meeting_time_and_department_paraphrases_drop_question_scaffolding(self):
+        meeting = rag._extract_evidence_facets("최종 점검 회의는 몇 시에 진행해?")
+        self.assertEqual(meeting["strong_subjects"], ["최종", "점검", "회의"])
+        self.assertEqual(meeting["requested_units"], ["시"])
+        self.assertEqual(
+            rag._extract_evidence_facets("담당 부서는 어디야?")["strong_subjects"],
+            ["담당", "부서"],
+        )
+
     async def test_pairs_have_identical_facets_and_gate_decisions(self):
         with patch.object(rag, "_embed_texts_cached", side_effect=positive_semantics):
             for attached, spaced, subject in PAIRS:

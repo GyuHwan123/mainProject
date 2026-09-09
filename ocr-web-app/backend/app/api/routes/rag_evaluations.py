@@ -443,20 +443,15 @@ async def evaluate_rag(
     run_id: str | None = None,
 ) -> dict[str, Any]:
     dataset_hash = _dataset_hash(dataset)
-    if force_restart and (run_id or retry_failed):
-        raise HTTPException(status_code=400, detail="새 평가는 기존 run_id 또는 재시도 옵션과 함께 요청할 수 없습니다.")
     resolved_run_id = run_id or str(uuid4())
-    if retry_failed or run_id:
+    if retry_failed:
         if not run_id:
             raise HTTPException(status_code=409, detail="재개하려면 동일한 run_id를 전달해야 합니다.")
         path = _checkpoint_path(dataset_hash, run_id)
         if not path.exists():
             raise HTTPException(status_code=409, detail="동일한 run_id의 checkpoint가 필요합니다.")
         saved = json.loads(path.read_text(encoding="utf-8"))
-        if (saved.get("configuration") != _evaluation_configuration()
-                or saved.get("total") != len(dataset.cases)
-                or saved.get("dataset_hash") != dataset_hash
-                or saved.get("run_id") != run_id):
+        if saved.get("configuration") != _evaluation_configuration() or saved.get("total") != len(dataset.cases):
             raise HTTPException(status_code=409, detail="RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.")
     with _rag_evaluation_lock:
         if dataset_hash in _running_rag_evaluations:
@@ -470,7 +465,7 @@ async def evaluate_rag(
             shutil.copy2(old_latest, preserved_path)
         checkpoint = _new_checkpoint(dataset, run_id=resolved_run_id)
     elif run_id:
-        checkpoint = saved
+        checkpoint = _load_checkpoint(dataset, run_id=run_id)
     else:
         checkpoint = _new_checkpoint(dataset, run_id=resolved_run_id)
 
@@ -628,7 +623,6 @@ def rag_evaluation_checkpoint_status(
         "total": total,
         "question_id": None,
         "dataset_hash": checkpoint["dataset_hash"],
-        "run_id": checkpoint.get("run_id"),
         "configuration_matches": checkpoint.get("configuration") == _evaluation_configuration(),
         "completed_count": len(checkpoint.get("completed_question_ids") or []),
         "error_count": len(checkpoint.get("errors") or {}),

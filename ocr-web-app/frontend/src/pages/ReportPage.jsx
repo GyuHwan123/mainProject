@@ -83,7 +83,20 @@ function ReportDropdown({ value, options, onChange, disabled = false, ariaLabel,
   </div>;
 }
 
-function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
+function RagAblationReport({ modelConfig, onExportPdf }) {
+  const [evaluation, setEvaluation] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    apiClient.get('/rag/evaluation/ablation/latest', { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setEvaluation(data.evaluation_result); })
+      .catch(requestError => {
+        if (!controller.signal.aborted) setError(requestError.response?.data?.detail || 'Ablation 결과를 불러오지 못했습니다.');
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, []);
   const configuration = evaluation?.configuration || {};
   const hasConfigurationSnapshot = Boolean(evaluation?.configuration);
   const latency = evaluation?.latency || {};
@@ -98,6 +111,9 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
   const configValue = (key) => hasConfigurationSnapshot ? (configuration[key] ?? '—') : '기록 없음';
   const retrievalLabel = !hasConfigurationSnapshot ? '기록 없음' : configuration.retrieval_method === 'dense_bm25_hybrid'
     ? 'Dense + BM25 Hybrid' : 'Dense Vector';
+
+  if (loading) return <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" />;
+  if (error) return <div className="report-access-error" role="alert">{error}</div>;
 
   return <section className="rag-ablation-report">
     <div className="rag-report-controls"><div className="receipt-monitoring-filters">
@@ -131,10 +147,18 @@ function RagAblationReport({ evaluation, modelConfig, onExportPdf }) {
 
 const RAG_KPI_COLORS = ['#1767df', ...RAG_TREND_METRICS.map(([, , color]) => color)];
 
-function RagResponseDistribution({ demoMode, monitoring, loading }) {
+function RagResponseDistribution({ detail, monitoring, loading }) {
   if (loading) return <div className="empty-monitoring-box"><span>불러오는 중</span></div>;
-  const actualRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true) || monitoring?.recent_runs?.[0] || null;
-  const distribution = actualRun?.summary_metrics?.response_distribution;
+  const actualRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true);
+  const cases = actualRun?.id && detail?.id === actualRun.id
+    ? detail.summary_metrics?.evaluation_result?.cases : null;
+  const distribution = Array.isArray(cases) ? cases.reduce((counts, item) => {
+    const key = item.rejected === true ? 'rejected'
+      : item.answer_correct === true ? 'correct'
+        : item.answer_correct === false ? 'incorrect' : 'unknown';
+    counts[key] += 1;
+    return counts;
+  }, { correct: 0, incorrect: 0, rejected: 0, unknown: 0 }) : null;
   const counts = ['correct', 'incorrect', 'rejected', 'unknown'].map(key => distribution?.[key]);
   if (!counts.every(count => Number.isInteger(count) && count >= 0)) return <div className="empty-monitoring-box"><span>응답 유형을 집계할 문항별 결과가 없습니다.</span></div>;
   const total = counts.reduce((sum, count) => sum + count, 0);
@@ -361,7 +385,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
     </article>)}</div>
     <div className="receipt-monitoring-panels">
       <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>일별 실행 평균</span></header>{monitoringLoading ? <div className="empty-monitoring-box"><span>불러오는 중</span></div> : <RagMonitoringChart daily={monitoring?.daily || []} />}</article>
-      <article><header><h3>응답 유형 분포</h3><span>최근 실행 · 문항별</span></header><RagResponseDistribution evaluation={evaluation} demoMode={false} monitoring={monitoring} loading={monitoringLoading} /></article>
+      <article><header><h3>응답 유형 분포</h3><span>최근 실행 · 문항별</span></header><RagResponseDistribution detail={typeRunDetail} monitoring={monitoring} loading={monitoringLoading} /></article>
       <article><header><h3>Retrieval 상세 지표</h3><span>Top-K {metrics?.topK ?? (monitoring?.summary.run_count ? '혼합' : '—')}</span></header><div className="field-accuracy-list rag-retrieval-bars">{retrievalMetrics.map(([label, value]) => <div key={label}><span>{label}</span><i role={value == null ? undefined : 'progressbar'} aria-label={label} aria-valuemin={value == null ? undefined : 0} aria-valuemax={value == null ? undefined : 100} aria-valuenow={value == null ? undefined : value * 100}><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, value * 100))}%` }} /></i><strong>{metricValue(value)}</strong></div>)}</div></article>
       <article><header><h3>추가 평가 정보</h3><span>선택 기간</span></header><div className="rag-monitoring-metrics">{answerMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div>{metrics?.faithfulnessMethod && <p className="rag-monitoring-method">Faithfulness: {metrics.faithfulnessMethod}</p>}</article>
     </div>
@@ -1231,7 +1255,7 @@ export default function ReportPage() {
         <button type="button" role="tab" aria-selected={ragReportTab === 'ablation'} className={ragReportTab === 'ablation' ? 'active' : ''} onClick={() => { setRagReportTab('ablation'); localStorage.setItem('pic_to_text_rag_report_tab', 'ablation'); }}>Ablation 분석</button>
       </div>
       {ragReportTab === 'ablation'
-        ? ragLoading ? <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" /> : <RagAblationReport evaluation={ragEvaluation} modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
+        ? <RagAblationReport modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
         : <RagPerformanceReport loading={ragLoading || umapLoading} demoMode={['DEVELOPER', 'ADMIN'].includes(user.role) && reportView === 'developer'} refreshVersion={ragRefreshVersion} evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
       {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}

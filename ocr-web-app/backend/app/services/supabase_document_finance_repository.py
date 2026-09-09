@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import sys
 
 from app.services.supabase_base import *
@@ -669,38 +670,42 @@ class DocumentFinanceMixin:
         ]
         if model_name:
             evaluation_params.append(("model_name", f"eq.{model_name}"))
-        evaluations_response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/finance_record_evaluations",
-            params=evaluation_params,
-            headers=self._service_headers(), timeout=20,
-        )
-        self._raise_for_supabase(evaluations_response, "영수증 모니터링 평가 조회 실패")
-
-        item_response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/finance_evaluation_items",
-            params=[
+        item_params = [
                 ("select", "id,status,error_stage,error_message,started_at,completed_at,batch_id"),
                 ("user_id", f"eq.{user_id}"),
                 ("started_at", f"gte.{start_at}"),
                 ("started_at", f"lt.{end_at}"),
                 ("order", "started_at.asc"),
                 ("limit", "10000"),
-            ],
-            headers=self._service_headers(), timeout=20,
-        )
-        self._raise_for_supabase(item_response, "영수증 모니터링 처리 이력 조회 실패")
-        batch_response = _legacy_httpx().get(
-            f"{self.url}/rest/v1/finance_evaluation_batches",
-            params=[
+        ]
+        batch_params = [
                 ("select", "id,batch_name,model_name,status,total_items,completed_items,failed_items,summary_metrics,created_at,completed_at"),
                 ("user_id", f"eq.{user_id}"),
                 ("created_at", f"gte.{start_at}"),
                 ("created_at", f"lt.{end_at}"),
                 ("order", "created_at.desc"),
                 ("limit", "200"),
-            ],
-            headers=self._service_headers(), timeout=20,
-        )
+        ]
+        headers = self._service_headers()
+
+        def fetch(table: str, params: list[tuple[str, str]]):
+            return _legacy_httpx().get(
+                f"{self.url}/rest/v1/{table}", params=params,
+                headers=headers, timeout=20,
+            )
+
+        # These queries are independent. Starting them together keeps the
+        # dashboard latency close to one Supabase round trip instead of three.
+        with ThreadPoolExecutor(max_workers=3, thread_name_prefix="finance-monitoring") as executor:
+            evaluation_future = executor.submit(fetch, "finance_record_evaluations", evaluation_params)
+            item_future = executor.submit(fetch, "finance_evaluation_items", item_params)
+            batch_future = executor.submit(fetch, "finance_evaluation_batches", batch_params)
+            evaluations_response = evaluation_future.result()
+            item_response = item_future.result()
+            batch_response = batch_future.result()
+
+        self._raise_for_supabase(evaluations_response, "영수증 모니터링 평가 조회 실패")
+        self._raise_for_supabase(item_response, "영수증 모니터링 처리 이력 조회 실패")
         self._raise_for_supabase(batch_response, "영수증 모니터링 실행 이력 조회 실패")
         return {"evaluations": evaluations_response.json(), "items": item_response.json(), "batches": batch_response.json()}
 

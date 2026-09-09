@@ -1,11 +1,16 @@
 import sys
+import threading
 import unittest
+from datetime import date
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.api.routes.finance_evaluations import (  # noqa: E402
+    get_finance_monitoring,
     _pipeline_trace,
     _prediction_from_finance_record,
     _raw_prediction_from_trace,
@@ -14,6 +19,27 @@ from app.services.finance_pipeline import FINANCE_PIPELINE_VERSION  # noqa: E402
 
 
 class FinanceEvaluationRouteTests(unittest.TestCase):
+    def test_current_and_comparison_periods_load_concurrently(self):
+        barrier = threading.Barrier(2)
+        ranges = []
+
+        def load(_email, *, start_at, end_at, model_name=None):
+            ranges.append((start_at, end_at, model_name))
+            barrier.wait(timeout=2)
+            return {"evaluations": [], "items": [], "batches": []}
+
+        with patch(
+            "app.api.routes.finance_evaluations.supabase_service.list_finance_monitoring_data",
+            side_effect=load,
+        ):
+            result = get_finance_monitoring(
+                date(2026, 9, 1), date(2026, 9, 7),
+                user=SimpleNamespace(email="developer@example.com"),
+            )
+
+        self.assertEqual(len(ranges), 2)
+        self.assertEqual(result["summary"]["total_count"], 0)
+
     def test_current_semantic_receipt_pipeline_is_v2_5(self):
         self.assertEqual(FINANCE_PIPELINE_VERSION, "v2.5")
 

@@ -55,6 +55,20 @@ RECEIPT_CLASSIFICATION_BUDGET_SECONDS = settings.RECEIPTS_CLASSIFICATION_BUDGET_
 _receipt_classification_lock = asyncio.Lock()
 
 
+def _duplicate_finance_response(existing: dict[str, Any]) -> dict[str, Any]:
+    """Return the existing row while telling the client why it was reused."""
+    result = dict(existing)
+    structured_data = dict(existing.get("structured_data") or {})
+    structured_data["duplicate_detection"] = {
+        "is_duplicate": True,
+        "previous_record_id": existing["id"],
+        "message": "동일 영수증의 기존 분석 기록을 반환했습니다. 새 재무 기록은 생성하지 않았습니다.",
+    }
+    result["structured_data"] = structured_data
+    result["duplicate_of_record_id"] = existing["id"]
+    return result
+
+
 async def _classify_receipt_serialized(
     text: str, filename: str, pages: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -84,6 +98,12 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
         if data.get("receipt_fingerprint") == fingerprint or (identity_key and data.get("receipt_identity_key") == identity_key):
             duplicate_record = existing
             break
+
+    # Fingerprint/identity matching does not need the LLM. More importantly,
+    # returning here guarantees that a duplicate upload cannot create a second
+    # finance row merely because it has a different OCR document id.
+    if duplicate_record is not None:
+        return _duplicate_finance_response(duplicate_record)
 
     try:
         classified = await asyncio.wait_for(
@@ -115,12 +135,9 @@ async def classify_and_save(payload: FinanceClassifyRequest, user: User = Depend
                 duplicate_record = existing
                 break
     if duplicate_record is not None:
-        normalized["duplicate_of_record_id"] = duplicate_record["id"]
-        normalized["structured_data"]["duplicate_detection"] = {
-            "is_duplicate": True,
-            "previous_record_id": duplicate_record["id"],
-            "message": "동일 영수증의 이전 분석 기록이 있으며 현재 모델로 새 기록을 생성했습니다.",
-        }
+        # Older rows may not have fingerprints and can only be identified after
+        # normalization. Reuse them as well instead of persisting a new row.
+        return _duplicate_finance_response(duplicate_record)
     else:
         normalized["duplicate_of_record_id"] = None
         normalized["structured_data"].pop("duplicate_detection", None)

@@ -1,7 +1,7 @@
 import { groupFinanceRecords } from '../features/financeRecordGroups';
 import { receiptItemTotalCheck } from '../features/receiptItemTotal';
 import { canApplyFinanceTaxSplit, applyFinanceTaxSplit } from '../features/financeTaxSplit';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { IoCloseOutline, IoDocumentTextOutline, IoDownloadOutline, IoEyeOutline, IoMenuOutline, IoSearchOutline, IoTrashOutline } from 'react-icons/io5';
@@ -170,6 +170,27 @@ export function isReceiptOperationalPass(record, ocrItems = []) {
   const amountConsistency = amountCheckValues.length ? amountCheckValues.filter(Boolean).length / amountCheckValues.length : (items.length ? Number(totalMatches) : 0);
   const operationalScore = Math.round(100 * (ocrConfidence * .25 + (groundedFields / evidenceValues.length) * .35 + amountConsistency * .25 + (requiredCount / requiredValues.length) * .15));
   return data.automation_validation?.decision === 'PASS' && operationalScore >= 85;
+}
+
+function ArchiveThumbnail({ item, onReady }) {
+  const element = useRef(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (item.thumbnail_url || failed || !/\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '')) return;
+    const controller = new AbortController();
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      observer.disconnect();
+      apiClient.get(`/finance/receipt-archive/${item.id}/preview`, { signal: controller.signal, timeout: 60000 })
+        .then(({ data }) => onReady(item.id, data))
+        .catch(() => { if (!controller.signal.aborted) setFailed(true); });
+    });
+    observer.observe(element.current);
+    return () => { observer.disconnect(); controller.abort(); };
+  }, [item.id, item.thumbnail_url, failed, onReady]);
+  return <span ref={element}>{item.thumbnail_url
+    ? <img className="receipt-archive-thumb" src={item.thumbnail_url} alt="" loading="lazy" />
+    : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}</span>;
 }
 
 function ReceiptArchiveDeleteDialog({ request, deleting, error, onCancel, onConfirm }) {
@@ -687,6 +708,11 @@ export default function OCRPage() {
   const [receiptBatchStatus, setReceiptBatchStatus] = useState('');
   const [receiptBatchActive, setReceiptBatchActive] = useState(false);
   const [receiptArchive, setReceiptArchive] = useState([]);
+  const [archiveHasMore, setArchiveHasMore] = useState(false);
+  const archiveOffsetRef = useRef(0);
+  const onArchivePreviewReady = useCallback((id, data) => {
+    setReceiptArchive(current => current.map(item => item.id === id ? { ...item, ...data } : item));
+  }, []);
   const [sessionProcessedReceipts, setSessionProcessedReceipts] = useState([]);
   const [selectedSessionReceiptIds, setSelectedSessionReceiptIds] = useState([]);
   const [sessionReceiptCategory, setSessionReceiptCategory] = useState('ALL');
@@ -1639,7 +1665,7 @@ export default function OCRPage() {
     }
   };
 
-  const loadReceiptArchive = async (category = receiptArchiveCategory) => {
+  const loadReceiptArchive = async (category = receiptArchiveCategory, append = false) => {
     receiptArchiveRequestRef.current?.abort();
     const controller = new AbortController();
     receiptArchiveRequestRef.current = controller;
@@ -1647,13 +1673,15 @@ export default function OCRPage() {
     setReceiptArchiveError('');
     try {
       const { data } = await apiClient.get('/finance/receipt-archive', {
-        params: category === 'ALL' ? {} : { category },
+        params: { ...(category === 'ALL' ? {} : { category }), limit: 20, offset: append ? archiveOffsetRef.current : 0, date_order: receiptArchiveDateOrder },
         timeout: 60000,
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
-      if (!Array.isArray(data)) throw new Error('Invalid receipt archive response');
-      setReceiptArchive(Array.isArray(data) ? data : []);
+      if (!Array.isArray(data.items)) throw new Error('Invalid receipt archive response');
+      setReceiptArchive(current => append ? [...current, ...data.items.filter(item => !current.some(existing => existing.id === item.id || (item.receipt_key && existing.receipt_key === item.receipt_key)))] : data.items);
+      archiveOffsetRef.current = data.next_offset;
+      setArchiveHasMore(data.has_more);
     } catch (error) {
       if (controller.signal.aborted) return;
       setReceiptArchiveError(error.code === 'ECONNABORTED'
@@ -1685,6 +1713,7 @@ export default function OCRPage() {
       if (selectedArchiveDocumentId && (mode === 'all' || selectedArchiveDocumentId === item.document_id)) closeArchivePreview();
       setReceiptArchive((current) => mode === 'all' ? [] : current.filter((entry) => entry.id !== item.id));
       setReceiptArchiveDeleteRequest(null);
+      await loadReceiptArchive();
     } catch (requestError) {
       setReceiptArchiveDeleteError(requestError.response?.data?.detail || (mode === 'all' ? '영수증 보관함을 비우지 못했습니다.' : '영수증 보관 기록을 삭제하지 못했습니다.'));
     } finally {
@@ -1733,7 +1762,7 @@ export default function OCRPage() {
 
   useEffect(() => {
     loadReceiptArchive(receiptArchiveCategory);
-  }, [receiptArchiveCategory]);
+  }, [receiptArchiveCategory, receiptArchiveDateOrder]);
 
   const openFinanceReview = () => {
     if (!financeRecord) return;
@@ -2004,17 +2033,18 @@ export default function OCRPage() {
                 </div>
               </section>
               <section className="receipt-saved-section">
-                <div className="receipt-saved-heading"><span>기록 보관함</span><div><button type="button" disabled={receiptArchiveLoading || receiptArchiveDeleting || Boolean(receiptArchiveError) || !receiptArchive.length} onClick={() => requestReceiptArchiveDelete('all')} title="기록 보관함 전체 삭제" aria-label="기록 보관함 전체 삭제"><IoTrashOutline /></button><b>{receiptArchiveLoading || receiptArchiveError ? '-' : filteredReceiptArchive.length}</b></div></div>
+                <div className="receipt-saved-heading"><span>기록 보관함</span><div><button type="button" disabled={receiptArchiveLoading || receiptArchiveDeleting || Boolean(receiptArchiveError) || !receiptArchive.length} onClick={() => requestReceiptArchiveDelete('all')} title="기록 보관함 전체 삭제" aria-label="기록 보관함 전체 삭제"><IoTrashOutline /></button><b>{receiptArchiveLoading || receiptArchiveError ? '-' : `${filteredReceiptArchive.length}${archiveHasMore ? '+' : ''}`}</b></div></div>
                 <div className="receipt-archive-filter"><select aria-label="영수증 카테고리" value={receiptArchiveCategory} onChange={(event) => setReceiptArchiveCategory(event.target.value)}><option value="ALL">전체 카테고리</option><option value="UNCLASSIFIED">미분류</option>{receiptArchiveCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select><select aria-label="날짜 정렬" value={receiptArchiveDateOrder} onChange={(event) => setReceiptArchiveDateOrder(event.target.value)}><option value="desc">날짜 최신순</option><option value="asc">날짜 오래된순</option></select></div>
                 <div className="receipt-archive-list">
-                  {receiptArchiveLoading ? <p>영수증 기록을 불러오는 중입니다.</p> : receiptArchiveError ? <p role="alert">{receiptArchiveError}<button type="button" onClick={() => loadReceiptArchive()}>다시 시도</button></p> : filteredReceiptArchive.map((item) => {
+                  {receiptArchiveLoading && !receiptArchive.length ? <p>영수증 기록을 불러오는 중입니다.</p> : receiptArchiveError ? <p role="alert">{receiptArchiveError}<button type="button" onClick={() => loadReceiptArchive()}>다시 시도</button></p> : filteredReceiptArchive.map((item) => {
                     const canPreviewImage = item.image_url && /\.(png|jpe?g|webp|bmp|gif)$/i.test(item.source_file_name || '');
                     return <div className="receipt-saved-item" key={item.id}><button type="button" className={selectedArchiveDocumentId === item.document_id ? 'previewing' : ''} disabled={!canPreviewImage} onClick={() => previewArchivedReceipt(item)}>
-                      {canPreviewImage ? <img className="receipt-archive-thumb" src={item.image_url} alt="" /> : <span className="receipt-archive-file">{item.source_file_name?.split('.').pop()?.toUpperCase() || 'FILE'}</span>}
+                      <ArchiveThumbnail item={item} onReady={onArchivePreviewReady} />
                       <span><strong>{item.merchant || '상호명 미확인'}</strong><small className="receipt-archive-original-name" title={item.source_file_name || ''}>{item.source_file_name || '원본 파일명 없음'}</small><small>{item.expense_category || '미분류'} · {item.transaction_date || new Date(item.created_at).toLocaleDateString('ko-KR')}</small></span>
                       <em>{financeMoney(item.total_amount)}</em>
                     </button><button type="button" className="receipt-saved-delete" disabled={receiptArchiveLoading || receiptArchiveDeleting} onClick={() => requestReceiptArchiveDelete('single', item)} title="기록 삭제" aria-label={`${item.source_file_name || item.merchant || '영수증'} 기록 삭제`}>×</button></div>;
                   })}
+                  {archiveHasMore && !receiptArchiveError && <button className="receipt-archive-load-more" type="button" disabled={receiptArchiveLoading} aria-busy={receiptArchiveLoading} onClick={() => loadReceiptArchive(receiptArchiveCategory, true)}>{receiptArchiveLoading ? '불러오는 중…' : '더 보기'}<span aria-hidden="true">⌄</span></button>}
                   {!receiptArchiveLoading && !receiptArchiveError && !filteredReceiptArchive.length && <p>선택한 카테고리에 저장된 영수증이 없습니다.</p>}
                 </div>
               </section>

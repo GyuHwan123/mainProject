@@ -3492,6 +3492,31 @@
       .receipt-archive-list > button:hover { background: #f3f8fc; }
       .receipt-archive-list > button.previewing { color: #1f5f8f; background: #eaf4fb; box-shadow: inset 3px 0 #2b70a3; }
       .receipt-archive-list > button:disabled { opacity: .6; cursor: default; }
+      .receipt-archive-list > button.receipt-archive-load-more {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+        min-height: 32px;
+        margin-top: 6px;
+        padding: 8px 12px;
+        border: 1px solid #d7e1ea;
+        border-radius: 6px;
+        background: #f8fafc;
+        color: #4c657b;
+        font-size: 11px;
+        font-weight: 600;
+        line-height: 1.3;
+        text-align: center;
+        white-space: nowrap;
+        transition: background .15s, border-color .15s;
+        &:hover:not(:disabled) { background: #eaf4fb; border-color: #b8d2e6; }
+        &:focus-visible { outline: 2px solid #2b70a3; outline-offset: 2px; }
+        &:disabled { cursor: wait; }
+        > span { font-size: 14px; line-height: 1; }
+      }
       .receipt-saved-item { position: relative; display: flex; border-radius: 6px; background: #fff; }
       .receipt-saved-item > button:first-child { min-width: 0; width: 100%; padding: 7px 28px 7px 5px; display: grid; grid-template-columns: 28px minmax(0, 1fr); align-items: center; gap: 7px; border: 0; border-radius: 6px; color: #52667a; background: transparent; text-align: left; cursor: pointer; }
       .receipt-saved-item > button:first-child:hover { background: #f3f8fc; }

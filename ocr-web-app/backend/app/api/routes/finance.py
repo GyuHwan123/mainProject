@@ -1,7 +1,6 @@
 """Finance HTTP endpoints; receipt processing lives in the service layer."""
 
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from pydantic import BaseModel, Field
 from app.services.finance_email_review import create_review, activate_review, read_review, confirm_review
 from threading import Lock
@@ -9,7 +8,7 @@ from datetime import date, datetime, timezone
 from io import BytesIO
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import load_workbook
 
@@ -188,55 +187,61 @@ def get_finance_taxonomy(user: User = Depends(require_current_user)) -> dict[str
 
 
 @router.get("/receipt-archive")
-def receipt_archive(category: str | None = None, user: User = Depends(require_current_user)) -> list[dict[str, Any]]:
+def receipt_archive(category: str | None = None, limit: int = Query(20, ge=1, le=100),
+                    offset: int = Query(0, ge=0), date_order: Literal["asc", "desc"] = "desc",
+                    user: User = Depends(require_current_user)) -> dict[str, Any]:
     if category and category != "UNCLASSIFIED" and category not in ALLOWED_EXPENSE_CATEGORIES:
         raise HTTPException(status_code=422, detail="지원하지 않는 영수증 카테고리입니다.")
-    archive = supabase_service.list_receipt_archive(user.email, category=category)
-    unique_archive = []
-    seen_receipts = set()
-    for item in archive:
-        record = item.get("finance_records") or {}
+    rows = supabase_service.list_receipt_archive(user.email, category=category, limit=limit + 1,
+                                                offset=offset, date_order=date_order)
+    items = []
+    seen = set()
+    for row in rows[:limit]:
+        record = row.get("finance_records") or {}
+        document = row.get("ocr_documents") or {}
         if isinstance(record, list):
             record = record[0] if record else {}
-        if record:
-            item["expense_category"] = record.get("expense_category")
-            item["merchant"] = record.get("merchant")
-            item["transaction_date"] = record.get("transaction_date")
-            item["total_amount"] = record.get("total_amount") or 0
-        structured_data = record.get("structured_data") or {}
-        duplicate_key = (
-            item.get("receipt_fingerprint")
-            or structured_data.get("receipt_identity_key")
-            or structured_data.get("receipt_fingerprint")
-            or _legacy_receipt_key(record)
-        )
-        if duplicate_key and duplicate_key in seen_receipts:
+        if isinstance(document, list):
+            document = document[0] if document else {}
+        key = (row.get("receipt_fingerprint") or record.get("receipt_identity_key")
+               or record.get("receipt_fingerprint") or _legacy_receipt_key({**record, "structured_data": {"source_filename": record.get("source_filename")}}))
+        if key and key in seen:
             continue
-        if duplicate_key:
-            seen_receipts.add(duplicate_key)
-        document = item.get("ocr_documents") or {}
-        if isinstance(document, list):
-            document = document[0] if document else {}
-        if not item.get("source_file_name") and document.get("file_name"):
-            item["source_file_name"] = document["file_name"]
-        item["image_url"] = None
-        unique_archive.append(item)
-    def attach_image_url(item: dict[str, Any]) -> None:
-        document = item.get("ocr_documents") or {}
-        if isinstance(document, list):
-            document = document[0] if document else {}
-        storage_path = item.get("source_storage_path") or document.get("file_url")
-        if storage_path:
-            try:
-                item["image_url"] = supabase_service.create_document_signed_url(storage_path)
-            except Exception:
-                # An unavailable preview must not hide the receipt itself.
-                item["image_url"] = None
+        if key:
+            seen.add(key)
+        items.append({"receipt_key": key, "id": row["id"], "document_id": row.get("document_id"),
+                      "created_at": row.get("created_at"),
+                      "source_file_name": row.get("source_file_name") or document.get("file_name"),
+                      **{key: record.get(key) for key in ("merchant", "expense_category", "transaction_date", "total_amount")}})
+    return {"items": items, "has_more": len(rows) > limit, "next_offset": offset + min(len(rows), limit)}
 
-    if unique_archive:
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            list(executor.map(attach_image_url, unique_archive))
-    return unique_archive
+
+@router.get("/receipt-archive/{archive_id}/preview")
+def receipt_archive_preview(archive_id: str, user: User = Depends(require_current_user)) -> dict[str, Any]:
+    # Ownership and active status are checked before accessing Storage.
+    rows = supabase_service.list_receipt_archive(user.email, archive_id=archive_id, limit=1)
+    if not rows:
+        raise HTTPException(status_code=404, detail="영수증 기록을 찾을 수 없습니다.")
+    row = rows[0]
+    document = row.get("ocr_documents") or {}
+    if isinstance(document, list):
+        document = document[0] if document else {}
+    path = row.get("source_storage_path") or document.get("file_url")
+    if not path:
+        raise HTTPException(status_code=404, detail="원본 이미지가 없습니다.")
+    from PIL import Image, ImageOps, UnidentifiedImageError
+    import base64
+    content, _ = supabase_service.download_document(path)
+    try:
+        with Image.open(BytesIO(content)) as original:
+            thumb = ImageOps.exif_transpose(original)
+            thumb.thumbnail((96, 128))
+            output = BytesIO()
+            thumb.convert("RGB").save(output, format="JPEG", quality=70)
+    except (UnidentifiedImageError, OSError):
+        raise HTTPException(status_code=422, detail="미리보기를 지원하지 않는 파일입니다.")
+    return {"thumbnail_url": "data:image/jpeg;base64," + base64.b64encode(output.getvalue()).decode("ascii"),
+            "image_url": supabase_service.create_document_signed_url(path)}
 
 
 @router.delete("/receipt-archive/{archive_id}")

@@ -1,3 +1,4 @@
+import json
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -11,16 +12,33 @@ class DocumentSummaryServiceTests(unittest.IsolatedAsyncioTestCase):
     @patch.object(document_summary_service, "_summarize_chunks", new_callable=AsyncMock)
     @patch.object(document_summary_service, "supabase_service")
     async def test_cached_summary_skips_chunks_llm_and_write(self, mock_supabase, mock_summarize):
-        mock_supabase.get_accessible_rag_document.return_value = {"summary": "  저장된 요약  "}
+        summary = json.dumps({"summary_title": "문서 내용 기반 제목", "one_line_summary": "요약", "key_points": ["가", "나", "다"]})
+        mock_supabase.get_accessible_rag_document.return_value = {"summary": f"  {summary}  "}
 
         result = await document_summary_service.get_or_create_document_summary(
             "user@example.com", "rag-id", user_role="USER", subscription_tier="PERSONAL",
         )
 
-        self.assertEqual(result, {"document_id": "rag-id", "summary": "저장된 요약", "cached": True})
+        self.assertEqual(result, {"document_id": "rag-id", "summary": summary, "cached": True})
         mock_supabase.list_all_rag_chunks.assert_not_called()
         mock_summarize.assert_not_awaited()
         mock_supabase.save_rag_document_summary.assert_not_called()
+
+    @patch.object(document_summary_service, "_summarize_chunks", new_callable=AsyncMock)
+    @patch.object(document_summary_service, "supabase_service")
+    async def test_legacy_cache_generates_content_title_from_document(self, mock_supabase, mock_summarize):
+        mock_supabase.get_accessible_rag_document.return_value = {"summary": "기존 문단형 요약"}
+        chunks = [{"content": "스마트폰 사용 제한 검토"}]
+        mock_supabase.list_all_rag_chunks.return_value = chunks
+        mock_summarize.return_value = json.dumps({"summary_title": "스마트폰 사용 제한 검토", "one_line_summary": "요약", "key_points": ["가", "나", "다"]})
+
+        result = await document_summary_service.get_or_create_document_summary(
+            "user@example.com", "rag-id", user_role="USER", subscription_tier="PERSONAL",
+        )
+
+        self.assertFalse(result["cached"])
+        mock_summarize.assert_awaited_once_with(chunks)
+        mock_supabase.save_rag_document_summary.assert_called_once_with("rag-id", result["summary"])
 
     @patch.object(document_summary_service, "_summarize_chunks", new_callable=AsyncMock)
     @patch.object(document_summary_service, "supabase_service")

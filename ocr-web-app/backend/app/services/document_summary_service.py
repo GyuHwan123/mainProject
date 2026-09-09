@@ -1,3 +1,4 @@
+import json
 import logging
 from time import perf_counter
 from typing import Any
@@ -34,7 +35,7 @@ def _group_texts(texts: list[str], max_chars: int = SUMMARY_BATCH_CHARS) -> list
     return groups
 
 
-async def _generate_summary(prompt: str) -> str:
+async def _generate_summary(prompt: str, *, structured: bool = False) -> str:
     payload = {
         "model": settings.RAG_LLM_MODEL,
         "prompt": prompt,
@@ -47,6 +48,17 @@ async def _generate_summary(prompt: str) -> str:
             "repeat_penalty": 1.08,
         },
     }
+    if structured:
+        payload["format"] = {
+            "type": "object",
+            "properties": {
+                "summary_title": {"type": "string"},
+                "one_line_summary": {"type": "string"},
+                "key_points": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 5},
+            },
+            "required": ["summary_title", "one_line_summary", "key_points"],
+            "additionalProperties": False,
+        }
     started_at = perf_counter()
     empty_response = False
     try:
@@ -57,6 +69,18 @@ async def _generate_summary(prompt: str) -> str:
         if not summary:
             empty_response = True
             raise ValueError("empty summary response")
+        if structured:
+            result = json.loads(summary)
+            if not isinstance(result, dict) or any(
+                not isinstance(result.get(key), str) or not result[key].strip()
+                for key in ("summary_title", "one_line_summary")
+            ):
+                raise ValueError("invalid summary fields")
+            points = result.get("key_points")
+            if not isinstance(points, list) or not 3 <= len(points) <= 5 or any(
+                not isinstance(point, str) or not point.strip() for point in points
+            ):
+                raise ValueError("invalid summary key points")
         return summary
     except (httpx.HTTPError, ValueError) as exc:
         if isinstance(exc, httpx.TimeoutException):
@@ -112,11 +136,14 @@ def _final_prompt(content: str) -> str:
 - 부분 요약에 포함된 중요한 수치, 날짜, 고유명사, 비교 관계와 예외 조건은 최종 결과에서 삭제하거나 일반화하지 마세요.
 - 문서에 명시된 절차, 원인, 해결 방법, 성과, 모델, 기술, 사례 또는 제한 사항만 해당 문서의 맥락에 맞게 포함하세요.
 - 같은 사실의 반복은 통합하되, 뒤쪽 부분에서 새로 등장한 사실과 결론은 반드시 포함하세요.
-- "간결하게"를 지나치게 적용해 핵심 내용을 삭제하지 마세요. 문서의 주제와 결론을 이해할 수 있는 충분한 길이의 3~5개 문단으로 작성하세요.
+- 핵심 내용을 중요도에 따라 3~5개의 짧은 항목으로 통합하세요. 각 항목은 하나의 핵심 내용을 담고 긴 문단은 피하세요.
 - 문서에 없는 내용을 추측하거나 생성하지 마세요.
 - 출력 전에 모든 부분 요약을 다시 확인하여 각 부분에서 최소 하나 이상의 고유 사실이 최종 결과에 반영됐는지, 후반부의 새 핵심 내용과 중요한 결론이 포함됐는지 내부적으로 검수하세요. 검수 과정은 출력하지 마세요.
 - 작성 지시, 부분 요약, 중간 요약이라는 표현을 결과에 언급하지 마세요.
-- 별표, 번호 목록, 제목, 굵게 표시 등 Markdown 문법을 전혀 사용하지 말고 3~5개의 자연스러운 한국어 plain text 문단으로만 작성하세요.
+- JSON 객체만 출력하세요. Markdown 코드 블록이나 부가 설명을 넣지 마세요.
+- summary_title: 문서 본문의 주제와 검토 대상 또는 목적을 분석해 생성한 의미 있는 간결한 제목 한 개 (문자열). 파일명, 파일 확장자, 저장 경로, 문서 식별번호를 제목으로 사용하거나 파일명을 단순 가공하지 마세요.
+- one_line_summary: 문서 전체의 목적과 핵심을 설명하는 짧은 한 문장 (문자열).
+- key_points: 중복 없이 핵심 사실을 담은 3~5개 문자열 배열. 각 항목에 bullet 문자나 번호를 넣지 마세요.
 
 [부분 요약]
 {content}
@@ -129,11 +156,13 @@ async def _summarize_chunks(chunks: list[dict[str, Any]]) -> str:
     if not groups:
         raise HTTPException(status_code=422, detail="요약할 문서 내용이 없습니다.")
     if len(groups) == 1:
-        return await _generate_summary(_final_prompt(groups[0]))
+        return await _generate_summary(_final_prompt(groups[0]), structured=True)
     summaries = [await _generate_summary(_partial_prompt(group)) for group in groups]
     while len(summaries) > 1:
         summary_groups = _group_texts(summaries, max_chars=6_000)
-        summaries = [await _generate_summary(_final_prompt(group)) for group in summary_groups]
+        if len(summary_groups) == 1:
+            return await _generate_summary(_final_prompt(summary_groups[0]), structured=True)
+        summaries = [await _generate_summary(_partial_prompt(group)) for group in summary_groups]
     return summaries[0]
 
 
@@ -146,7 +175,17 @@ async def get_or_create_document_summary(
         include_company_documents=can_access_company_rag(user_role, subscription_tier),
     )
     cached_summary = str(document.get("summary") or "").strip()
-    if cached_summary and not force_regenerate:
+    try:
+        cached_result = json.loads(cached_summary)
+    except ValueError:
+        cached_result = None
+    # Legacy prose has no content-derived title; regenerate it through the LLM.
+    has_summary_title = (
+        isinstance(cached_result, dict)
+        and isinstance(cached_result.get("summary_title"), str)
+        and bool(cached_result["summary_title"].strip())
+    )
+    if has_summary_title and not force_regenerate:
         return {"document_id": rag_document_id, "summary": cached_summary, "cached": True}
 
     chunks = supabase_service.list_all_rag_chunks(rag_document_id)

@@ -12,6 +12,7 @@ import { evaluationCompletion, evaluationStatusLabel } from '../features/ragEval
 import { validateFilesBeforeUpload } from '../features/fileSecurity';
 import { getParticipantSuggestions } from '../features/dashboardService';
 import { completedChatMessages } from '../features/chatRequestState.mjs';
+import { documentSummary } from '../features/documentSummary.mjs';
 import '../style/ChatPage.scss';
 
 const formatEvaluationDuration = (seconds) => {
@@ -244,6 +245,7 @@ function SpreadsheetEvidencePage({ page, bbox }) {
 }
 
 function DocumentSummaryPreview({ document, summary, loading, error, onRetry, onRegenerate, onCancel }) {
+  const formatted = documentSummary(summary);
   if (!document) return <div className="document-summary-empty">
     <strong>요약할 문서를 선택해 주세요.</strong>
     <p>RAG 문서를 선택하면 AI 문서 요약을 확인할 수 있습니다.</p>
@@ -258,7 +260,11 @@ function DocumentSummaryPreview({ document, summary, loading, error, onRetry, on
       <div className="evidence-document-stage document-summary-stage">
         {loading && !summary && <div className="document-summary-placeholder summary-loading"><i /><strong>AI가 문서를 요약하고 있습니다...</strong><p>문서 길이에 따라 잠시 시간이 걸릴 수 있습니다.</p></div>}
         {!loading && error && !summary && <div className="document-summary-placeholder summary-error"><strong>문서 요약에 실패했습니다.</strong><p>{error}</p><button type="button" onClick={onRetry}>다시 시도</button></div>}
-        {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}{summary}</div>}
+        {summary && <div className="document-summary-result">{loading && <small className="summary-regenerating">AI가 문서를 다시 요약하고 있습니다...</small>}{error && <small className="summary-regenerate-error">문서 재요약에 실패했습니다. {error}</small>}
+          {formatted.title && <h2 className="summary-title">{formatted.title}</h2>}
+          {formatted.lead && <p className="summary-lead">{formatted.lead}</p>}
+          {formatted.points.length > 0 && <section className="summary-key-points"><h3>핵심 내용</h3><ul>{formatted.points.map((point, index) => <li key={index}>{point}</li>)}</ul></section>}
+        </div>}
       </div>
     </div>
   </div>;

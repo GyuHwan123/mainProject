@@ -133,8 +133,8 @@ const RAG_KPI_COLORS = ['#1767df', ...RAG_TREND_METRICS.map(([, , color]) => col
 
 function RagResponseDistribution({ demoMode, monitoring, loading }) {
   if (loading) return <div className="empty-monitoring-box"><span>불러오는 중</span></div>;
-  // Read the latest selected DB run; never infer absent distribution counts.
-  const distribution = (demoMode ? monitoring?.baseline_runs?.[0] : monitoring?.recent_runs?.[0])?.summary_metrics?.response_distribution;
+  const actualRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true) || monitoring?.recent_runs?.[0] || null;
+  const distribution = actualRun?.summary_metrics?.response_distribution;
   const counts = ['correct', 'incorrect', 'rejected', 'unknown'].map(key => distribution?.[key]);
   if (!counts.every(count => Number.isInteger(count) && count >= 0)) return <div className="empty-monitoring-box"><span>응답 유형을 집계할 문항별 결과가 없습니다.</span></div>;
   const total = counts.reduce((sum, count) => sum + count, 0);
@@ -148,7 +148,7 @@ function RagResponseDistribution({ demoMode, monitoring, loading }) {
     return `${row.color} ${start}% ${offset}%`;
   }).join(', ')})`;
   return <div className="error-distribution">
-    <div className="error-donut" role="img" aria-label={`${demoMode ? '시연용 예시' : '최근 실행'} 응답 유형 분포, 총 ${total}문항`} style={{ background: gradient }}><span>{demoMode ? 'DEMO' : '총 응답'}<strong>{total}문항</strong></span></div>
+    <div className="error-donut" role="img" aria-label={`최근 실행 응답 유형 분포, 총 ${total}문항`} style={{ background: gradient }}><span>총 응답<strong>{total}문항</strong></span></div>
     <div className="error-legend">{rows.map(row => <div key={row.label}><i style={{ background: row.color }} /><span title={row.label}>{row.label}</span><strong>{row.count} ({(row.rate * 100).toFixed(1)}%)</strong></div>)}</div>
   </div>;
 }
@@ -230,6 +230,18 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
   const answerMetrics = [
     ['Unanswerable Rejection', metrics?.unanswerableRejectionRate],
   ];
+  // Only the composition/category cards consume this persisted case payload.
+  const latestTypeRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true) || null;
+  const [typeRunDetail, setTypeRunDetail] = useState(null);
+  useEffect(() => {
+    setTypeRunDetail(null);
+    if (!latestTypeRun?.id) return;
+    const controller = new AbortController();
+    apiClient.get(`/rag/evaluation/history/${latestTypeRun.run_id || latestTypeRun.id}`, { signal: controller.signal, timeout: 60000 })
+      .then(({ data }) => { if (!controller.signal.aborted) setTypeRunDetail(data); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [latestTypeRun?.id, latestTypeRun?.run_id, refreshVersion]);
   const questionTypeMetrics = useMemo(() => {
     const labels = {
       single_document_fact: '단일 문서 사실 검색',
@@ -239,8 +251,8 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
       unanswerable: '답변 불가 질문',
     };
     const order = Object.keys(labels);
-    // These cards select their own source; do not change recent_runs or KPI data.
-    const actualRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true);
+    const actualRun = latestTypeRun;
+    const detail = typeRunDetail?.id === actualRun?.id ? typeRunDetail : null;
     const readTypeSummary = (run) => {
       const storedTypes = run?.summary_metrics?.question_type_metrics;
       if (!Array.isArray(storedTypes)) return [];
@@ -251,22 +263,20 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
         .map(item => ({
           type: item.question_type,
           label: labels[item.question_type] || item.question_type,
-          count: item.count, accuracy: item.answer_accuracy, hit: null, mrr: null,
+          count: item.count,
+          accuracy: item.answer_accuracy ?? null,
+          hit: item.hit ?? null,
+          mrr: item.mrr ?? null,
         }));
     };
-    const actualTypes = readTypeSummary(actualRun);
+    const actualTypes = readTypeSummary(detail || actualRun);
     if (actualTypes.length) return actualTypes;
-    // Only use case details belonging to the latest actual run, never an older result.
-    if (!evaluation || evaluation.history?.id !== actualRun?.id || !evaluation.cases?.length) {
-      if (!demoMode) return [];
-      for (const run of monitoring?.baseline_runs || []) {
-        if (run.configuration?.demo !== true) continue;
-        const fallbackTypes = readTypeSummary(run);
-        if (fallbackTypes.length) return fallbackTypes;
-      }
+    const caseEvaluation = detail?.summary_metrics?.evaluation_result
+      || (actualRun && latestEvaluation?.history?.id === actualRun.id ? latestEvaluation : null);
+    if (!caseEvaluation?.cases?.length) {
       return [];
     }
-    const grouped = evaluation.cases.reduce((result, item) => {
+    const grouped = caseEvaluation.cases.reduce((result, item) => {
       const type = item.question_type || 'unspecified';
       if (!result[type]) result[type] = [];
       result[type].push(item);
@@ -287,7 +297,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
         const average = (values) => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
         return { type, label: labels[type] || type, count: cases.length, accuracy: average(correctness), hit: average(hitValues), mrr: average(mrrValues) };
       });
-  }, [evaluation, monitoring, demoMode]);
+  }, [latestEvaluation, latestTypeRun, typeRunDetail]);
   const questionComposition = useMemo(() => {
     const colors = ['#4f7fe8', '#43aa78', '#8b68d8', '#ef9d45', '#e0636d'];
     const total = questionTypeMetrics.reduce((sum, item) => sum + item.count, 0);
@@ -343,7 +353,7 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
     </article>)}</div>
     <div className="receipt-monitoring-panels">
       <article className="performance-trend-panel"><header><h3>기간별 성능 추세</h3><span>일별 실행 평균</span></header>{monitoringLoading ? <div className="empty-monitoring-box"><span>불러오는 중</span></div> : <RagMonitoringChart daily={monitoring?.daily || []} />}</article>
-      <article><header><h3>응답 유형 분포</h3><span>{demoMode ? 'DEMO · 100문항 예시' : '최근 실행 · 문항별'}</span></header><RagResponseDistribution evaluation={evaluation} demoMode={demoMode} monitoring={monitoring} loading={monitoringLoading} /></article>
+      <article><header><h3>응답 유형 분포</h3><span>최근 실행 · 문항별</span></header><RagResponseDistribution evaluation={evaluation} demoMode={false} monitoring={monitoring} loading={monitoringLoading} /></article>
       <article><header><h3>Retrieval 상세 지표</h3><span>Top-K {metrics?.topK ?? (monitoring?.summary.run_count ? '혼합' : '—')}</span></header><div className="field-accuracy-list rag-retrieval-bars">{retrievalMetrics.map(([label, value]) => <div key={label}><span>{label}</span><i role={value == null ? undefined : 'progressbar'} aria-label={label} aria-valuemin={value == null ? undefined : 0} aria-valuemax={value == null ? undefined : 100} aria-valuenow={value == null ? undefined : value * 100}><b style={{ width: value == null ? '0%' : `${Math.max(0, Math.min(100, value * 100))}%` }} /></i><strong>{metricValue(value)}</strong></div>)}</div></article>
       <article><header><h3>추가 평가 정보</h3><span>선택 기간</span></header><div className="rag-monitoring-metrics">{answerMetrics.map(([label, value]) => <div key={label}><span>{label}</span><strong>{metricValue(value)}</strong></div>)}</div>{metrics?.faithfulnessMethod && <p className="rag-monitoring-method">Faithfulness: {metrics.faithfulnessMethod}</p>}</article>
     </div>
@@ -1018,10 +1028,9 @@ export default function ReportPage() {
   useEffect(() => {
     let active = true;
     const initialTarget = initialReportTargetRef.current;
-    const initialRequests = [
-      loadBusinessStats(),
-      apiClient.get('/chatbot/status').then(({ data }) => setModelConfig(data)).catch(() => {}),
-    ];
+    const initialRequests = [];
+    // Model status must not hold up receipt metrics.
+    apiClient.get('/chatbot/status').then(({ data }) => { if (active) setModelConfig(data); }).catch(() => {});
 
     if (isDeveloper && SHOW_LEGACY_EVALUATIONS) initialRequests.push(loadEvaluations());
     if (isDeveloper && initialTarget.reportView === 'developer' && initialTarget.developerReport === 'receipt' && initialTarget.receiptTab === 'monitoring') {
@@ -1038,12 +1047,19 @@ export default function ReportPage() {
     Promise.allSettled(initialRequests).finally(() => {
       if (!active) return;
       initialRagRequestInFlightRef.current = false;
-      if (!isDeveloper) setLoading(false);
       setInitialLoading(false);
     });
 
     return () => { active = false; };
   }, [isDeveloper, loadBusinessStats, loadEvaluations, loadInitialFinanceHistory, loadInitialMonitoring, loadRagReport, loadUmapReport]);
+
+  useEffect(() => {
+    if (reportView !== 'business') return;
+    let active = true;
+    setLoading(true);
+    loadBusinessStats().finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [reportView, loadBusinessStats]);
 
   useEffect(() => {
     if (isDeveloper && developerReport === 'rag' && !initialRagRequestInFlightRef.current) loadRagReport();
@@ -1152,7 +1168,7 @@ export default function ReportPage() {
           <button  className="refresh-report"  disabled={loading}
             onClick={async () => {
               setLoading(true);
-              const refreshRequests = [loadBusinessStats()];
+              const refreshRequests = reportView === 'business' ? [loadBusinessStats()] : [];
 
               if (isDeveloper && SHOW_LEGACY_EVALUATIONS) {refreshRequests.push(loadEvaluations());}
 

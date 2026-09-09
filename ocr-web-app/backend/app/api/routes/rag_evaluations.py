@@ -8,7 +8,9 @@ import json
 import math
 import os
 import re
+import shutil
 import time
+from uuid import uuid4
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -181,17 +183,31 @@ def _dataset_hash(dataset: RagEvaluationDataset) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _checkpoint_path(dataset_hash: str) -> Path:
+def _checkpoint_path(dataset_hash: str, run_id: str | None = None) -> Path:
+    if run_id:
+        return _CHECKPOINT_DIR / f"{dataset_hash}-{run_id}.json"
     return _CHECKPOINT_DIR / f"{dataset_hash}.json"
+
+
+def _latest_checkpoint_for_dataset(dataset_hash: str) -> Path | None:
+    candidates = sorted(
+        _CHECKPOINT_DIR.glob(f"{dataset_hash}-*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
 
 
 def _utc_timestamp() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _load_checkpoint(dataset: RagEvaluationDataset) -> dict[str, Any]:
+def _load_checkpoint(dataset: RagEvaluationDataset, run_id: str | None = None) -> dict[str, Any]:
     dataset_hash = _dataset_hash(dataset)
-    path = _checkpoint_path(dataset_hash)
+    if run_id:
+        path = _checkpoint_path(dataset_hash, run_id)
+    else:
+        path = _latest_checkpoint_for_dataset(dataset_hash) or _checkpoint_path(dataset_hash)
     if path.exists():
         try:
             checkpoint = json.loads(path.read_text(encoding="utf-8"))
@@ -203,9 +219,18 @@ def _load_checkpoint(dataset: RagEvaluationDataset) -> dict[str, Any]:
                 return checkpoint
         except (OSError, json.JSONDecodeError, TypeError):
             pass
+    if run_id:
+        return _new_checkpoint(dataset, run_id=run_id)
+    return _new_checkpoint(dataset, run_id=str(uuid4()))
+
+
+def _new_checkpoint(dataset: RagEvaluationDataset, run_id: str | None = None) -> dict[str, Any]:
+    dataset_hash = _dataset_hash(dataset)
+    run_id = run_id or str(uuid4())
     now = _utc_timestamp()
     return {
         "dataset_hash": dataset_hash,
+        "run_id": run_id,
         "dataset_name": dataset.dataset_name,
         "total": len(dataset.cases),
         "completed_question_ids": [],
@@ -222,7 +247,8 @@ def _load_checkpoint(dataset: RagEvaluationDataset) -> dict[str, Any]:
 def _save_checkpoint(checkpoint: dict[str, Any]) -> None:
     _CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     checkpoint["updated_at"] = _utc_timestamp()
-    path = _checkpoint_path(str(checkpoint["dataset_hash"]))
+    run_id = checkpoint.get("run_id")
+    path = _checkpoint_path(str(checkpoint["dataset_hash"]), run_id) if run_id else _checkpoint_path(str(checkpoint["dataset_hash"]))
     temporary = path.with_suffix(f".json.{os.getpid()}.tmp")
     temporary.write_text(json.dumps(checkpoint, ensure_ascii=False, indent=2), encoding="utf-8")
     os.replace(temporary, path)
@@ -239,6 +265,10 @@ async def _persist_completed_history(checkpoint: dict, dataset: RagEvaluationDat
     payload = completed_history_payload(checkpoint, dataset.model_dump(mode="json"), user.email)
     history = checkpoint.get("history") or {}
     if payload is not None:
+        payload["run_id"] = payload.get("run_id") or checkpoint.get("run_id") or history.get("run_id")
+        payload["id"] = payload.get("id") or history.get("id")
+        history["id"] = payload["id"]
+        history["run_id"] = payload["run_id"]
         history["status"] = "pending"
         _save_checkpoint(checkpoint)
         try:
@@ -409,12 +439,17 @@ async def evaluate_rag(
     dataset: RagEvaluationDataset,
     user: User = Depends(require_developer),
     retry_failed: bool = False,
+    force_restart: bool = False,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     dataset_hash = _dataset_hash(dataset)
+    resolved_run_id = run_id or str(uuid4())
     if retry_failed:
-        path = _checkpoint_path(dataset_hash)
+        if not run_id:
+            raise HTTPException(status_code=409, detail="재개하려면 동일한 run_id를 전달해야 합니다.")
+        path = _checkpoint_path(dataset_hash, run_id)
         if not path.exists():
-            raise HTTPException(status_code=409, detail="동일한 정답 JSON의 checkpoint가 필요합니다.")
+            raise HTTPException(status_code=409, detail="동일한 run_id의 checkpoint가 필요합니다.")
         saved = json.loads(path.read_text(encoding="utf-8"))
         if saved.get("configuration") != _evaluation_configuration() or saved.get("total") != len(dataset.cases):
             raise HTTPException(status_code=409, detail="RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.")
@@ -423,8 +458,18 @@ async def evaluate_rag(
             raise HTTPException(status_code=409, detail="The same evaluation dataset is already running.")
         _running_rag_evaluations.add(dataset_hash)
 
+    if force_restart and not run_id:
+        old_latest = _latest_checkpoint_for_dataset(dataset_hash)
+        if old_latest and old_latest.exists():
+            preserved_path = old_latest.with_name(f"{old_latest.stem}.preserved-{uuid4().hex}.json")
+            shutil.copy2(old_latest, preserved_path)
+        checkpoint = _new_checkpoint(dataset, run_id=resolved_run_id)
+    elif run_id:
+        checkpoint = _load_checkpoint(dataset, run_id=run_id)
+    else:
+        checkpoint = _new_checkpoint(dataset, run_id=resolved_run_id)
+
     started_at = time.time()
-    checkpoint = _load_checkpoint(dataset)
     prepare_history(checkpoint, user.email, {
         **_evaluation_configuration(), "model_name": settings.RAG_LLM_MODEL,
         "prompt_version": settings.RAG_PROMPT_VERSION,
@@ -527,15 +572,19 @@ async def evaluate_rag(
 
 
 @router.post("/evaluate/history/retry")
-async def retry_rag_evaluation_history(dataset: RagEvaluationDataset, user: User = Depends(require_developer)) -> dict:
+async def retry_rag_evaluation_history(
+    dataset: RagEvaluationDataset,
+    user: User = Depends(require_developer),
+    run_id: str | None = None,
+) -> dict:
     dataset_hash = _dataset_hash(dataset)
     with _rag_evaluation_lock:
         if dataset_hash in _running_rag_evaluations:
             raise HTTPException(status_code=409, detail="평가 실행 중에는 이력 저장을 재시도할 수 없습니다.")
         _running_rag_evaluations.add(dataset_hash)
     try:
-        path = _checkpoint_path(dataset_hash)
-        if not path.exists():
+        path = _checkpoint_path(dataset_hash, run_id) if run_id else (_latest_checkpoint_for_dataset(dataset_hash) or _checkpoint_path(dataset_hash))
+        if not path or not path.exists():
             raise HTTPException(status_code=404, detail="평가 checkpoint가 없습니다.")
         checkpoint = json.loads(path.read_text(encoding="utf-8"))
         if (checkpoint.get("history") or {}).get("owner_email") != user.email:
@@ -554,13 +603,16 @@ def rag_evaluation_checkpoint_status(
     _user: User = Depends(require_developer),
 ) -> dict[str, Any]:
     checkpoint = _load_checkpoint(dataset)
-    # Expose an existing incompatible checkpoint instead of presenting a fresh
-    # evaluation that would silently replace its successful results.
-    path = _checkpoint_path(_dataset_hash(dataset))
-    if path.exists():
-        saved = json.loads(path.read_text(encoding="utf-8"))
-        if saved.get("dataset_hash") == _dataset_hash(dataset) and saved.get("total") == len(dataset.cases):
-            checkpoint = saved
+    # Expose the newest checkpoint for the dataset, but never auto-resume a prior
+    # completed run. A new evaluation starts with a new run_id and a fresh checkpoint.
+    path = _latest_checkpoint_for_dataset(_dataset_hash(dataset))
+    if path and path.exists():
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            if saved.get("dataset_hash") == _dataset_hash(dataset) and saved.get("total") == len(dataset.cases):
+                checkpoint = saved
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
     processed = len(_processed_question_ids(checkpoint))
     total = len(dataset.cases)
     return {

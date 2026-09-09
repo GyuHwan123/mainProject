@@ -151,7 +151,11 @@ def _monitoring_automation(evaluations: list[dict[str, Any]]) -> dict[str, Any]:
         measured = passed = user_confirm = 0
         reasons: Counter[str] = Counter()
         for row in evaluations:
-            validation = row.get("validation") or (row.get("pipeline_trace") or {}).get("validation") or {}
+            raw_validation = row.get("validation")
+            if not isinstance(raw_validation, dict):
+                pipeline_trace = row.get("pipeline_trace") or {}
+                raw_validation = pipeline_trace.get("validation") if isinstance(pipeline_trace, dict) else None
+            validation = raw_validation if isinstance(raw_validation, dict) else {}
             stage = validation if name == "final" else validation.get(name)
             if not isinstance(stage, dict) or stage.get("decision") not in {"PASS", "USER_CONFIRM", "REVIEW"}:
                 continue

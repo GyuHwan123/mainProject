@@ -225,15 +225,18 @@ class DocumentFinanceMixin:
         self._raise_for_supabase(response, "영수증 보관함 저장 실패")
         return response.json()[0]
 
-    def list_receipt_archive(self, user_email: str, *, category: str | None = None, limit: int = 300) -> list[dict[str, Any]]:
+    def list_receipt_archive(self, user_email: str, *, category: str | None = None, limit: int = 300, offset: int = 0, date_order: str = "desc", archive_id: str | None = None) -> list[dict[str, Any]]:
         user_id = self.get_public_user_id(user_email)
         params = {
-            "select": "*,finance_records!inner(*),ocr_documents(file_name,file_url)",
+            "select": "id,document_id,receipt_fingerprint,source_file_name,source_storage_path,created_at,finance_records!inner(id,merchant,expense_category,transaction_date,total_amount,supply_amount,tax_amount,receipt_identity_key:structured_data->>receipt_identity_key,receipt_fingerprint:structured_data->>receipt_fingerprint,source_filename:structured_data->>source_filename),ocr_documents(file_name,file_url)",
             "user_id": f"eq.{user_id}",
             "deleted_at": "is.null",
-            "order": "created_at.desc",
+            "order": f"transaction_date.{date_order}.nullslast,created_at.{date_order},id.{date_order}",
+            "offset": str(offset),
             "limit": str(limit),
         }
+        if archive_id:
+            params["id"] = f"eq.{archive_id}"
         if category == "UNCLASSIFIED":
             params["finance_records.expense_category"] = "is.null"
         elif category:

@@ -45,6 +45,39 @@ class RagMonitoringTests(unittest.TestCase):
         self.assertIsNone(data["summary"]["answer_accuracy"])
         self.assertEqual(data["recent_runs"], [])
 
+    def test_selected_period_filters_history_and_actual_wins_over_demo(self):
+        rows = [
+            {"id": "current", "evaluated_at": "2026-09-07T00:00:00Z", "question_count": 1, "completed_count": 1,
+             "summary_metrics": {"evaluation_result": {"cases": [{"question_id": "q"}]}}},
+            {"id": "outside", "evaluated_at": "2026-08-01T00:00:00Z", "question_count": 1, "completed_count": 1},
+        ]
+        with patch.object(routes.supabase_service, "list_rag_evaluation_runs", return_value=rows) as query:
+            data = self.client.get('/rag/evaluation/monitoring?start_date=2026-09-07&end_date=2026-09-07&demo=true').json()
+        self.assertEqual(query.call_count, 2)
+        self.assertEqual(data['data_source'], 'database')
+        self.assertEqual([row['id'] for row in data['recent_runs']], ['current'])
+        self.assertNotIn('evaluation_result', data['recent_runs'][0]['summary_metrics'])
+
+    def test_existing_demo_is_used_only_when_selected_period_has_no_actual_runs(self):
+        demo = {"id": "sample", "evaluated_at": "2026-09-07T00:00:00Z", "question_count": 1, "completed_count": 1,
+                "configuration": {"demo": True}, "answer_accuracy": .8}
+        with patch.object(routes.supabase_service, "list_rag_evaluation_runs", side_effect=[[], [demo]]) as query:
+            data = self.client.get('/rag/evaluation/monitoring?start_date=2026-09-07&end_date=2026-09-07').json()
+        self.assertEqual(data['data_source'], 'demo')
+        self.assertEqual(data['summary']['answer_accuracy'], .8)
+        self.assertEqual(query.call_args.kwargs['demo_batch_id'], routes.BASELINE_ID)
+
+    def test_detail_uses_authenticated_owner_and_returns_persisted_questions(self):
+        run_id = '00000000-0000-0000-0000-000000000001'
+        row = {'id': run_id, 'summary_metrics': {'evaluation_result': {'cases': [{'question_id': 'q1'}]}}}
+        with patch.object(routes.supabase_service, 'get_rag_evaluation_run', return_value=row) as query:
+            response = self.client.get(f'/rag/evaluation/history/{run_id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), row)
+        query.assert_called_once_with('owner@example.com', run_id)
+        with patch.object(routes.supabase_service, 'get_rag_evaluation_run', return_value=None):
+            self.assertEqual(self.client.get(f'/rag/evaluation/history/{run_id}').status_code, 404)
+
     def test_date_validation_and_role_guard_do_not_query_storage(self):
         with patch.object(routes.supabase_service, "list_rag_evaluation_runs") as query:
             for start, end in [("2026-09-07", "2026-09-06"), ("2020-01-01", "2026-09-07"), ("invalid", "2026-09-07")]:
@@ -57,7 +90,7 @@ class RagMonitoringTests(unittest.TestCase):
         row = {"evaluated_at": "2026-09-07T00:00:00Z", "question_count": 1, "completed_count": 1, "answer_accuracy": 0}
         with patch.object(routes.supabase_service, "list_rag_evaluation_runs", return_value=[{**row, "id": str(i)} for i in range(60)]):
             data = routes.rag_monitoring(date(2026, 9, 7), date(2026, 9, 7), self.user)
-        self.assertEqual(len(data["recent_runs"]), 50)
+        self.assertEqual(len(data["recent_runs"]), 60)
         self.assertEqual(data["summary"]["run_count"], 60)
         self.assertEqual(data["summary"]["answer_accuracy"], 0)
 

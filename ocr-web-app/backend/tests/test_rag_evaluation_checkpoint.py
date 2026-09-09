@@ -87,7 +87,8 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["summary"]["hit_at_k"], 1.0)
         self.history_save.assert_called_once()
         payload = self.history_save.call_args.args[1]
-        self.assertEqual(payload["summary_metrics"], result["summary"])
+        self.assertEqual({key: payload["summary_metrics"][key] for key in result["summary"]}, result["summary"])
+        self.assertEqual(payload["summary_metrics"]["evaluation_result"]["cases"], result["cases"])
         self.assertEqual(payload["average_latency_ms"], result["latency"]["total"]["average_ms"])
         self.assertEqual(payload["question_count"], payload["completed_count"])
         self.assertNotIn("cases", payload)
@@ -96,6 +97,7 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_interrupted_checkpoint_resumes_without_repeating_completed_cases(self):
         first_calls = []
+        run_id = "resume-run-001"
 
         async def interrupted(case, *_args):
             first_calls.append(case.question_id)
@@ -108,9 +110,9 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
             patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=interrupted),
         ):
             with self.assertRaises(KeyboardInterrupt):
-                await evaluate_rag(self.dataset, self.user)
+                await evaluate_rag(self.dataset, self.user, run_id=run_id)
 
-        saved = json.loads(next(self.checkpoint_directory.glob("*.json")).read_text(encoding="utf-8"))
+        saved = json.loads(next(self.checkpoint_directory.glob(f"{rag_evaluations._dataset_hash(self.dataset)}-{run_id}.json")).read_text(encoding="utf-8"))
         self.assertEqual(saved["completed_question_ids"], ["001", "002"])
 
         resumed_calls = []
@@ -123,7 +125,7 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
             patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})),
             patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=resumed),
         ):
-            result = await evaluate_rag(self.dataset, self.user)
+            result = await evaluate_rag(self.dataset, self.user, run_id=run_id)
 
         self.assertEqual(resumed_calls, ["003", "004", "005"])
         self.assertEqual(len(result["cases"]), 5)
@@ -167,7 +169,8 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
             "dataset_name": "200-case-resume", "question_count": 200,
             "cases": [{**self.dataset.cases[0].model_dump(), "question_id": f"EVAL-{i:03d}"} for i in range(1, 201)],
         })
-        checkpoint = rag_evaluations._load_checkpoint(dataset)
+        run_id = "legacy-resume-run"
+        checkpoint = rag_evaluations._new_checkpoint(dataset, run_id=run_id)
         ids = [case.question_id for case in dataset.cases]
         checkpoint.update(status="completed", completed_question_ids=ids[:177],
                           results={qid: _case_result(qid) for qid in ids[:177]},
@@ -181,113 +184,137 @@ class RagEvaluationCheckpointTests(unittest.IsolatedAsyncioTestCase):
             progress.append(rag_evaluations._rag_progress(self.user.email))
             return _case_result(case.question_id)
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=resumed) as evaluator:
-            result = await evaluate_rag(dataset, self.user, retry_failed=True)
+            result = await evaluate_rag(dataset, self.user, run_id=run_id, retry_failed=True)
         self.assertEqual([call.args[0].question_id for call in evaluator.await_args_list], ids[177:])
         self.assertEqual(progress[0]["progress_percent"], 88.5)
         self.assertIsNone(progress[0]["estimated_remaining_seconds"])
         self.assertEqual((result["status"], result["completed_count"], result["error_count"]), ("completed", 200, 0))
-        saved = rag_evaluations._load_checkpoint(dataset)
+        saved = rag_evaluations._load_checkpoint(dataset, run_id=run_id)
         self.assertEqual(saved["errors"], {})
         self.assertEqual({qid: saved["results"][qid] for qid in ids[:177]}, original_results)
         self.assertEqual(len(result["cases"]), 200)
-        # Legacy ownership metadata remains unchanged: do not invent DB attribution.
         self.history_save.assert_not_called()
 
     async def test_explicit_retry_rejects_missing_or_incompatible_checkpoint(self):
+        run_id = "resume-run"
         with self.assertRaises(HTTPException) as missing:
-            await evaluate_rag(self.dataset, self.user, retry_failed=True)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id, retry_failed=True)
         self.assertEqual(missing.exception.status_code, 409)
-        checkpoint = rag_evaluations._load_checkpoint(self.dataset)
+        checkpoint = rag_evaluations._new_checkpoint(self.dataset, run_id=run_id)
         checkpoint["configuration"] = {"old": "configuration"}
         rag_evaluations._save_checkpoint(checkpoint)
-        path = next(self.checkpoint_directory.glob("*.json"))
+        path = next(self.checkpoint_directory.glob(f"{rag_evaluations._dataset_hash(self.dataset)}-{run_id}.json"))
         before = path.read_bytes()
         status = rag_evaluations.rag_evaluation_checkpoint_status(self.dataset, self.user)
         self.assertFalse(status["configuration_matches"])
         with self.assertRaises(HTTPException) as changed:
-            await evaluate_rag(self.dataset, self.user, retry_failed=True)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id, retry_failed=True)
         self.assertEqual(changed.exception.status_code, 409)
         self.assertEqual(path.read_bytes(), before)
 
-    async def test_repeated_completed_result_does_not_insert_again(self):
+    async def test_same_dataset_starts_new_run_and_new_history_each_execution(self):
         evaluator = AsyncMock(side_effect=lambda case, *_args: _case_result(case.question_id))
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", evaluator):
             first = await evaluate_rag(self.dataset, self.user)
             second = await evaluate_rag(self.dataset, self.user)
-        self.history_save.assert_called_once()
-        self.assertEqual(evaluator.await_count, 5)
-        self.assertEqual(first["history"]["id"], second["history"]["id"])
+
+        self.assertEqual(evaluator.await_count, 10)
+        self.assertEqual(self.history_save.call_count, 2)
+        self.assertNotEqual(first["history"]["id"], second["history"]["id"])
+
+        checkpoint_paths = sorted(self.checkpoint_directory.glob("*.json"))
+        self.assertEqual(len(checkpoint_paths), 2)
+        first_checkpoint = json.loads(checkpoint_paths[0].read_text(encoding="utf-8"))
+        second_checkpoint = json.loads(checkpoint_paths[1].read_text(encoding="utf-8"))
+        self.assertNotEqual(first_checkpoint["run_id"], second_checkpoint["run_id"])
+        self.assertEqual(first_checkpoint["completed_question_ids"], [f"{index:03d}" for index in range(1, 6)])
+        self.assertEqual(second_checkpoint["completed_question_ids"], [f"{index:03d}" for index in range(1, 6)])
+
+    async def test_completed_run_is_not_reused_for_new_execution(self):
+        evaluator = AsyncMock(side_effect=lambda case, *_args: _case_result(case.question_id))
+        with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", evaluator):
+            first = await evaluate_rag(self.dataset, self.user)
+            stale_run_id = first["cases"][0]["question_id"]
+            second = await evaluate_rag(self.dataset, self.user)
+
+        self.assertNotEqual(first["history"]["id"], second["history"]["id"])
+        self.assertEqual(evaluator.await_count, 10)
+        self.assertNotEqual(stale_run_id, second["history"]["id"])
 
     async def test_database_failure_retries_frozen_payload_without_evaluation(self):
+        run_id = "db-failure-run"
         self.history_save.side_effect = RuntimeError("database unavailable")
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=lambda case, *_args: _case_result(case.question_id)):
-            result = await evaluate_rag(self.dataset, self.user)
+            result = await evaluate_rag(self.dataset, self.user, run_id=run_id)
         self.assertEqual(result["history"]["status"], "pending")
         payload = self.history_save.call_args.args[1]
-        saved = json.loads(next(self.checkpoint_directory.glob("*.json")).read_text(encoding="utf-8"))
+        saved = json.loads(next(self.checkpoint_directory.glob(f"{rag_evaluations._dataset_hash(self.dataset)}-{run_id}.json")).read_text(encoding="utf-8"))
         self.assertEqual(saved["status"], "completed")
-        # Simulate process restart: only the checkpoint remains.
         rag_evaluations._latest_evaluations.clear()
         self.history_save.side_effect = None
         with patch.object(rag_evaluations, "_evaluate_rag_case", new_callable=AsyncMock) as evaluator, patch.object(rag_evaluations, "_catalog_maps") as catalog:
-            retried = await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user)
+            retried = await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user, run_id=run_id)
         self.assertEqual(retried["status"], "saved")
         self.assertEqual(self.history_save.call_args.args[1], payload)
         evaluator.assert_not_awaited()
         catalog.assert_not_called()
-        await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user)
+        await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user, run_id=run_id)
         self.assertEqual(self.history_save.call_count, 2)
 
     async def test_failed_question_saves_history_only_after_successful_resume(self):
+        run_id = "resume-after-failure"
+
         def first(case, *_args):
             if case.question_id == "003":
                 raise HTTPException(status_code=400, detail="failed")
             return _case_result(case.question_id)
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=first):
-            await evaluate_rag(self.dataset, self.user)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id)
         self.history_save.assert_not_called()
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=lambda case, *_args: _case_result(case.question_id)) as evaluator:
-            await evaluate_rag(self.dataset, self.user)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id, retry_failed=True)
         self.assertEqual(evaluator.await_count, 1)
         self.history_save.assert_called_once()
 
     async def test_legacy_checkpoint_resumes_but_is_not_misattributed(self):
-        checkpoint = rag_evaluations._load_checkpoint(self.dataset)
+        run_id = "legacy-legacy-run"
+        checkpoint = rag_evaluations._new_checkpoint(self.dataset, run_id=run_id)
         checkpoint["results"] = {"001": _case_result("001")}
         checkpoint["completed_question_ids"] = ["001"]
         rag_evaluations._save_checkpoint(checkpoint)
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=lambda case, *_args: _case_result(case.question_id)) as evaluator:
-            result = await evaluate_rag(self.dataset, self.user)
+            result = await evaluate_rag(self.dataset, self.user, run_id=run_id)
         self.assertEqual(evaluator.await_count, 4)
         self.assertEqual(result["history"]["status"], "skipped")
         self.history_save.assert_not_called()
 
     async def test_retry_rejects_other_owner_and_active_evaluation(self):
+        run_id = "owner-check-run"
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=lambda case, *_args: _case_result(case.question_id)):
-            await evaluate_rag(self.dataset, self.user)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id)
         other = User(id="other", name="Other", email="other@example.com", role="DEVELOPER")
         with self.assertRaises(HTTPException) as denied:
-            await rag_evaluations.retry_rag_evaluation_history(self.dataset, other)
+            await rag_evaluations.retry_rag_evaluation_history(self.dataset, other, run_id=run_id)
         self.assertEqual(denied.exception.status_code, 403)
         rag_evaluations._running_rag_evaluations.add(rag_evaluations._dataset_hash(self.dataset))
         with self.assertRaises(HTTPException) as busy:
-            await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user)
+            await rag_evaluations.retry_rag_evaluation_history(self.dataset, self.user, run_id=run_id)
         self.assertEqual(busy.exception.status_code, 409)
 
     async def test_model_changed_during_resume_keeps_results_but_skips_history(self):
-        # Keep the existing checkpoint configuration unchanged: otherwise the
-        # rewrite-model fallback changes too and the loader correctly starts fresh.
         rewrite_patch = patch.object(rag_evaluations.settings, "RAG_QUERY_REWRITE_MODEL", "fixed-rewrite-model")
         rewrite_patch.start()
         self.addCleanup(rewrite_patch.stop)
+        run_id = "resume-model-change"
+
         def first(case, *_args):
             if case.question_id == "003":
                 raise HTTPException(status_code=400, detail="failed")
             return _case_result(case.question_id)
         with patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=first):
-            await evaluate_rag(self.dataset, self.user)
+            await evaluate_rag(self.dataset, self.user, run_id=run_id)
         with patch.object(rag_evaluations.settings, "RAG_LLM_MODEL", "different-model"), patch.object(rag_evaluations, "_catalog_maps", return_value=({}, {})), patch.object(rag_evaluations, "_evaluate_rag_case", side_effect=lambda case, *_args: _case_result(case.question_id)):
-            result = await evaluate_rag(self.dataset, self.user)
+            result = await evaluate_rag(self.dataset, self.user, run_id=run_id)
         self.assertEqual(len(result["cases"]), 5)
         self.assertEqual(result["history"]["status"], "skipped")
         self.history_save.assert_not_called()

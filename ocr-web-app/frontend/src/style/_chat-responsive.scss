@@ -104,8 +104,8 @@
     }
   }
   .knowledge-pocket {
-    right: 14px;
-    bottom: 14px;
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(160px + env(safe-area-inset-bottom, 0px));
   }
   .scrapbook-modal > header,
   .scrapbook-list {

@@ -3,6 +3,7 @@ begin;
 
 create table public.rag_evaluation_runs (
   id uuid primary key,
+  run_id uuid not null unique,
   user_id uuid not null references public.users(id) on delete cascade,
   dataset_name text not null,
   dataset_hash text not null check (dataset_hash ~ '^[0-9a-f]{64}$'),

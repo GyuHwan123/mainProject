@@ -923,14 +923,7 @@ export default function ReportPage() {
   const [ragEvaluation, setRagEvaluation] = useState(() => {
     try { return JSON.parse(localStorage.getItem(RAG_EVALUATION_STORAGE_KEY) || 'null'); } catch { return null; }
   });
-  const [umapData, setUmapData] = useState(() => {
-    try {
-      const saved = localStorage.getItem('pic_to_text_rag_umap_latest');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
+  const [umapData, setUmapData] = useState(null);
   const [umapError, setUmapError] = useState('');
   const initialReportTargetRef = useRef({ reportView, developerReport, receiptTab });
   const initialRagRequestInFlightRef = useRef(false);
@@ -990,7 +983,6 @@ export default function ReportPage() {
     try {
       const { data } = await apiClient.get('/rag/evaluation/umap');
       setUmapData(data);
-      localStorage.setItem('pic_to_text_rag_umap_latest', JSON.stringify(data));
     } catch (requestError) {
       setUmapData(null);
       setUmapError(requestError.response?.data?.detail || 'UMAP 데이터를 불러오지 못했습니다.');

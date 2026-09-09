@@ -3,6 +3,7 @@ import { IoDownloadOutline, IoInformationCircleOutline } from 'react-icons/io5';
 
 import apiClient from '../api/client';
 import Sidebar from '../components/Sidebar';
+import LoginLoading from '../components/LoginLoading';
 import { readFinanceEvaluationRuns, saveFinanceEvaluationRuns } from '../features/financeEvaluationStorage';
 import { FINANCE_EVALUATION_INPUT_QUEUED, clearFinanceEvaluationInput, peekFinanceEvaluationInput } from '../features/financeEvaluationTransfer';
 import { clearPendingReceipts, markReceiptEvaluated, readReceiptWorkspace, rememberReceiptRecord } from '../features/receiptWorkspaceMemory';
@@ -556,6 +557,8 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
   const [pendingReceipts, setPendingReceipts] = useState(() => readReceiptWorkspace().pendingEvaluations);
   const [batchHistory, setBatchHistory] = useState(() => initialBatchHistory || []);
   const [singleHistory, setSingleHistory] = useState(() => initialSingleHistory || []);
+  const [batchHistoryLoading, setBatchHistoryLoading] = useState(initialBatchHistory == null);
+  const [singleHistoryLoading, setSingleHistoryLoading] = useState(initialSingleHistory == null);
   const [replayedSingleRun, setReplayedSingleRun] = useState(null);
   const [evaluationMode, setEvaluationMode] = useState('single');
   const [hasSessionBatchResults, setHasSessionBatchResults] = useState(false);
@@ -663,10 +666,10 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
   const latestDocument = latestPendingReceipt || latestRun;
 
   useEffect(() => {
-    if (initialBatchHistory == null) loadBatchHistory();
+    if (initialBatchHistory == null) loadBatchHistory().finally(() => setBatchHistoryLoading(false));
   }, [initialBatchHistory, loadBatchHistory]);
   useEffect(() => {
-    if (initialSingleHistory == null) loadSingleHistory();
+    if (initialSingleHistory == null) loadSingleHistory().finally(() => setSingleHistoryLoading(false));
   }, [initialSingleHistory, loadSingleHistory]);
 
   useEffect(() => {
@@ -1027,6 +1030,10 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
   };
 
   const batchInsightsReady = hasSessionBatchResults && batchRuns.length > 0;
+
+  if (embedded && (batchHistoryLoading || singleHistoryLoading)) {
+    return <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" />;
+  }
 
   return <div className={embedded ? 'finance-eval-embedded-shell' : 'app-shell finance-eval-shell'}>{!embedded && <Sidebar />}<main className={`finance-eval-page ${embedded ? 'embedded' : ''}`}>
     <header><div><p>FINANCE MODEL LAB</p><div className="finance-eval-title-row"><h1>영수증 서비스 결과 평가</h1></div><span>동일 OCR 입력으로 최종 서비스의 필드 매칭과 Excel 변환 결과를 비교합니다.</span></div><button disabled={!runs.length} onClick={exportResults}><IoDownloadOutline /> 결과 JSON</button></header>

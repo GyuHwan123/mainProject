@@ -153,7 +153,7 @@ function RagResponseDistribution({ demoMode, monitoring, loading }) {
   </div>;
 }
 
-function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapData, umapError, onExportPdf, refreshVersion, demoMode = false }) {
+function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapData, umapError, loading = false, onExportPdf, refreshVersion, demoMode = false }) {
   const [dateRange, setDateRange] = useState(() => {
     if (!demoMode) return createInitialMonitoringDateRange();
     // Match the stored evaluation's Korean calendar dates, regardless of browser timezone.
@@ -233,15 +233,19 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
   // Only the composition/category cards consume this persisted case payload.
   const latestTypeRun = monitoring?.recent_runs?.find(run => run.configuration?.demo !== true) || null;
   const [typeRunDetail, setTypeRunDetail] = useState(null);
+  const typeRunRequestKey = latestTypeRun?.id ? JSON.stringify([latestTypeRun.id, latestTypeRun.run_id, refreshVersion]) : null;
+  const [settledTypeRunRequestKey, setSettledTypeRunRequestKey] = useState(null);
   useEffect(() => {
     setTypeRunDetail(null);
+    setSettledTypeRunRequestKey(null);
     if (!latestTypeRun?.id) return;
     const controller = new AbortController();
     apiClient.get(`/rag/evaluation/history/${latestTypeRun.run_id || latestTypeRun.id}`, { signal: controller.signal, timeout: 60000 })
       .then(({ data }) => { if (!controller.signal.aborted) setTypeRunDetail(data); })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => { if (!controller.signal.aborted) setSettledTypeRunRequestKey(typeRunRequestKey); });
     return () => controller.abort();
-  }, [latestTypeRun?.id, latestTypeRun?.run_id, refreshVersion]);
+  }, [latestTypeRun?.id, latestTypeRun?.run_id, refreshVersion, typeRunRequestKey]);
   const questionTypeMetrics = useMemo(() => {
     const labels = {
       single_document_fact: '단일 문서 사실 검색',
@@ -328,6 +332,10 @@ function RagPerformanceReport({ evaluation: latestEvaluation, modelConfig, umapD
   const evaluationCases = Array.isArray(evaluation?.cases) ? evaluation.cases : [];
   const listDocuments = (documents) => Array.isArray(documents) && documents.length ? documents.join(', ') : '—';
   const booleanLabel = (value) => typeof value === 'boolean' ? (value ? '통과' : '실패') : '—';
+
+  if (loading || monitoringLoading || typeRunRequestKey !== settledTypeRunRequestKey) {
+    return <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" />;
+  }
 
   return <section className="receipt-monitoring rag-monitoring">
     <div className="receipt-monitoring-heading">
@@ -853,6 +861,10 @@ function ReceiptMonitoringDashboard({ onExportPdf, initialMonitoring, initialMon
   };
   const comparisonLabel = period === 'custom' ? '이전 동일 기간' : `지난 ${period}일`;
 
+  if (monitoringLoading) {
+    return <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" />;
+  }
+
   return <section className="receipt-monitoring" data-start-date={monitoringQueryParams.start_date} data-end-date={monitoringQueryParams.end_date}>
     <div className="receipt-monitoring-heading">
       <div><p>FINANCE MODEL LAB</p><h2>영수증 서비스 성능 모니터링 대시보드</h2><span>서비스 운영 데이터를 기반으로 모델/파이프라인의 성능을 모니터링합니다.</span></div>
@@ -925,6 +937,8 @@ export default function ReportPage() {
   });
   const [umapData, setUmapData] = useState(null);
   const [umapError, setUmapError] = useState('');
+  const [ragLoading, setRagLoading] = useState(true);
+  const [umapLoading, setUmapLoading] = useState(true);
   const initialReportTargetRef = useRef({ reportView, developerReport, receiptTab });
   const initialRagRequestInFlightRef = useRef(false);
 
@@ -965,6 +979,7 @@ export default function ReportPage() {
 
   const [ragRefreshVersion, setRagRefreshVersion] = useState(0);
   const loadRagReport = useCallback(async () => {
+    setRagLoading(true);
     setRagRefreshVersion(value => value + 1);
     setError('');
     try {
@@ -975,10 +990,13 @@ export default function ReportPage() {
       setRagEvaluation(null);
       localStorage.removeItem(RAG_EVALUATION_STORAGE_KEY);
       if (requestError.response?.status !== 404) setError(requestError.response?.data?.detail || 'RAG 평가 결과를 불러오지 못했습니다.');
+    } finally {
+      setRagLoading(false);
     }
   }, []);
 
   const loadUmapReport = useCallback(async () => {
+    setUmapLoading(true);
     setUmapError('');
     try {
       const { data } = await apiClient.get('/rag/evaluation/umap');
@@ -986,6 +1004,8 @@ export default function ReportPage() {
     } catch (requestError) {
       setUmapData(null);
       setUmapError(requestError.response?.data?.detail || 'UMAP 데이터를 불러오지 못했습니다.');
+    } finally {
+      setUmapLoading(false);
     }
   }, []);
 
@@ -1211,8 +1231,8 @@ export default function ReportPage() {
         <button type="button" role="tab" aria-selected={ragReportTab === 'ablation'} className={ragReportTab === 'ablation' ? 'active' : ''} onClick={() => { setRagReportTab('ablation'); localStorage.setItem('pic_to_text_rag_report_tab', 'ablation'); }}>Ablation 분석</button>
       </div>
       {ragReportTab === 'ablation'
-        ? <RagAblationReport evaluation={ragEvaluation} modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
-        : <RagPerformanceReport demoMode={['DEVELOPER', 'ADMIN'].includes(user.role) && reportView === 'developer'} refreshVersion={ragRefreshVersion} evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
+        ? ragLoading ? <LoginLoading mode="content" title="리포트를 불러오는 중입니다." ariaLabel="리포트 불러오는 중" /> : <RagAblationReport evaluation={ragEvaluation} modelConfig={modelConfig} onExportPdf={exportDashboardPdf} />
+        : <RagPerformanceReport loading={ragLoading || umapLoading} demoMode={['DEVELOPER', 'ADMIN'].includes(user.role) && reportView === 'developer'} refreshVersion={ragRefreshVersion} evaluation={ragEvaluation} modelConfig={modelConfig} umapData={umapData} umapError={umapError} onExportPdf={exportDashboardPdf} />}
       {SHOW_RAG_LLM_EVALUATION && <RagLlmEvaluation />}
       {/* Legacy RAG report page 2: retained for later restoration, intentionally hidden. */}
       {SHOW_LEGACY_EVALUATIONS && <>

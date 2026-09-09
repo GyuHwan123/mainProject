@@ -106,6 +106,7 @@ class RagStructuralEvidenceTests(unittest.IsolatedAsyncioTestCase):
     def test_detects_table_structure_questions(self):
         self.assertTrue(_is_table_structure_query("테이블의 컬럼명을 다 알려주세요"))
         self.assertTrue(_is_table_structure_query("표가 몇 행 몇 열인가요?"))
+        self.assertTrue(_is_table_structure_query("열 구성이 어떻게 되나요?"))
         self.assertFalse(_is_table_structure_query("실험1의 평균은 얼마인가요?"))
 
     async def test_accepts_explicit_table_schema_without_semantic_model_gate(self):

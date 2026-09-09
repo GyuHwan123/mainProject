@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     # Local development uses the native Ollama service. Docker Compose overrides
     # this with http://ollama:11434 for container-to-container communication.
     OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
-    RAG_EMBEDDING_MODEL: str = "BAAI/bge-m3"
+    # Set BAAI/bge-m3 explicitly to restore the Base model.
+    RAG_EMBEDDING_MODEL: str = "models/bge-m3/finetuned"
     RAG_EMBEDDING_DIMENSIONS: int = 1024
     RAG_LLM_MODEL: str = "gemma2:2b"
     DASHBOARD_AGENT_MODEL: str = "gemma2:2b"
@@ -67,7 +68,9 @@ class Settings(BaseSettings):
     @field_validator("RAG_EMBEDDING_MODEL")
     @classmethod
     def resolve_embedding_model(cls, value: str) -> str:
-        model = value.strip() or "BAAI/bge-m3"
+        model = value.strip()
+        if not model:
+            raise ValueError("RAG_EMBEDDING_MODEL must not be empty")
         if model == "BAAI/bge-m3":
             return model
         checkpoint = Path(model).expanduser()

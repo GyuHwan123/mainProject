@@ -15,6 +15,7 @@ import json
 import os
 from pathlib import Path
 import pickle
+import sys
 import urllib.parse
 import urllib.request
 import uuid
@@ -191,6 +192,60 @@ def save_backup(plan):
     return path
 
 
+def prepare_from_db(api, batch_size):
+    """Encode the current rows verbatim; never invoke ingestion or chunking."""
+    sys.path.insert(0, str(PROJECT / "backend"))
+    from app.core.config import settings
+    from app.services.embedding_model import load_embedding_model
+
+    checkpoint = (PROJECT / "models/bge-m3/finetuned").resolve()
+    source = settings.RAG_EMBEDDING_MODEL
+    revision = None
+    if source == "BAAI/bge-m3":
+        from huggingface_hub import try_to_load_from_cache
+
+        config_path = try_to_load_from_cache(source, "config.json")
+        if not isinstance(config_path, str):
+            raise ValueError("BAAI/bge-m3 must exist in the local Hugging Face cache")
+        checkpoint = Path(config_path).parent
+        revision = checkpoint.name
+    elif Path(source).resolve() != checkpoint:
+        raise ValueError("Active model must be BAAI/bge-m3 or models/bge-m3/finetuned")
+    if settings.RAG_EMBEDDING_DIMENSIONS != 1024:
+        raise ValueError("Configured embedding dimension must be 1024")
+    before = snapshot(api)
+    texts = [row["content"] for row in before["rows"]]
+    if any(not isinstance(text, str) or not text.strip() for text in texts):
+        raise ValueError("Current DB chunks contain empty or non-string content")
+    model_hashes = {p.relative_to(checkpoint).as_posix(): file_hash(p)
+                    for p in sorted(checkpoint.rglob("*")) if p.is_file()}
+    model = load_embedding_model(local_files_only=True, revision=revision)
+    lengths = [len(ids) for ids in model.tokenizer(texts, truncation=False, padding=False)["input_ids"]]
+    if max(lengths) > model.max_seq_length:
+        raise ValueError("Current DB content would be truncated; refusing to encode")
+    embeddings = np.asarray(model.encode(
+        texts, normalize_embeddings=True, convert_to_numpy=True,
+        show_progress_bar=True, batch_size=batch_size, precision="float32",
+    ), dtype=np.float32)
+    if embeddings.shape != (115, 1024) or not np.isfinite(embeddings).all():
+        raise ValueError("Expected finite (115, 1024) embeddings")
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+    if np.any(norms == 0) or not np.isfinite(norms).all():
+        raise ValueError("Invalid embedding norms")
+    embeddings = embeddings / norms
+    after_hashes = {p.relative_to(checkpoint).as_posix(): file_hash(p)
+                    for p in sorted(checkpoint.rglob("*")) if p.is_file()}
+    if not model_hashes or model_hashes != after_hashes:
+        raise ValueError("Embedding checkpoint changed during encoding")
+    plan = {"format": "embedding-only-cutover-v1", "endpoint": api.base,
+            "created_at": datetime.now(timezone.utc).isoformat(), "before": before,
+            "targets": {row["id"]: embeddings[i].tolist() for i, row in enumerate(before["rows"])},
+            "embedding_model": source, "model_snapshot_sha256": model_hashes,
+            "source": "Supabase rag_chunks.content (verbatim)"}
+    check_snapshot(api, plan, restored=True)
+    return plan
+
+
 def check_snapshot(api, plan, *, restored=False, mixed=False):
     current = snapshot(api)
     before = plan["before"]
@@ -245,7 +300,14 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--apply", action="store_true")
     mode.add_argument("--rollback", type=Path, metavar="BACKUP_JSON")
+    parser.add_argument("--from-db", action="store_true",
+                        help="Generate vectors from the current 115 Supabase rows using the active Base or fine-tuned model")
+    parser.add_argument("--batch-size", type=int, default=8)
     args = parser.parse_args()
+    if args.batch_size < 1:
+        parser.error("batch-size must be positive")
+    if args.rollback and args.from_db:
+        parser.error("--from-db cannot be combined with --rollback")
     api = API()
     if args.rollback:
         path = args.rollback.resolve()
@@ -256,7 +318,7 @@ def main():
             raise ValueError("Wrong backup format or Supabase endpoint")
         rollback(api, plan)
         return
-    plan = prepare(api)
+    plan = prepare_from_db(api, args.batch_size) if args.from_db else prepare(api)
     path = save_backup(plan)
     if not args.apply:
         print("PREPARED: 115 mappings verified; backup saved; no DB writes.", flush=True)

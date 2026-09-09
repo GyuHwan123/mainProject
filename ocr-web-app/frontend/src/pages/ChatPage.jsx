@@ -923,7 +923,7 @@ function ChatPageContent() {
         const { data } = await apiClient.post('/rag/evaluate/checkpoint-status', parsed);
         setEvaluationProgress(data);
         setEvaluationStatus(evaluationStatusLabel(data));
-        if (data.configuration_matches === false) setEvaluationError('RAG 설정이 checkpoint와 다릅니다. 기존 설정으로 복원한 뒤 재시도하세요.');
+        if (data.configuration_matches === false) setEvaluationError('기존 checkpoint와 현재 RAG 설정이 달라 재개할 수 없습니다. 현재 설정으로 시작하려면 ‘새 평가 (기존 결과 유지)’를 선택하세요.');
       } catch {
         setEvaluationProgress({ status: 'ready', current: 0, total: parsed.cases.length, question_id: null, elapsed_seconds: 0, estimated_remaining_seconds: null, progress_percent: 0 });
       }
@@ -935,6 +935,7 @@ function ChatPageContent() {
 
   const runRagEvaluation = async () => {
     if (!evaluationDataset || evaluationRunningRef.current) return;
+    if (!evaluationForceRestart && evaluationProgress.configuration_matches === false) return;
     evaluationRunningRef.current = true;
     setEvaluationRunning(true);
     setEvaluationError(''); setEvaluationResult(null);
@@ -947,6 +948,7 @@ function ChatPageContent() {
         timeout: 36000000, params: {
           retry_failed: !evaluationForceRestart && evaluationProgress.error_count > 0,
           force_restart: evaluationForceRestart,
+          ...(!evaluationForceRestart && evaluationProgress.error_count > 0 ? { run_id: evaluationProgress.run_id } : {}),
         },
       });
       localStorage.setItem('pic_to_text_rag_evaluation_latest', JSON.stringify(data));
@@ -1043,8 +1045,8 @@ function ChatPageContent() {
               <span>{evaluationDataset?.cases.length ?? 0}문항</span>
               <span className="evaluation-compact-status" role="status">{evaluationStatus}{evaluationRunning && ` · ${Number(evaluationProgress.progress_percent || 0).toFixed(1)}%`}</span>
               <span className="evaluation-compact-time">경과 {formatEvaluationDuration(evaluationProgress.elapsed_seconds)} · 남은 {evaluationRunning ? formatEvaluationDuration(evaluationProgress.estimated_remaining_seconds) : '—'}</span>
-              <button type="button" disabled={!evaluationDataset || evaluationRunning || evaluationProgress.configuration_matches === false} onClick={runRagEvaluation}>{evaluationRunning ? '평가 중…' : evaluationProgress.error_count > 0 ? `실패 ${evaluationProgress.error_count}문항 재시도` : '평가 실행'}</button>
-              <label><input type="checkbox" checked={evaluationForceRestart} disabled={evaluationRunning} onChange={(event) => setEvaluationForceRestart(event.target.checked)} /> 처음부터 다시 평가</label>
+              <button type="button" disabled={!evaluationDataset || evaluationRunning || (!evaluationForceRestart && evaluationProgress.configuration_matches === false)} onClick={runRagEvaluation}>{evaluationRunning ? '평가 중…' : evaluationForceRestart ? '새 평가 시작' : evaluationProgress.error_count > 0 ? `실패 ${evaluationProgress.error_count}문항 재시도` : '평가 실행'}</button>
+              <label><input type="checkbox" checked={evaluationForceRestart} disabled={evaluationRunning} onChange={(event) => { setEvaluationForceRestart(event.target.checked); setEvaluationError(event.target.checked || evaluationProgress.configuration_matches !== false ? '' : '기존 checkpoint와 현재 RAG 설정이 달라 재개할 수 없습니다. 새 평가를 선택하세요.'); }} /> 새 평가 (기존 결과 유지)</label>
               <Link to="/reports?view=developer&developerReport=rag&ragReportTab=overview">리포트 ↗</Link>
             </div>
             {evaluationRunning && <div className="evaluation-compact-progress" role="progressbar" aria-label="평가 진행률" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}><i style={{ width: `${Math.max(0, Math.min(100, Number(evaluationProgress.progress_percent || 0)))}%` }} /></div>}

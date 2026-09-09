@@ -1,10 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
 
-app = FastAPI(title=settings.APP_NAME, version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.services.rag_service import _get_embedding_model
+
+    try:
+        _get_embedding_model()
+    except Exception as exc:
+        raise RuntimeError(
+            f"RAG embedding model failed to load: {settings.RAG_EMBEDDING_MODEL}. "
+            "Base model fallback is disabled."
+        ) from exc
+    yield
+
+
+app = FastAPI(title=settings.APP_NAME, version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

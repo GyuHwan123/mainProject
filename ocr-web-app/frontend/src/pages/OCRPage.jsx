@@ -803,7 +803,7 @@ export default function OCRPage() {
     }
   };
 
-  const resetDocumentView = ({ preserveGroundTruth = false, preserveFinance = false } = {}) => {
+  const resetDocumentView = ({ preserveGroundTruth = false } = {}) => {
     if (generatedWorkbookUrlRef.current) URL.revokeObjectURL(generatedWorkbookUrlRef.current);
     generatedWorkbookUrlRef.current = '';
     setGeneratedWorkbook(null);
@@ -828,7 +828,9 @@ export default function OCRPage() {
     }
     setProcessingTimeMs(null);
     setEvaluationStatus('');
-    if (!preserveFinance) setFinanceRecord(null);
+    setFinanceRecord(null);
+    setFinanceReviewOpen(false);
+    setFinanceReviewDraft(null);
   };
 
   const startNewProject = () => {
@@ -1120,7 +1122,6 @@ export default function OCRPage() {
     if (!receiptBatchRef.current.active) setReceiptBatchStatus('');
     resetDocumentView({
       preserveGroundTruth: isDeveloper,
-      preserveFinance: true,
     });
     setProcessingMode('receipt');
     setPendingFile(file);
@@ -1517,6 +1518,9 @@ export default function OCRPage() {
     setPageNumber(snapshot.pageNumber);
     setPendingFile(snapshot.pendingFile);
     setCurrentDocumentId(snapshot.currentDocumentId);
+    setFinanceRecord(snapshot.financeRecord);
+    setFinanceReviewOpen(false);
+    setFinanceReviewDraft(null);
     setSelectedArchiveDocumentId(null);
     archivePreviewSnapshotRef.current = null;
   };
@@ -1529,8 +1533,15 @@ export default function OCRPage() {
       return;
     }
     if (!archivePreviewSnapshotRef.current) {
-      archivePreviewSnapshotRef.current = { pdf, imagePreviewUrl, fileName, pageItems, pageRows, selectedItemIndex, activeReceiptSemantic, previewVariant, pageNumber, pendingFile, currentDocumentId };
+      archivePreviewSnapshotRef.current = { pdf, imagePreviewUrl, fileName, pageItems, pageRows, selectedItemIndex, activeReceiptSemantic, previewVariant, pageNumber, pendingFile, currentDocumentId, financeRecord };
     }
+    const archivedRecord = [...financeRecords, ...savedFinanceRecords].find((record) =>
+      record.document_id === item.document_id
+      && (!item.finance_record_id || record.id === item.finance_record_id)) || null;
+    setFinanceRecord(archivedRecord);
+    setFinanceReviewOpen(false);
+    setFinanceReviewDraft(null);
+    setCurrentDocumentId(item.document_id);
     setSelectedArchiveDocumentId(item.document_id);
     setPendingFile(null);
     setPdf(null);
@@ -1871,7 +1882,7 @@ export default function OCRPage() {
   };
 
   const confirmFinanceRecord = async () => {
-    if (!financeRecord || (financeRecord.status === 'CONFIRMED' && financeRecord.structured_data?.excel_saved_at)) return;
+    if (!financeRecord || loading) return;
     if (!financeRecord.document_type || !financeRecord.expense_category) {
       setError('문서 유형과 카테고리를 검토 화면에서 선택해 주세요.');
       return;
@@ -2154,7 +2165,7 @@ export default function OCRPage() {
                 </dl>
                 <div className="agent-amount-check"><strong>금액 검산</strong>{optionalFinanceNumber(financeRecord.supply_amount) === null || optionalFinanceNumber(financeRecord.tax_amount) === null ? <><span>공급가액 또는 부가세 정보 없음</span><em>검산 불가</em></> : <><span>{financeMoney(financeRecord.supply_amount)} + {financeMoney(financeRecord.tax_amount)} = {financeMoney(Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount))}</span><em className={Number(financeRecord.total_amount || 0) === Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount) ? 'valid' : ''}>{Number(financeRecord.total_amount || 0) === Number(financeRecord.supply_amount) + Number(financeRecord.tax_amount) ? '일치' : '확인 필요'}</em></>}</div>
                 <button type="button" className="agent-review" onClick={openFinanceReview}>내용 검토·수정</button>
-                <button type="button" className="agent-confirm" disabled={loading || (financeRecord.status === 'CONFIRMED' && Boolean(financeRecord.structured_data?.excel_saved_at))} onClick={confirmFinanceRecord}>{financeRecord.status === 'CONFIRMED' && financeRecord.structured_data?.excel_saved_at ? '사용자 확정 완료' : '이 내용으로 최종 확정'}</button>
+                <button type="button" className="agent-confirm" disabled={loading} onClick={confirmFinanceRecord}>{loading ? '처리 중...' : '사용자 확정 완료'}</button>
                 {financeRecord.status === 'CONFIRMED' && <><label className="finance-send-scope">발송 범위<select value={effectiveFinanceSendScope} disabled={loading} onChange={(event) => setFinanceSendScope(event.target.value)}><option value="pending" disabled={!hasPendingFinanceRecords}>미발송 기록만</option><option value="all">이전 발송 기록 포함 (전체)</option></select></label><button type="button" className="agent-submit" disabled={loading || savedFinanceLoading || !canSendFinanceRecords} onClick={submitFinanceRecord}>{loading ? '처리 중…' : effectiveFinanceSendScope === 'all' ? '이전 기록 포함하여 재무팀에 보내기' : '미발송 기록을 재무팀에 보내기'}</button></>}
                 {financeSubmitMessage && <p role="status">{financeSubmitMessage}</p>}
                 {financeRecord.status === 'CONFIRMED' && <p>{effectiveFinanceSendScope === 'all' ? '삭제하지 않은 이전 발송 기록과 미발송 기록을 함께 보냅니다.' : '아직 보내지 않은 기록만 보냅니다.'} 수신: docai0914@gmail.com</p>}

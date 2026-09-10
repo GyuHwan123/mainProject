@@ -1044,7 +1044,32 @@ export default function FinanceEvaluationPage({ embedded = false, initialBatchHi
     {batchInsightsReady && <>
       <section className="batch-insight-grid single-batch-insights">
         <section className="eval-summary-grid batch-selection-metrics">{scoredSummaries.map((summary) => <article key={summary.model}>
-          <span className="selection-metric-title"><small>일괄 평가 결과</small><button type="button" aria-label="평가 지표 기준 보기"><IoInformationCircleOutline /></button><span className="selection-score-tooltip" role="tooltip"><strong>단일 호출 평가 기준</strong><b>추출 정확도 100점</b><span>문서유형·총수량처럼 코드에서 파생되는 값은 모델 점수에서 제외합니다. 카드번호는 정답 데이터에 값이 있어도 필드 정확도와 모델 점수 모두에서 제외합니다.</span><em>추출 검증은 참고 정보이며 최종 확인은 항상 사용자가 합니다.</em></span></span>
+          <span className="selection-metric-title">
+            <small>일괄 평가 결과</small>
+            <button type="button" aria-label="평가 지표 기준 보기" aria-describedby={`score-criteria-${summary.model}`}><IoInformationCircleOutline /></button>
+            <span className="selection-score-tooltip" id={`score-criteria-${summary.model}`} role="tooltip">
+              <strong>단일 호출 평가 기준 · 100점 만점</strong>
+              <span>영수증별 점수 = 각 항목의 일치율 × 배점의 합계. 현재 점수는 채점 결과가 있는 영수증 점수의 산술평균입니다.</span>
+              <b>항목별 배점</b>
+              <span className="selection-score-weights">
+                <span>가게명 <b>8점</b></span><span>구매일자 <b>8점</b></span>
+                <span>공급가액 <b>5점</b></span><span>세액 <b>5점</b></span>
+                <span>할인액 <b>5점</b></span><span>총 결제액 <b>15점</b></span>
+                <span>결제방식 <b>5점</b></span><span>카테고리 <b>10점</b></span>
+                <span>상품명 F1 <b>12점</b></span><span>상품 단가 <b>8점</b></span>
+                <span>상품 수량 <b>8점</b></span><span>상품 금액 <b>11점</b></span>
+              </span>
+              <span>일반 항목은 정답과 일치하면 해당 배점, 불일치하면 0점입니다. 상품은 정답과 예측을 1:1로 대응시켜 단가·수량·금액의 일치 비율을 반영합니다. 상품명은 누락·추가 추출을 함께 반영하는 F1(정밀도와 재현율의 조화평균)을 사용합니다.</span>
+              <span>날짜·숫자·결제방식 등의 표기를 정규화한 뒤 비교하며, 상품명은 별칭·유사도도 인정합니다. 양쪽 상품 목록이 모두 비어 있으면 상품 항목은 만점입니다.</span>
+              <span>문서유형·총수량은 모델 점수에서 제외합니다. 카드번호는 필드 정확도와 모델 점수 모두에서 제외합니다.</span>
+              <b>함께 표시되는 참고 지표 · 별도 가산점 없음</b>
+              <span>추출 검증 통과 비율: 검증 판정이 기록된 건 중 PASS 비율입니다.</span>
+              <span>단일 JSON 성공률: 필수 키 8개 존재 여부와 items가 배열인지, 총 9개 조건의 충족률을 영수증별로 평균한 값입니다. JSON 전체 성공 건수의 비율과는 다릅니다.</span>
+              <span>총 결제액 정확도: 채점된 영수증 중 총 결제액이 정답과 일치한 비율입니다. 위의 15점 항목을 별도로 보여줍니다.</span>
+              <span>응답시간: 측정값이 있는 건의 평균과 P95입니다. P95는 시간을 오름차순으로 정렬한 뒤 전체 건수 × 0.95를 올림한 순번의 값입니다.</span>
+              <em>추출 검증은 참고 정보이며 최종 확인은 항상 사용자가 합니다.</em>
+            </span>
+          </span>
           <h2 title={summary.model}>{summary.model}</h2><strong>{summary.finalScore.toFixed(1)}점</strong><p>{summary.documents}건 평가 · 최종 사용자 확인 필요</p>
           <dl>
             <div><dt>추출 정확도</dt><dd>{summary.extractionScore.toFixed(1)} / 100</dd></div>

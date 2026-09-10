@@ -1238,11 +1238,6 @@ async def search(
     stage_started = time.perf_counter()
     candidates = await rerank_candidates(query, candidates)
     stage_latency_ms["reranker"] = (time.perf_counter() - stage_started) * 1000
-    candidates = _promote_lexical_evidence(
-        candidates,
-        [*lexical_candidates, *rewritten_lexical_candidates],
-        facets,
-    )
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
         all_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)

@@ -112,7 +112,8 @@
   background: #f7f9fc;
 }
 .mypage-workspace.page-enter {
-  animation: none;
+  // Release the animated transform after entry so fixed dialogs stay viewport-anchored.
+  animation-fill-mode: backwards;
   transform: none;
 }
 .mypage-header {

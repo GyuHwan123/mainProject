@@ -11,10 +11,16 @@ const chartCode = (await transformWithOxc(chartSource, 'Chart.jsx', { jsx: { run
 const [Chart, trendMetrics] = new Function('React', chartCode + '\nreturn [RagMonitoringChart, RAG_TREND_METRICS];')(React);
 const page = fs.readFileSync(new URL('../pages/ReportPage.jsx', import.meta.url), 'utf8');
 const reportCode = (await transformWithOxc(page.slice(page.indexOf('const RAG_KPI_COLORS ='), page.indexOf('\nfunction RagLlmEvaluation(')), 'Report.jsx', { jsx: { runtime: 'classic' } })).code;
-const factory = new Function('React', 'useMemo', 'useState', 'useEffect', 'apiClient', 'RagMonitoringChart', 'createInitialMonitoringDateRange', 'dateInputValue', 'percent', 'IoDownloadOutline', 'RAG_TREND_METRICS', reportCode + '\nreturn RagPerformanceReport;');
+const loadingSource = fs.readFileSync(new URL('../components/LoginLoading.jsx', import.meta.url), 'utf8')
+  .replace(/^import .*;\r?\n/m, '').replace('export default function ', 'function ');
+const loadingCode = (await transformWithOxc(loadingSource, 'Loading.jsx', { jsx: { runtime: 'classic' } })).code;
+const LoginLoading = new Function('React', loadingCode + '\nreturn LoginLoading;')(React);
+const factory = new Function('React', 'useMemo', 'useState', 'useEffect', 'apiClient', 'RagMonitoringChart', 'createInitialMonitoringDateRange', 'dateInputValue', 'percent', 'IoDownloadOutline', 'RAG_TREND_METRICS', 'LoginLoading', reportCode + '\nreturn RagPerformanceReport;');
 
-function harness({ detail = null, data = null, api = async () => ({ data }), range = { startDate: '2026-09-01', endDate: '2026-09-07' }, refresh = 0 } = {}) {
-  const states = [range, '7', data, false, '', detail];
+function harness({ detail = null, data = null, loading = false, monitoringLoading = false, detailPending = false, api = async () => ({ data }), range = { startDate: '2026-09-01', endDate: '2026-09-07' }, refresh = 0 } = {}) {
+  const run = data?.recent_runs?.find(run => run.configuration?.demo !== true);
+  const settledDetailKey = run?.id && !detailPending ? JSON.stringify([run.id, run.run_id, refresh]) : null;
+  const states = [range, '7', data, monitoringLoading, '', detail, settledDetailKey];
   const changes = [];
   const effects = [];
   const requests = [];
@@ -22,8 +28,8 @@ function harness({ detail = null, data = null, api = async () => ({ data }), ran
   const Report = factory(React, useMemo, () => {
     const index = cursor++;
     return [states[index], value => changes.push([index, value])];
-  }, (effect, deps) => effects.push({ effect, deps }), { get: (...args) => { requests.push(args); return api(...args); } }, Chart, () => range, d => d.toISOString().slice(0, 10), v => `${((v || 0) * 100).toFixed(1)}%`, () => null, trendMetrics);
-  const html = renderToStaticMarkup(React.createElement(Report, { modelConfig: {}, refreshVersion: refresh }));
+  }, (effect, deps) => effects.push({ effect, deps }), { get: (...args) => { requests.push(args); return api(...args); } }, Chart, () => range, d => d.toISOString().slice(0, 10), v => `${((v || 0) * 100).toFixed(1)}%`, () => null, trendMetrics, LoginLoading);
+  const html = renderToStaticMarkup(React.createElement(Report, { modelConfig: {}, refreshVersion: refresh, loading }));
   return { html, changes, effects, requests };
 }
 
@@ -91,6 +97,27 @@ test('composition and category cards restore twenty cases without backend memory
   assert.ok(!html.includes('NO DATA'));
   const stale = harness({ data, detail: { ...detail, id: 'older-run' } });
   assert.ok(stale.html.includes('NO DATA'));
+});
+
+test('shared loading hides empty cards until both monitoring and detail requests settle', () => {
+  const data = { summary: {}, recent_runs: [{ id: 'pending-run' }], daily: [] };
+  for (const pending of [{ loading: true }, { monitoringLoading: true }, { data, detailPending: true }]) {
+    const { html } = harness(pending);
+    assert.ok(html.includes('login-loading content'));
+    assert.ok(html.includes('리포트를 불러오는 중입니다.'));
+    assert.ok(!html.includes('NO DATA'));
+    assert.ok(!html.includes('평가 결과 없음'));
+  }
+  const { html } = harness({ data: { summary: {}, recent_runs: [], daily: [] } });
+  assert.ok(!html.includes('login-loading content'));
+  assert.ok(html.includes('NO DATA'));
+});
+
+test('detail request failure settles loading so empty results can render', async () => {
+  const h = harness({ data: { summary: {}, recent_runs: [{ id: 'failed-run' }], daily: [] }, detailPending: true, api: async () => { throw new Error('unavailable'); } });
+  h.effects[1].effect();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(h.changes.some(([index, value]) => index === 6 && value === JSON.stringify(['failed-run', null, 0])));
 });
 
 test('graph does not connect across days with no evaluations', () => {

@@ -826,7 +826,7 @@ _EVIDENCE_STOP_WORDS = {
     "정보", "내용", "문서", "관련", "대한", "대해", "질문", "답변",
 }
 _EVIDENCE_INTERROGATIVES = {
-    "언제", "어디", "누구", "왜", "무엇", "뭘", "어떻게", "몇", "얼마",
+    "언제", "언제야", "어디", "어디야", "누구", "왜", "무엇", "뭘", "어떻게", "몇", "얼마",
 }
 _EVIDENCE_STEM_ENDINGS = (
     "가능한가요", "하려면", "하나요", "해야", "해서",
@@ -836,7 +836,7 @@ _EVIDENCE_SUBJECT_NORMALIZATION = {
 }
 _EVIDENCE_PREDICATE_ENDINGS = (
     "하다", "한다", "하나요", "인가요", "되나요", "있나요", "해야", "해요", "해서",
-    "하려면", "되면", "내야", "쉬게", "넘게", "주나요", "가능한가요", "서", "게", "면", "해",
+    "하려면", "되면", "내야", "쉬게", "넘게", "주나요", "가능한가요", "게", "면", "해",
 )
 _KOREAN_DURATION_NORMALIZATION = {
     "하루": "1일", "이틀": "2일", "사흘": "3일", "나흘": "4일",
@@ -847,7 +847,7 @@ _EVIDENCE_SEMANTIC_THRESHOLD = 0.55
 
 _QUESTION_ENDING = re.compile(
     r"(?P<ending>알려주세요|알려줄래|알려줘|무엇이야|뭔가요|뭐야|인가요|"
-    r"어떻게\s*하나요|어떻게\s*해)(?P<punctuation>[?!？！.。]*)\s*$"
+    r"언제야|어디야|진행해|어떻게\s*하나요|어떻게\s*해)(?P<punctuation>[?!？！.。]*)\s*$"
 )
 
 
@@ -930,7 +930,7 @@ def _extract_evidence_facets(query: str) -> dict[str, Any]:
         return " "
 
     token_text = re.sub(
-        r"(?:며칠|몇\s*(원|일|개월|시간|퍼센트|%))(?:까지|이나|이|을|은)?(?=\s|[?!.]|$)",
+        r"(?:며칠|몇\s*(원|일|개월|시간|시|퍼센트|%))(?:에|까지|이나|이|을|은)?(?=\s|[?!.]|$)",
         quantity_question, normalized,
     )
     raw_tokens = re.findall(r"\d+(?:원|일|개월|시간|퍼센트|%)?|[가-힣a-zA-Z]+", token_text)
@@ -1041,10 +1041,13 @@ def _condition_supported(condition: str, evidence: str) -> bool:
 
 def _is_table_structure_query(query: str) -> bool:
     normalized = "".join(query.lower().split())
-    return (
-        any(term in normalized for term in ("표", "테이블"))
-        and any(term in normalized for term in ("열", "컬럼", "행", "헤더"))
-    )
+    has_structure_term = any(term in normalized for term in ("열", "컬럼", "행", "헤더"))
+    has_table_term = any(term in normalized for term in ("표", "테이블"))
+    explicit_schema_request = bool(re.search(
+        r"(?:열|컬럼)(?:이름|명|구성)|(?:열|컬럼).*(?:전부|모두|알려|무엇|뭐|어떻게|구성)|헤더",
+        normalized,
+    ))
+    return has_structure_term and (has_table_term or explicit_schema_request)
 
 
 async def _has_facet_evidence(
@@ -1235,11 +1238,6 @@ async def search(
     stage_started = time.perf_counter()
     candidates = await rerank_candidates(query, candidates)
     stage_latency_ms["reranker"] = (time.perf_counter() - stage_started) * 1000
-    candidates = _promote_lexical_evidence(
-        candidates,
-        [*lexical_candidates, *rewritten_lexical_candidates],
-        facets,
-    )
     count_query = re.search(r"(?:몇\s*(?:문제|문항)|(?:문제|문항)\s*수|총\s*문제)", query)
     if rag_document_id and count_query:
         all_chunks = supabase_service.list_rag_chunks(user_email, rag_document_id)

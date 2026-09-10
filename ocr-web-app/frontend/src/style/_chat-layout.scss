@@ -12,9 +12,8 @@
   overflow: auto;
 }
 .chat-workspace.page-enter {
-  // A transformed ancestor makes position: fixed follow this scroll container.
-  // Keep the RAG floating actions anchored to the browser viewport instead.
-  animation: none;
+  // Release the animated transform after entry so fixed actions stay viewport-anchored.
+  animation-fill-mode: backwards;
   transform: none;
 }
 .chat-page-header {

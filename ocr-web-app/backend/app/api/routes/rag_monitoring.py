@@ -70,6 +70,15 @@ def rag_monitoring(start_date: date, end_date: date, user: User = Depends(requir
             "baseline_runs": baseline, "aggregation": "run_mean", "timezone": "Asia/Seoul"}
 
 
+@router.get("/evaluation/ablation/latest")
+def latest_rag_ablation(user: User = Depends(require_developer)) -> dict:
+    run = supabase_service.latest_rag_evaluation_run(user.email)
+    result = ((run or {}).get("summary_metrics") or {}).get("evaluation_result")
+    if not isinstance(result, dict) or not result:
+        raise HTTPException(status_code=404, detail="저장된 최신 실제 RAG 평가의 Ablation 결과가 없습니다.")
+    return {"run_id": run["run_id"], "evaluation_result": result}
+
+
 @router.get("/evaluation/history/{run_id}")
 def rag_evaluation_detail(run_id: UUID, user: User = Depends(require_developer)) -> dict:
     run = supabase_service.get_rag_evaluation_run(user.email, str(run_id))

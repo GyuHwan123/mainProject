@@ -1,4 +1,4 @@
-# PicToText
+# Docai 사내 문서 자동화
 
 ## Docker Compose 실행
 
